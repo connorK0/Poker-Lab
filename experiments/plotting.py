@@ -71,10 +71,19 @@ def style_axes(ax: plt.Axes, theme: dict[str, object], *, grid_axis: str = "y") 
 
 def line(ax: plt.Axes, theme: dict[str, object], x, y, color, label=None, **kw):
     return ax.plot(
-        x, y, color=color, linewidth=LINE_WIDTH, marker="o", markersize=MARKER_SIZE,
-        markeredgecolor=theme["surface"], markeredgewidth=1.5, solid_capstyle="round",
-        solid_joinstyle="round", label=label, **kw,
-    )  # fmt: skip
+        x,
+        y,
+        color=color,
+        linewidth=LINE_WIDTH,
+        marker="o",
+        markersize=MARKER_SIZE,
+        markeredgecolor=theme["surface"],
+        markeredgewidth=1.5,
+        solid_capstyle="round",
+        solid_joinstyle="round",
+        label=label,
+        **kw,
+    )
 
 
 def band(ax: plt.Axes, x, lo, hi, color, alpha: float = 0.14) -> None:
@@ -116,8 +125,9 @@ def title(
     fig: plt.Figure, theme: dict[str, object], text: str, subtitle: str = "", top: float = 0.92
 ) -> None:
     """Left-aligned title + subtitle, then lay out the axes below ``top`` (figure fraction)."""
-    fig.text(0.01, 0.995, text, ha="left", va="top", fontsize=12, color=theme["ink"],
-             fontweight="bold")  # fmt: skip
+    fig.text(
+        0.01, 0.995, text, ha="left", va="top", fontsize=12, color=theme["ink"], fontweight="bold"
+    )
     if subtitle:
         fig.text(0.01, 0.955, subtitle, ha="left", va="top", fontsize=9, color=theme["ink2"])
     fig.tight_layout(rect=(0, 0, 1, top))

@@ -128,26 +128,46 @@ PARAM_DISTRIBUTIONS: dict[Archetype, dict[str, BetaDist | LogNormalDist]] = {
 # Intended tendencies (written before simulation). Percent, except AF (a ratio).
 INTENDED_STATS: dict[Archetype, dict[str, tuple[float, float]]] = {
     Archetype.NIT: {
-        "vpip": (8, 16), "pfr": (6, 13), "three_bet": (1.5, 5), "af": (1.5, 3.5),
-        "cbet": (45, 65), "fold_to_cbet": (55, 80),
+        "vpip": (8, 16),
+        "pfr": (6, 13),
+        "three_bet": (1.5, 5),
+        "af": (1.5, 3.5),
+        "cbet": (45, 65),
+        "fold_to_cbet": (55, 80),
     },
     Archetype.TAG: {
-        "vpip": (17, 26), "pfr": (13, 22), "three_bet": (4, 9), "af": (2, 4),
-        "cbet": (60, 78), "fold_to_cbet": (40, 60),
+        "vpip": (17, 26),
+        "pfr": (13, 22),
+        "three_bet": (4, 9),
+        "af": (2, 4),
+        "cbet": (60, 78),
+        "fold_to_cbet": (40, 60),
     },
     Archetype.LAG: {
-        "vpip": (26, 38), "pfr": (20, 32), "three_bet": (7, 14), "af": (2.5, 5),
-        "cbet": (68, 85), "fold_to_cbet": (30, 50),
+        "vpip": (26, 38),
+        "pfr": (20, 32),
+        "three_bet": (7, 14),
+        "af": (2.5, 5),
+        "cbet": (68, 85),
+        "fold_to_cbet": (30, 50),
     },
     Archetype.CALLING_STATION: {
-        "vpip": (35, 60), "pfr": (3, 12), "three_bet": (0.5, 4), "af": (0.3, 1.2),
-        "cbet": (20, 45), "fold_to_cbet": (5, 25),
+        "vpip": (35, 60),
+        "pfr": (3, 12),
+        "three_bet": (0.5, 4),
+        "af": (0.3, 1.2),
+        "cbet": (20, 45),
+        "fold_to_cbet": (5, 25),
     },
     Archetype.MANIAC: {
-        "vpip": (45, 75), "pfr": (32, 60), "three_bet": (12, 30), "af": (3, 8),
-        "cbet": (75, 95), "fold_to_cbet": (10, 35),
+        "vpip": (45, 75),
+        "pfr": (32, 60),
+        "three_bet": (12, 30),
+        "af": (3, 8),
+        "cbet": (75, 95),
+        "fold_to_cbet": (10, 35),
     },
-}  # fmt: skip
+}
 
 # Orderings that should hold for the stats we do not give ranges for.
 INTENDED_ORDERINGS: tuple[tuple[str, Archetype, Archetype], ...] = (

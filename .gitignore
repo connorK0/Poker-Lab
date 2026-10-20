@@ -11,6 +11,8 @@ dist/
 # Large intermediate experiment artifacts (regenerable from a seed)
 experiments/cache/
 experiments/results/**/raw/
+experiments/results/*_quick/
+experiments/*.log
 *.npz
 
 # OS / editor

@@ -4,73 +4,14 @@ SB=0, BB=1, UTG=2, HJ=3, CO=4, BTN=5; blinds 1/2)."""
 import pytest
 
 from poker_lab.profiling.stats import C, counters_by_player, hand_counters, raw_stats
-from poker_lab.schema import (
-    Action,
-    ActionType,
-    ChipAward,
-    HandHistory,
-    HandHistoryStore,
-    ShowdownEntry,
-    Street,
-    compute_uncalled_returns,
-)
-from tests.helpers import PLAYERS, TABLE, obs, seats
-
-BOARD = ("2c", "7d", "Jh", "4s", "9c")
-F, K, CA, B, R = "fold", "check", "call", "bet", "raise"
-
-
-def build(script: dict[Street, list[tuple]], *, showdown=(), winners=None) -> HandHistory:
-    """Record a hand. ``script[street]`` is a list of (seat, kind, to_amount)."""
-    store = HandHistoryStore()
-    store.begin_hand("x", TABLE, 5, seats(5))
-    store.record_action("x", Action(0, Street.PREFLOP, ActionType.POST_SMALL_BLIND, 1, 1))
-    store.record_action("x", Action(1, Street.PREFLOP, ActionType.POST_BIG_BLIND, 2, 2))
-    board_size = {Street.FLOP: 3, Street.TURN: 4, Street.RIVER: 5}
-    dealt = 0
-    folded: set[int] = set()
-    stacks = dict.fromkeys(range(6), 200)
-    stacks[0], stacks[1] = 199, 198
-    for street, actions in script.items():
-        if street in board_size:
-            n = board_size[street]
-            store.deal_board("x", [obs(c) for c in BOARD[dealt:n]])
-            dealt = n
-        bets = dict.fromkeys(range(6), 0)
-        if street is Street.PREFLOP:
-            bets[0], bets[1] = 1, 2
-        for seat, kind, *to in actions:
-            current, top = bets[seat], max(bets.values())
-            if kind in (F, K):
-                amount = 0
-            elif kind == CA:
-                amount = top - current
-            else:
-                amount = to[0] - current
-            bets[seat] += amount
-            stacks[seat] -= amount
-            if kind == F:
-                folded.add(seat)
-            all_in = amount > 0 and stacks[seat] == 0
-            store.record_action(
-                "x", Action(seat, street, ActionType(kind), amount, bets[seat], all_in)
-            )
-    if dealt < 5 and showdown:
-        store.deal_board("x", [obs(c) for c in BOARD[dealt:5]])
-    live = store.get("x")
-    uncalled = compute_uncalled_returns(live.actions)
-    pot = sum(live.contributions().values()) - sum(uncalled.values())
-    if winners is None:
-        winners = [s for s in range(6) if s not in folded][:1]
-    share = pot // len(winners)
-    payouts = [ChipAward(w, share + (pot - share * len(winners) if i == 0 else 0))
-               for i, w in enumerate(winners)]  # fmt: skip
-    return store.complete_hand(
-        "x",
-        showdown=[ShowdownEntry(s, True) for s in showdown],
-        payouts=payouts,
-        uncalled_returns=[ChipAward(s, a) for s, a in uncalled.items()],
-    )
+from poker_lab.schema import ChipAward, HandHistoryStore, Street
+from tests.helpers import BET as B
+from tests.helpers import CALL as CA
+from tests.helpers import CHECK as K
+from tests.helpers import FOLD as F
+from tests.helpers import PLAYERS, TABLE, seats
+from tests.helpers import RAISE as R
+from tests.helpers import build_scripted_hand as build
 
 
 def counts(hand) -> dict[int, dict[str, int]]:

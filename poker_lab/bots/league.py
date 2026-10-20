@@ -59,7 +59,7 @@ class LeagueConfig:
 class LeagueResult:
     player_ids: list[str]
     counters: np.ndarray  # (n_players, hands_per_player, N_COUNTERS) int16, in play order
-    extra: list[tuple[Any, ...]] = field(default_factory=list)
+    extra: np.ndarray = field(default_factory=lambda: np.zeros((0, 0), dtype=np.float32))
     hands_simulated: int = 0
 
 
@@ -74,7 +74,7 @@ class _Task:
     save_path: str | None
 
 
-def _run_task(task: _Task) -> tuple[_Task, np.ndarray, list[tuple[Any, ...]], int]:
+def _run_task(task: _Task) -> tuple[_Task, np.ndarray, np.ndarray, int]:
     cfg = task.config
     table = TableConfig(
         f"r{task.round_index}t{task.table_index}", cfg.table_size, cfg.small_blind, cfg.big_blind
@@ -106,7 +106,13 @@ def _run_task(task: _Task) -> tuple[_Task, np.ndarray, list[tuple[Any, ...]], in
             hands.append(hand)
     if task.save_path is not None:
         write_jsonl(hands, task.save_path)
-    return task, out, extra, cfg.block_hands
+    rows = np.asarray(extra, dtype=np.float32) if extra else np.zeros((0, 0), np.float32)
+    return task, out, rows, cfg.block_hands
+
+
+def default_workers() -> int:
+    """One less than the CPU count, capped at 12 (each worker holds its own interpreter)."""
+    return max(1, min((os.cpu_count() or 2) - 1, 12))
 
 
 def run_league(
@@ -136,21 +142,29 @@ def run_league(
             if save_hands_dir is not None and r < save_rounds:
                 save = str(Path(save_hands_dir) / f"round{r:03d}_table{t:03d}.jsonl.gz")
             tasks.append(
-                _Task(r, t, task_seed, tuple((int(i), players[int(i)]) for i in idx), config,
-                      extractor, save)
-            )  # fmt: skip
+                _Task(
+                    r,
+                    t,
+                    task_seed,
+                    tuple((int(i), players[int(i)]) for i in idx),
+                    config,
+                    extractor,
+                    save,
+                )
+            )
 
     counters = np.zeros((n, config.hands_per_player, N_COUNTERS), dtype=np.int16)
-    extra: list[tuple[Any, ...]] = []
+    extra: list[np.ndarray] = []
     total = 0
-    workers = workers if workers is not None else max(1, (os.cpu_count() or 2) - 1)
+    workers = workers if workers is not None else default_workers()
 
-    def collect(task: _Task, block: np.ndarray, rows: list[tuple[Any, ...]], n_hands: int):
+    def collect(task: _Task, block: np.ndarray, rows: np.ndarray, n_hands: int):
         nonlocal total
         start = task.round_index * config.block_hands
         for seat, (pop_i, _) in enumerate(task.players):
             counters[pop_i, start : start + config.block_hands] = block[seat]
-        extra.extend(rows)
+        if rows.size:
+            extra.append(rows)
         total += n_hands
         if progress is not None:
             progress(total, config.rounds * (n // config.table_size) * config.block_hands)
@@ -165,6 +179,6 @@ def run_league(
     return LeagueResult(
         player_ids=[p.player_id for p in players],
         counters=counters,
-        extra=extra,
+        extra=np.concatenate(extra) if extra else np.zeros((0, 0), dtype=np.float32),
         hands_simulated=total,
     )

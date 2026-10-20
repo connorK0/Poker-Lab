@@ -65,8 +65,14 @@ def test_seat_view_needs_the_issued_key(live):
 
 def test_seat_view_reaches_only_own_cards_and_board(live):
     store, keys = live
-    legal = LegalActions(can_fold=False, can_check=True, call_amount=0, can_bet_or_raise=True,
-                         min_raise_to=2, max_raise_to=164)  # fmt: skip
+    legal = LegalActions(
+        can_fold=False,
+        can_check=True,
+        call_amount=0,
+        can_bet_or_raise=True,
+        min_raise_to=2,
+        max_raise_to=164,
+    )
     for seat, key in keys.items():
         view = store.seat_view("live", key, legal=legal)
         reachable = reachable_card_strings(view)

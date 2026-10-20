@@ -246,8 +246,11 @@ class TableSimulator:
                 if heads_up:
                     kind = ActionType.POST_BIG_BLIND if i == 0 else ActionType.POST_SMALL_BLIND
                 else:
-                    kind = (ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND)[i] if i < 2 \
-                        else ActionType.POST_STRADDLE  # fmt: skip
+                    kind = (
+                        (ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND)[i]
+                        if i < 2
+                        else ActionType.POST_STRADDLE
+                    )
                 seat = order[i]
                 stacks[seat] -= op.amount
                 action = Action(seat, "preflop", kind, op.amount, op.amount, stacks[seat] == 0)

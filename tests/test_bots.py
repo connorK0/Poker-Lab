@@ -148,9 +148,10 @@ def test_parameters_control_the_intended_tendencies():
     loose = _play_counts(dataclasses.replace(base, range_width=0.9, continue_vs_raise=1.0))
     assert tight["vpip"] < 0.1 < 0.5 < loose["vpip"]
     limper = _play_counts(
-        dataclasses.replace(base, raise_share=0.0, three_bet_freq=0.0, bluff_freq=0.0,
-                            range_width=0.4)
-    )  # fmt: skip
+        dataclasses.replace(
+            base, raise_share=0.0, three_bet_freq=0.0, bluff_freq=0.0, range_width=0.4
+        )
+    )
     assert limper["pfr"] < 0.05 < limper["vpip"]
     always = _play_counts(dataclasses.replace(base, cbet_freq=1.0, range_width=0.5))
     never = _play_counts(

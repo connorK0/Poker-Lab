@@ -19,6 +19,7 @@ from poker_lab.schema import (
     Street,
     TableConfig,
     assign_positions,
+    compute_uncalled_returns,
     is_valid_card,
 )
 
@@ -27,8 +28,14 @@ PLAYERS = ("alice", "bob", "carol", "dave", "erin", "frank")
 STACK = 200
 
 # Seat -> hole cards for the reference hand. Button on seat 5: SB=0, BB=1, UTG=2, HJ=3, CO=4.
-HOLE = {0: ("3s", "4s"), 1: ("8c", "8s"), 2: ("Jc", "Tc"), 3: ("Ac", "Qd"), 4: ("5h", "6h"),
-        5: ("Kd", "Kh")}  # fmt: skip
+HOLE = {
+    0: ("3s", "4s"),
+    1: ("8c", "8s"),
+    2: ("Jc", "Tc"),
+    3: ("Ac", "Qd"),
+    4: ("5h", "6h"),
+    5: ("Kd", "Kh"),
+}
 BOARD = ("Ah", "7d", "2c", "Ks", "9h")
 
 
@@ -41,8 +48,14 @@ def obs(card: str, source: str = "simulator", confidence: float = 1.0) -> CardOb
     return CardObservation(card, source, confidence)  # type: ignore[arg-type]
 
 
-def act(seat: int, street: Street, kind: ActionType, amount: int = 0, total: int = 0,
-        all_in: bool = False) -> Action:  # fmt: skip
+def act(
+    seat: int,
+    street: Street,
+    kind: ActionType,
+    amount: int = 0,
+    total: int = 0,
+    all_in: bool = False,
+) -> Action:
     return Action(seat, street, kind, amount, total, all_in)
 
 
@@ -97,11 +110,83 @@ def record_reference_hand(
     return hand, keys
 
 
+SCRIPT_BOARD = ("2c", "7d", "Jh", "4s", "9c")
+FOLD, CHECK, CALL, BET, RAISE = "fold", "check", "call", "bet", "raise"
+
+
+def build_scripted_hand(
+    script: dict[Street, list[tuple]], *, showdown=(), winners=None, hand_id: str = "x"
+) -> HandHistory:
+    """Record a 6-max hand (button seat 5, blinds 1/2, 200-chip stacks) from a compact script.
+
+    ``script[street]`` lists ``(seat, kind, to_amount)`` with kind one of FOLD/CHECK/CALL/BET/
+    RAISE; amounts and all-in flags are derived. The pot goes to ``winners`` (default: the first
+    seat that didn't fold).
+    """
+    store = HandHistoryStore()
+    store.begin_hand(hand_id, TABLE, 5, seats(5))
+    store.record_action(hand_id, Action(0, Street.PREFLOP, ActionType.POST_SMALL_BLIND, 1, 1))
+    store.record_action(hand_id, Action(1, Street.PREFLOP, ActionType.POST_BIG_BLIND, 2, 2))
+    board_size = {Street.FLOP: 3, Street.TURN: 4, Street.RIVER: 5}
+    dealt = 0
+    folded: set[int] = set()
+    stacks = dict.fromkeys(range(6), STACK)
+    stacks[0], stacks[1] = STACK - 1, STACK - 2
+    for street, actions in script.items():
+        if street in board_size:
+            n = board_size[street]
+            store.deal_board(hand_id, [obs(c) for c in SCRIPT_BOARD[dealt:n]])
+            dealt = n
+        bets = dict.fromkeys(range(6), 0)
+        if street is Street.PREFLOP:
+            bets[0], bets[1] = 1, 2
+        for seat, kind, *to in actions:
+            current, top = bets[seat], max(bets.values())
+            if kind in (FOLD, CHECK):
+                amount = 0
+            elif kind == CALL:
+                amount = top - current
+            else:
+                amount = to[0] - current
+            bets[seat] += amount
+            stacks[seat] -= amount
+            if kind == FOLD:
+                folded.add(seat)
+            all_in = amount > 0 and stacks[seat] == 0
+            store.record_action(
+                hand_id, Action(seat, street, ActionType(kind), amount, bets[seat], all_in)
+            )
+    if dealt < 5 and showdown:
+        store.deal_board(hand_id, [obs(c) for c in SCRIPT_BOARD[dealt:5]])
+    live = store.get(hand_id)
+    uncalled = compute_uncalled_returns(live.actions)
+    pot = sum(live.contributions().values()) - sum(uncalled.values())
+    if winners is None:
+        winners = [s for s in range(6) if s not in folded][:1]
+    share = pot // len(winners)
+    payouts = [
+        ChipAward(w, share + (pot - share * len(winners) if i == 0 else 0))
+        for i, w in enumerate(winners)
+    ]
+    return store.complete_hand(
+        hand_id,
+        showdown=[ShowdownEntry(s, True) for s in showdown],
+        payouts=payouts,
+        uncalled_returns=[ChipAward(s, a) for s, a in uncalled.items()],
+    )
+
+
 def walk_reachable(root: object, limit: int = 200_000) -> Iterator[object]:
     """Yield every object reachable from ``root`` through references, without descending into
     types, modules or functions (which would reach global constants such as the full deck)."""
-    skip = (type, types.ModuleType, types.FunctionType, types.BuiltinFunctionType,
-            types.MethodType, types.CodeType)  # fmt: skip
+    skip = (
+        type,
+        types.ModuleType,
+        types.FunctionType,
+        types.BuiltinFunctionType,
+        types.MethodType,
+        types.CodeType,
+    )
     seen: set[int] = set()
     stack = [root]
     while stack:

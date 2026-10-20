@@ -1,0 +1,34 @@
+# Phase 1 experiments: full configuration.
+# Reproduce everything with:  python -m experiments.run_phase1 --seed 2026
+name: phase1
+n_seeds: 5                    # independent replicates: new populations, simulations, splits, fits
+
+# Populations (per seed). Train and test pools are disjoint and simulated in separate leagues.
+n_train_per_archetype: 60     # 300 training players
+n_test_per_archetype: 30      # 150 held-out players
+hands_per_player: 2000        # = the largest sample size below
+block_hands: 50               # hands per table before tables are re-drawn
+equity_samples: 150           # Monte Carlo samples per postflop equity estimate (bots)
+
+# Hands-to-identify / calibration / ablation / confusion / regression
+# Primary model (fixed before the reported run; all four variants are always reported):
+# logistic regression on shrunk stats, the simplest model in the spec. A smoke test on other
+# seeds showed it with lower log-loss than boosted trees at similar accuracy.
+primary_model: lr_shrunk
+sample_sizes: [25, 50, 100, 200, 500, 1000, 2000]
+train_windows_max: 8          # disjoint windows per training player and sample size
+test_windows_max: 10          # disjoint windows per test player and sample size
+reliability_sizes: [50, 200, 1000]
+calib_bins: 10
+permutation_n: 200            # sample size for the label-permutation leakage control
+
+# Action prediction: profile from the first c hands, predict decisions in hands [c, c + window)
+action_checkpoints: [0, 25, 100, 500, 1500]
+action_window: 100
+action_train_rows: 150000     # subsample of training decisions per model
+
+# M3 sanity check (bot tendencies vs intended ranges)
+sanity:
+  n_per_archetype: 60
+  hands_per_player: 3000
+  block_hands: 50

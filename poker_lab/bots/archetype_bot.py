@@ -167,9 +167,11 @@ class ParametricBot(Agent):
 
         if legal.call_amount == 0:
             cbet_spot = (
-                street is Street.FLOP and is_pfa and pub.max_street_bet == 0
+                street is Street.FLOP
+                and is_pfa
+                and pub.max_street_bet == 0
                 and not acted_this_street
-            )  # fmt: skip
+            )
             if cbet_spot:
                 p_bet = max(p.cbet_freq, p.value_aggression) if bucket == STRONG else p.cbet_freq
             else:

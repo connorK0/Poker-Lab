@@ -15,10 +15,8 @@ import time
 from pathlib import Path
 
 import numpy as np
-from scipy import stats as sps
 
 from experiments.common import RESULTS_ROOT, run_metadata, save_json
-from experiments.plotting import band, new_figure, save_both, style_axes, title
 from poker_lab.bots import (
     ARCHETYPES,
     INTENDED_ORDERINGS,
@@ -28,20 +26,47 @@ from poker_lab.bots import (
     make_population,
 )
 from poker_lab.bots.league import LeagueConfig, run_league
-from poker_lab.evaluation import t_interval
 from poker_lab.profiling.stats import raw_stats
 
-REPORT_STATS = ("vpip", "pfr", "three_bet", "fold_to_3bet", "af", "cbet", "fold_to_cbet",
-                "fold_to_bet", "wtsd", "wsd", "bet_size", "open_size")  # fmt: skip
+# scipy and matplotlib are imported inside the functions that use them: simulation workers
+# re-import this module when it is run as a script and should stay light.
+
+REPORT_STATS = (
+    "vpip",
+    "pfr",
+    "three_bet",
+    "fold_to_3bet",
+    "af",
+    "cbet",
+    "fold_to_cbet",
+    "fold_to_bet",
+    "wtsd",
+    "wsd",
+    "bet_size",
+    "open_size",
+)
 PERCENT = {s for s in REPORT_STATS if s not in ("af", "bet_size", "open_size")}
 LABELS = {
-    "vpip": "VPIP %", "pfr": "PFR %", "three_bet": "3-bet %", "fold_to_3bet": "Fold to 3-bet %",
-    "af": "AF", "cbet": "C-bet %", "fold_to_cbet": "Fold to c-bet %",
-    "fold_to_bet": "Fold to bet %", "wtsd": "WTSD %", "wsd": "W$SD %",
-    "bet_size": "Bet size (x pot)", "open_size": "Open size (bb)",
-}  # fmt: skip
-ARCH_LABEL = {"nit": "Nit", "tag": "TAG", "lag": "LAG", "calling_station": "Station",
-              "maniac": "Maniac"}  # fmt: skip
+    "vpip": "VPIP %",
+    "pfr": "PFR %",
+    "three_bet": "3-bet %",
+    "fold_to_3bet": "Fold to 3-bet %",
+    "af": "AF",
+    "cbet": "C-bet %",
+    "fold_to_cbet": "Fold to c-bet %",
+    "fold_to_bet": "Fold to bet %",
+    "wtsd": "WTSD %",
+    "wsd": "W$SD %",
+    "bet_size": "Bet size (x pot)",
+    "open_size": "Open size (bb)",
+}
+ARCH_LABEL = {
+    "nit": "Nit",
+    "tag": "TAG",
+    "lag": "LAG",
+    "calling_station": "Station",
+    "maniac": "Maniac",
+}
 # Parameter -> the stat it is designed to move most directly.
 DRIVERS = (
     ("range_width", "vpip"),
@@ -69,6 +94,8 @@ def player_stats(counters: np.ndarray) -> list[dict[str, float]]:
 
 
 def summarize(per_player: list[dict[str, float]], labels: list[str]) -> dict:
+    from poker_lab.evaluation.intervals import t_interval
+
     table: dict[str, dict] = {}
     for a in ARCHETYPES:
         rows = [s for s, lab in zip(per_player, labels, strict=True) if lab == a.value]
@@ -91,12 +118,15 @@ def check_orderings(table: dict) -> list[dict]:
     out = []
     for stat, hi, lo in INTENDED_ORDERINGS:
         a, b = table[hi.value][stat]["estimate"], table[lo.value][stat]["estimate"]
-        out.append({"stat": stat, "higher": hi.value, "lower": lo.value, "values": [a, b],
-                    "holds": a > b})  # fmt: skip
+        out.append(
+            {"stat": stat, "higher": hi.value, "lower": lo.value, "values": [a, b], "holds": a > b}
+        )
     return out
 
 
 def driver_correlations(per_player, params: np.ndarray, labels: list[str]) -> list[dict]:
+    from scipy import stats as sps
+
     out = []
     for pname, stat in DRIVERS:
         x = params[:, PARAM_NAMES.index(pname)]
@@ -107,8 +137,14 @@ def driver_correlations(per_player, params: np.ndarray, labels: list[str]) -> li
         for a in ARCHETYPES:
             m = ok & (np.array(labels) == a.value)
             within[a.value] = float(sps.spearmanr(x[m], y[m]).statistic) if m.sum() > 3 else None
-        out.append({"param": pname, "stat": stat, "spearman_all": float(rho_all),
-                    "spearman_within_archetype": within})  # fmt: skip
+        out.append(
+            {
+                "param": pname,
+                "stat": stat,
+                "spearman_all": float(rho_all),
+                "spearman_within_archetype": within,
+            }
+        )
     return out
 
 
@@ -131,6 +167,8 @@ def markdown_table(table: dict) -> str:
 
 
 def plot(per_player, labels, table, out_dir: Path) -> None:
+    from experiments.plotting import band, new_figure, save_both, style_axes, title
+
     stats = ("vpip", "pfr", "three_bet", "af", "cbet", "fold_to_cbet", "wtsd", "wsd")
     rng = np.random.default_rng(0)
 
@@ -141,38 +179,66 @@ def plot(per_player, labels, table, out_dir: Path) -> None:
             style_axes(ax, theme)
             scale = 100.0 if stat in PERCENT else 1.0
             for i, a in enumerate(ARCHETYPES):
-                vals = np.array([s[stat] * scale for s, lab in zip(per_player, labels,
-                                 strict=True) if lab == a.value])  # fmt: skip
+                vals = np.array(
+                    [
+                        s[stat] * scale
+                        for s, lab in zip(per_player, labels, strict=True)
+                        if lab == a.value
+                    ]
+                )
                 vals = vals[~np.isnan(vals)]
                 intended = INTENDED_STATS[a].get(stat)
                 if intended is not None:
-                    band(ax, [i - 0.38, i + 0.38], intended[0], intended[1], theme["wash"],
-                         alpha=0.75)  # fmt: skip
+                    band(
+                        ax,
+                        [i - 0.38, i + 0.38],
+                        intended[0],
+                        intended[1],
+                        theme["wash"],
+                        alpha=0.75,
+                    )
                 jitter = rng.uniform(-0.22, 0.22, len(vals))
                 ax.scatter(i + jitter, vals, s=8, color=color, alpha=0.55, linewidths=0)
                 m = table[a.value][stat]["estimate"]
-                ax.plot([i - 0.3, i + 0.3], [m, m], color=theme["ink"], linewidth=2,
-                        solid_capstyle="round")  # fmt: skip
+                ax.plot(
+                    [i - 0.3, i + 0.3],
+                    [m, m],
+                    color=theme["ink"],
+                    linewidth=2,
+                    solid_capstyle="round",
+                )
             ax.set_xticks(range(len(ARCHETYPES)))
             ax.set_xticklabels([ARCH_LABEL[a.value] for a in ARCHETYPES], fontsize=8)
             ax.set_title(LABELS[stat], fontsize=10, loc="left", color=theme["ink"])
-        title(fig, theme, "Measured tendencies per archetype",
-              "Dots: individual bots; bar: archetype mean; shaded: intended range "
-              "fixed before simulation", top=0.94)  # fmt: skip
+        title(
+            fig,
+            theme,
+            "Measured tendencies per archetype",
+            "Dots: individual bots; bar: archetype mean; shaded: intended range "
+            "fixed before simulation",
+            top=0.94,
+        )
         return fig
 
     save_both(draw, out_dir, "bot_sanity_stats")
 
 
-def run(seed: int, *, quick: bool = False, workers: int | None = None,
-        out_dir: Path | None = None) -> dict:  # fmt: skip
-    cfg = QUICK if quick else DEFAULTS
+def run(
+    seed: int,
+    *,
+    quick: bool = False,
+    workers: int | None = None,
+    out_dir: Path | None = None,
+    cfg: dict | None = None,
+) -> dict:
+    cfg = cfg or (QUICK if quick else DEFAULTS)
     out_dir = out_dir or RESULTS_ROOT / ("bot_sanity_quick" if quick else "bot_sanity")
     rng = np.random.default_rng(seed)
     pop = make_population(cfg["n_per_archetype"], rng)
     truth = GroundTruth(pop)
-    league_cfg = LeagueConfig(hands_per_player=cfg["hands_per_player"],
-                              block_hands=cfg["block_hands"])  # fmt: skip
+    league_cfg = LeagueConfig(
+        hands_per_player=cfg["hands_per_player"], block_hands=cfg["block_hands"]
+    )
     t0 = time.perf_counter()
     result = run_league(pop, league_cfg, seed=seed, workers=workers)
     elapsed = time.perf_counter() - t0
@@ -212,9 +278,11 @@ def main() -> None:
     args = ap.parse_args()
     report = run(args.seed, quick=args.quick, workers=args.workers)
     s = report["summary"]
-    print(f"{report['hands_simulated']} hands in {report['seconds']}s; "
-          f"{s['cells_in_intended_range']}/{s['cells_with_intended_range']} cells in range; "
-          f"{s['orderings_holding']}/{s['orderings_total']} orderings hold")  # fmt: skip
+    print(
+        f"{report['hands_simulated']} hands in {report['seconds']}s; "
+        f"{s['cells_in_intended_range']}/{s['cells_with_intended_range']} cells in range; "
+        f"{s['orderings_holding']}/{s['orderings_total']} orderings hold"
+    )
 
 
 if __name__ == "__main__":
