@@ -239,6 +239,7 @@ def run(
     league_cfg = LeagueConfig(
         hands_per_player=cfg["hands_per_player"], block_hands=cfg["block_hands"]
     )
+    meta = run_metadata(seed, {**cfg, "league": league_cfg})  # provenance at the start
     t0 = time.perf_counter()
     result = run_league(pop, league_cfg, seed=seed, workers=workers)
     elapsed = time.perf_counter() - t0
@@ -250,7 +251,7 @@ def run(
     n_cells = sum(e["in_range"] is not None for a in table.values() for e in a.values())
     n_ok = sum(bool(e["in_range"]) for a in table.values() for e in a.values())
     report = {
-        "meta": run_metadata(seed, {**cfg, "league": league_cfg}),
+        "meta": meta,
         "hands_simulated": result.hands_simulated,
         "seconds": round(elapsed, 1),
         "summary": {

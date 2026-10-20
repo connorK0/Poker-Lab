@@ -73,9 +73,42 @@ def test_classifier_learns_and_calibrates(model):
     assert proba.shape == (len(yt), 5)
     assert np.allclose(proba.sum(axis=1), 1.0)
     assert accuracy(yt, proba) > 0.6
-    raw = clf.predict_proba(Xt, calibrated=False)
-    assert (raw.argmax(1) == proba.argmax(1)).all()  # temperature never changes the argmax
+    for mode in ("none", "by_size"):
+        other = clf.predict_proba(Xt, calibration=mode)
+        assert (other.argmax(1) == proba.argmax(1)).all()  # temperature never changes the argmax
     assert 0.05 <= clf.temperature <= 20
+
+
+def test_per_size_temperature_corrects_size_dependent_miscalibration():
+    """A model that is overconfident at one sample size and underconfident at another cannot
+    be fixed by one temperature, but can be by a temperature per size."""
+    rng = np.random.default_rng(7)
+    n, k = 6000, 5
+    logits = rng.normal(0, 1.5, (n, k))
+    true_p = np.exp(logits) / np.exp(logits).sum(1, keepdims=True)
+    y = np.array([rng.choice(k, p=p) for p in true_p])
+    size = np.where(np.arange(n) % 2 == 0, 25, 1000)
+    distortion = np.where(size == 25, 3.0, 0.4)[:, None]  # over- vs under-confident
+    distorted = np.exp(np.log(true_p) * distortion)
+    distorted /= distorted.sum(1, keepdims=True)
+
+    class _Fixed:  # stands in for a fitted model returning the distorted probabilities
+        def predict_proba(self, X):
+            return distorted[X[:, 0].astype(int)]
+
+    X = np.column_stack([np.arange(n), np.log(size)]).astype(float)
+    clf = ArchetypeClassifier("lr")
+    clf.model = _Fixed()
+    log_p = clf._log_proba_uncalibrated(X)
+    clf.temperature = fit_temperature(log_p, y)
+    grid = np.log([25.0, 1000.0])
+    temps = [fit_temperature(log_p[size == s], y[size == s]) for s in (25, 1000)]
+    clf.size_temperatures = (grid, np.array(temps))
+    assert temps[0] == pytest.approx(3.0, rel=0.2)
+    assert temps[1] == pytest.approx(0.4, rel=0.2)
+    ece_global = expected_calibration_error(y, clf.predict_proba(X, calibration="global"))
+    ece_by_size = expected_calibration_error(y, clf.predict_proba(X, calibration="by_size"))
+    assert ece_by_size < 0.5 * ece_global
 
 
 def test_temperature_scaling_fixes_overconfidence():

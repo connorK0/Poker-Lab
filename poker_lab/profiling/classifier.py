@@ -3,9 +3,16 @@
 ``ArchetypeClassifier`` wraps a multinomial logistic regression (on standardized logit/log
 features) or a histogram gradient-boosting classifier. With ``calibrate=True`` a fraction of
 the *training players* (grouped split, so all of a player's windows land on one side) is held
-out to fit a single temperature ``T`` that rescales the log-probabilities:
-``p = softmax(log p_model / T)``. Temperature scaling changes confidence but never the argmax,
-so accuracy is unaffected while log-loss and calibration error can improve.
+out to fit temperatures that rescale the log-probabilities, ``p = softmax(log p_model / T)``:
+
+* ``calibration="global"``: one temperature for all sample sizes;
+* ``calibration="by_size"``: one temperature per training sample size, interpolated in
+  log(hands). Miscalibration can depend on how many hands were observed (a model can be
+  well calibrated at 50 hands and underconfident at 1000), which a single temperature cannot
+  fix. The sample size is read from the ``log_hands`` feature (the last column).
+
+Temperature scaling changes confidence but never the argmax, so accuracy is unaffected while
+log-loss and calibration error can improve.
 """
 
 from __future__ import annotations
@@ -21,6 +28,8 @@ from sklearn.preprocessing import FunctionTransformer, StandardScaler
 from poker_lab.profiling.features import to_model_space
 
 MODELS = ("lr", "gbm")
+CALIBRATIONS = ("none", "global", "by_size")
+MIN_ROWS_PER_SIZE = 50  # fewer calibration rows than this at a size -> use the global value
 
 
 def _make_model(kind: str, random_state: int, feature_space: str = "profile"):
@@ -67,7 +76,8 @@ class ArchetypeClassifier:
         feature_space: str = "profile",
     ) -> None:
         """``feature_space="profile"`` expects ``profile_features`` columns (the linear model then
-        uses logit/log transforms); ``"identity"`` uses the columns as given (e.g. true params)."""
+        uses logit/log transforms, and per-size calibration reads ``log_hands``); ``"identity"``
+        uses the columns as given (e.g. true parameters)."""
         if feature_space not in ("profile", "identity"):
             raise ValueError("feature_space must be 'profile' or 'identity'")
         self.kind = model
@@ -76,6 +86,7 @@ class ArchetypeClassifier:
         self.calibration_fraction = calibration_fraction
         self.random_state = random_state
         self.temperature = 1.0
+        self.size_temperatures: tuple[np.ndarray, np.ndarray] | None = None  # (log n, T)
         self.model = None
         self.n_classes = 0
 
@@ -93,17 +104,37 @@ class ArchetypeClassifier:
             X[fit_idx], y[fit_idx]
         )
         if cal_idx is not None:
-            self.temperature = fit_temperature(self._log_proba_uncalibrated(X[cal_idx]), y[cal_idx])
+            log_p, y_cal = self._log_proba_uncalibrated(X[cal_idx]), y[cal_idx]
+            self.temperature = fit_temperature(log_p, y_cal)
+            if self.feature_space == "profile":
+                log_n = X[cal_idx, -1]
+                grid, temps = [], []
+                for value in np.unique(np.round(log_n, 6)):
+                    m = np.isclose(log_n, value)
+                    if m.sum() >= MIN_ROWS_PER_SIZE:
+                        grid.append(value)
+                        temps.append(fit_temperature(log_p[m], y_cal[m]))
+                if grid:
+                    self.size_temperatures = (np.array(grid), np.array(temps))
         return self
 
     def _log_proba_uncalibrated(self, X: np.ndarray) -> np.ndarray:
         proba = self.model.predict_proba(X)
         return np.log(np.clip(proba, 1e-12, 1.0))
 
-    def predict_proba(self, X: np.ndarray, *, calibrated: bool = True) -> np.ndarray:
+    def temperatures_for(self, X: np.ndarray, calibration: str = "global") -> np.ndarray:
+        """Per-row temperature under the given calibration mode."""
+        if calibration not in CALIBRATIONS:
+            raise ValueError(f"calibration must be one of {CALIBRATIONS}")
+        if calibration == "none":
+            return np.ones(len(X))
+        if calibration == "by_size" and self.size_temperatures is not None:
+            return np.interp(X[:, -1], *self.size_temperatures)
+        return np.full(len(X), self.temperature)
+
+    def predict_proba(self, X: np.ndarray, *, calibration: str = "global") -> np.ndarray:
         log_p = self._log_proba_uncalibrated(X)
-        t = self.temperature if calibrated else 1.0
-        return special.softmax(log_p / t, axis=1)
+        return special.softmax(log_p / self.temperatures_for(X, calibration)[:, None], axis=1)
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         return self.predict_proba(X).argmax(axis=1)

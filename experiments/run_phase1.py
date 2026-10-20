@@ -49,6 +49,10 @@ def run(
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
     out_dir.mkdir(parents=True, exist_ok=True)
+    meta = run_metadata(master_seed, cfg)  # provenance of the code as the run starts
+    if meta["git"]["dirty"]:
+        print("WARNING: uncommitted changes to tracked files; results are not reproducible "
+              "from the recorded commit", flush=True)  # fmt: skip
     t_start = time.perf_counter()
     if not skip_sanity:
         print("[1/3] bot sanity check", flush=True)
@@ -86,7 +90,7 @@ def run(
     print("[3/3] aggregating", flush=True)
     agg = aggregate(per_seed, cfg)
     results = {
-        "meta": run_metadata(master_seed, cfg),
+        "meta": meta,
         "derived_seeds": seeds,
         "elapsed_seconds": round(time.perf_counter() - t_start, 1),
         "aggregate": agg,
