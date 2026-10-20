@@ -9,8 +9,11 @@ the action-prediction windows.
 
 from __future__ import annotations
 
+import hashlib
 import time
 from dataclasses import dataclass
+from functools import cache
+from importlib import metadata
 from pathlib import Path
 
 import numpy as np
@@ -21,6 +24,32 @@ from poker_lab.bots.league import LeagueConfig, run_league
 from poker_lab.profiling import DecisionRowExtractor
 
 CACHE_DIR = REPO_ROOT / "experiments" / "cache"
+
+#: Everything that determines simulated data. Their hash is part of every cache key, so a
+#: change to the bots, engine, schema or stats code can never silently reuse stale data.
+SIMULATION_SOURCES = (
+    "poker_lab/bots",
+    "poker_lab/engine",
+    "poker_lab/schema",
+    "poker_lab/profiling/stats.py",
+    "poker_lab/profiling/situations.py",
+)
+
+
+@cache
+def simulation_fingerprint() -> str:
+    """Short hash of the simulation sources, shipped data and PokerKit/phevaluator versions."""
+    files: list[Path] = []
+    for rel in SIMULATION_SOURCES:
+        path = REPO_ROOT / rel
+        files += [*path.rglob("*.py"), *path.rglob("*.json")] if path.is_dir() else [path]
+    digest = hashlib.sha256()
+    for f in sorted(set(files)):
+        digest.update(f.relative_to(REPO_ROOT).as_posix().encode())
+        digest.update(f.read_bytes().replace(b"\r\n", b"\n"))
+    for package in ("pokerkit", "phevaluator"):
+        digest.update(f"{package}=={metadata.version(package)}".encode())
+    return digest.hexdigest()[:12]
 
 
 @dataclass
@@ -77,8 +106,9 @@ def _simulate_pool(pop, cfg: dict, seed: int, workers: int | None) -> PoolData:
 def _cache_path(seed: int, cfg: dict) -> Path:
     key = (
         f"s{seed}_tr{cfg['n_train_per_archetype']}_te{cfg['n_test_per_archetype']}"
-        f"_h{cfg['hands_per_player']}_b{cfg['block_hands']}"
+        f"_h{cfg['hands_per_player']}_b{cfg['block_hands']}_eq{cfg.get('equity_samples', 150)}"
         f"_cp{'-'.join(map(str, cfg['action_checkpoints']))}_w{cfg['action_window']}"
+        f"_fp{simulation_fingerprint()}"
     )
     return CACHE_DIR / f"phase1_{key}.npz"
 

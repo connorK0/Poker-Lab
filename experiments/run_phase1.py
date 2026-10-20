@@ -44,12 +44,13 @@ def run(
     # must not each load scikit-learn and matplotlib.
     from experiments import bot_sanity
     from experiments.phase1_analysis import analyze
-    from experiments.phase1_data import generate
+    from experiments.phase1_data import generate, simulation_fingerprint
     from experiments.phase1_report import aggregate, make_figures, markdown_summary
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
     out_dir.mkdir(parents=True, exist_ok=True)
     meta = run_metadata(master_seed, cfg)  # provenance of the code as the run starts
+    meta["simulation_fingerprint"] = simulation_fingerprint()  # also part of every cache key
     if meta["git"]["dirty"]:
         print("WARNING: uncommitted changes to tracked files; results are not reproducible "
               "from the recorded commit", flush=True)  # fmt: skip
