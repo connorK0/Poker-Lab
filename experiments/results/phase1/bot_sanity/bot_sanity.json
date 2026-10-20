@@ -1,0 +1,945 @@
+{
+ "meta": {
+  "seed": 2026,
+  "config": {
+   "n_per_archetype": 60,
+   "hands_per_player": 3000,
+   "block_hands": 50,
+   "league": {
+    "hands_per_player": 3000,
+    "block_hands": 50,
+    "table_size": 6,
+    "small_blind": 1,
+    "big_blind": 2,
+    "starting_stack_bb": 100,
+    "equity_samples": 150
+   }
+  },
+  "git": {
+   "commit": "98c6dabef9ec71ae68fa805c66ca8adb89b14795",
+   "dirty": false
+  },
+  "timestamp_utc": "2026-10-20T17:22:21+00:00",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "packages": {
+   "numpy": "2.4.6",
+   "pandas": "2.3.3",
+   "scipy": "1.18.0",
+   "scikit-learn": "1.9.0",
+   "matplotlib": "3.11.0",
+   "pokerkit": "0.7.7",
+   "phevaluator": "0.6.0"
+  }
+ },
+ "hands_simulated": 150000,
+ "seconds": 62.2,
+ "summary": {
+  "cells_in_intended_range": 29,
+  "cells_with_intended_range": 30,
+  "orderings_holding": 4,
+  "orderings_total": 4
+ },
+ "per_archetype": {
+  "nit": {
+   "vpip": {
+    "estimate": 10.914603213896926,
+    "lower": 9.46996128778876,
+    "upper": 12.359245140005093,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.592290899137825,
+    "intended": [
+     8,
+     16
+    ],
+    "in_range": true
+   },
+   "pfr": {
+    "estimate": 6.80961883532788,
+    "lower": 5.936863365079081,
+    "upper": 7.682374305576679,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 3.3784859661339164,
+    "intended": [
+     6,
+     13
+    ],
+    "in_range": true
+   },
+   "three_bet": {
+    "estimate": 2.2712584767883692,
+    "lower": 1.9282466406676848,
+    "upper": 2.6142703129090537,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 1.327818288232785,
+    "intended": [
+     1.5,
+     5
+    ],
+    "in_range": true
+   },
+   "fold_to_3bet": {
+    "estimate": 74.251769172091,
+    "lower": 71.34911813430867,
+    "upper": 77.15442020987334,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 11.236326932372116,
+    "intended": null,
+    "in_range": null
+   },
+   "af": {
+    "estimate": 2.338082402799959,
+    "lower": 2.133577226307662,
+    "upper": 2.5425875792922565,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.7916511466654048,
+    "intended": [
+     1.5,
+     3.5
+    ],
+    "in_range": true
+   },
+   "cbet": {
+    "estimate": 56.80587599727742,
+    "lower": 54.23091961268644,
+    "upper": 59.380832381868395,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 9.967802328718228,
+    "intended": [
+     45,
+     65
+    ],
+    "in_range": true
+   },
+   "fold_to_cbet": {
+    "estimate": 53.97332289254776,
+    "lower": 50.34824605840444,
+    "upper": 57.598399726691085,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 14.032878197622784,
+    "intended": [
+     55,
+     80
+    ],
+    "in_range": false
+   },
+   "fold_to_bet": {
+    "estimate": 56.978446904918904,
+    "lower": 55.59150038986291,
+    "upper": 58.3653934199749,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.368948687951776,
+    "intended": null,
+    "in_range": null
+   },
+   "wtsd": {
+    "estimate": 44.33411643154529,
+    "lower": 43.04368401003932,
+    "upper": 45.62454885305126,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 4.995337153325752,
+    "intended": null,
+    "in_range": null
+   },
+   "wsd": {
+    "estimate": 59.89217677682029,
+    "lower": 58.501811480895334,
+    "upper": 61.28254207274525,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.382182982758066,
+    "intended": null,
+    "in_range": null
+   },
+   "bet_size": {
+    "estimate": 0.5165518744790275,
+    "lower": 0.4849301364259978,
+    "upper": 0.5481736125320572,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.12240954296908434,
+    "intended": null,
+    "in_range": null
+   },
+   "open_size": {
+    "estimate": 3.3379800753678066,
+    "lower": 3.2725960687941464,
+    "upper": 3.403364081941467,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.2531052008826091,
+    "intended": null,
+    "in_range": null
+   }
+  },
+  "tag": {
+   "vpip": {
+    "estimate": 19.796885942085897,
+    "lower": 18.078674570270287,
+    "upper": 21.515097313901506,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 6.651293752276236,
+    "intended": [
+     17,
+     26
+    ],
+    "in_range": true
+   },
+   "pfr": {
+    "estimate": 14.36284969846586,
+    "lower": 13.082790146662141,
+    "upper": 15.642909250269579,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 4.9551831859062325,
+    "intended": [
+     13,
+     22
+    ],
+    "in_range": true
+   },
+   "three_bet": {
+    "estimate": 5.4114187523641535,
+    "lower": 5.021086471046346,
+    "upper": 5.801751033681961,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 1.5109984176728357,
+    "intended": [
+     4,
+     9
+    ],
+    "in_range": true
+   },
+   "fold_to_3bet": {
+    "estimate": 72.05811664004831,
+    "lower": 69.97505788818391,
+    "upper": 74.14117539191271,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 8.063638670520282,
+    "intended": null,
+    "in_range": null
+   },
+   "af": {
+    "estimate": 2.9702309602407473,
+    "lower": 2.806544024329502,
+    "upper": 3.1339178961519925,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.6336414203831395,
+    "intended": [
+     2,
+     4
+    ],
+    "in_range": true
+   },
+   "cbet": {
+    "estimate": 70.10080027586021,
+    "lower": 68.1406735279277,
+    "upper": 72.06092702379271,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 7.587761905228552,
+    "intended": [
+     60,
+     78
+    ],
+    "in_range": true
+   },
+   "fold_to_cbet": {
+    "estimate": 49.43957913663539,
+    "lower": 47.04771073859777,
+    "upper": 51.831447534673,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 9.259058340024687,
+    "intended": [
+     40,
+     60
+    ],
+    "in_range": true
+   },
+   "fold_to_bet": {
+    "estimate": 49.93505581852326,
+    "lower": 48.51374324451715,
+    "upper": 51.35636839252937,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.501981652891199,
+    "intended": null,
+    "in_range": null
+   },
+   "wtsd": {
+    "estimate": 43.45183929596565,
+    "lower": 42.522061448304804,
+    "upper": 44.38161714362649,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 3.5992228258951795,
+    "intended": null,
+    "in_range": null
+   },
+   "wsd": {
+    "estimate": 54.8538241162231,
+    "lower": 53.69816208223189,
+    "upper": 56.009486150214315,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 4.473633333194761,
+    "intended": null,
+    "in_range": null
+   },
+   "bet_size": {
+    "estimate": 0.6784291954460036,
+    "lower": 0.6477370971392638,
+    "upper": 0.7091212937527434,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.11881085474143531,
+    "intended": null,
+    "in_range": null
+   },
+   "open_size": {
+    "estimate": 3.6478208878200573,
+    "lower": 3.586278037274374,
+    "upper": 3.7093637383657407,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.23823586786021045,
+    "intended": null,
+    "in_range": null
+   }
+  },
+  "lag": {
+   "vpip": {
+    "estimate": 29.353781641661563,
+    "lower": 27.361378301390236,
+    "upper": 31.34618498193289,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 7.712706426309889,
+    "intended": [
+     26,
+     38
+    ],
+    "in_range": true
+   },
+   "pfr": {
+    "estimate": 21.812217926636652,
+    "lower": 20.332750285176452,
+    "upper": 23.291685568096852,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.727103220100851,
+    "intended": [
+     20,
+     32
+    ],
+    "in_range": true
+   },
+   "three_bet": {
+    "estimate": 12.521312014758916,
+    "lower": 11.565905422783743,
+    "upper": 13.476718606734089,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 3.6984331499174563,
+    "intended": [
+     7,
+     14
+    ],
+    "in_range": true
+   },
+   "fold_to_3bet": {
+    "estimate": 67.87119671671982,
+    "lower": 66.03655365041156,
+    "upper": 69.70583978302808,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 7.102007450747192,
+    "intended": null,
+    "in_range": null
+   },
+   "af": {
+    "estimate": 3.5126184209993117,
+    "lower": 3.21142739539438,
+    "upper": 3.8138094466042434,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 1.1659275568237468,
+    "intended": [
+     2.5,
+     5
+    ],
+    "in_range": true
+   },
+   "cbet": {
+    "estimate": 79.22380114074936,
+    "lower": 77.27844864430128,
+    "upper": 81.16915363719744,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 7.5305699390916745,
+    "intended": [
+     68,
+     85
+    ],
+    "in_range": true
+   },
+   "fold_to_cbet": {
+    "estimate": 41.11221457008308,
+    "lower": 38.60610569172946,
+    "upper": 43.618323448436705,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 9.701289724036501,
+    "intended": [
+     30,
+     50
+    ],
+    "in_range": true
+   },
+   "fold_to_bet": {
+    "estimate": 40.80947960906132,
+    "lower": 38.612444146587215,
+    "upper": 43.006515071535425,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 8.504848987026474,
+    "intended": null,
+    "in_range": null
+   },
+   "wtsd": {
+    "estimate": 47.17975009568156,
+    "lower": 45.86724204133507,
+    "upper": 48.49225815002806,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.080793181145311,
+    "intended": null,
+    "in_range": null
+   },
+   "wsd": {
+    "estimate": 50.230504156461116,
+    "lower": 49.372812640687876,
+    "upper": 51.088195672234356,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 3.3201725432737335,
+    "intended": null,
+    "in_range": null
+   },
+   "bet_size": {
+    "estimate": 0.7957442855945831,
+    "lower": 0.7584023927779079,
+    "upper": 0.8330861784112583,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.14455258675611593,
+    "intended": null,
+    "in_range": null
+   },
+   "open_size": {
+    "estimate": 3.8964457202912923,
+    "lower": 3.821834953680246,
+    "upper": 3.971056486902339,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.28882251273206644,
+    "intended": null,
+    "in_range": null
+   }
+  },
+  "calling_station": {
+   "vpip": {
+    "estimate": 44.07597101381934,
+    "lower": 41.86043282879741,
+    "upper": 46.291509198841275,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 8.576474076291493,
+    "intended": [
+     35,
+     60
+    ],
+    "in_range": true
+   },
+   "pfr": {
+    "estimate": 5.696359467880611,
+    "lower": 5.124670908893255,
+    "upper": 6.268048026867967,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 2.2130388629790003,
+    "intended": [
+     3,
+     12
+    ],
+    "in_range": true
+   },
+   "three_bet": {
+    "estimate": 2.5819987625147034,
+    "lower": 1.9416952131136846,
+    "upper": 3.222302311915722,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 2.4786513857087504,
+    "intended": [
+     0.5,
+     4
+    ],
+    "in_range": true
+   },
+   "fold_to_3bet": {
+    "estimate": 49.98135147384691,
+    "lower": 47.24223948654593,
+    "upper": 52.72046346114789,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 10.603257984882605,
+    "intended": null,
+    "in_range": null
+   },
+   "af": {
+    "estimate": 0.3313018942072069,
+    "lower": 0.30500714648695904,
+    "upper": 0.3575966419274548,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.10178846101138088,
+    "intended": [
+     0.3,
+     1.2
+    ],
+    "in_range": true
+   },
+   "cbet": {
+    "estimate": 29.334403879674678,
+    "lower": 26.55110017198216,
+    "upper": 32.1177075873672,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 10.774326643002343,
+    "intended": [
+     20,
+     45
+    ],
+    "in_range": true
+   },
+   "fold_to_cbet": {
+    "estimate": 19.008206721905832,
+    "lower": 17.365073543748,
+    "upper": 20.651339900063665,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 6.3606618029133974,
+    "intended": [
+     5,
+     25
+    ],
+    "in_range": true
+   },
+   "fold_to_bet": {
+    "estimate": 17.9275731774887,
+    "lower": 16.51441325238495,
+    "upper": 19.34073310259245,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.470422286215902,
+    "intended": null,
+    "in_range": null
+   },
+   "wtsd": {
+    "estimate": 69.95438020084963,
+    "lower": 68.35589803200845,
+    "upper": 71.5528623696908,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 6.187815211293591,
+    "intended": null,
+    "in_range": null
+   },
+   "wsd": {
+    "estimate": 47.350826669299664,
+    "lower": 46.62381510903332,
+    "upper": 48.077838229566005,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 2.8143030176330512,
+    "intended": null,
+    "in_range": null
+   },
+   "bet_size": {
+    "estimate": 0.48119286490998336,
+    "lower": 0.4530666199632848,
+    "upper": 0.5093191098566819,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.10887829073747014,
+    "intended": null,
+    "in_range": null
+   },
+   "open_size": {
+    "estimate": 3.272218993558082,
+    "lower": 3.2166537807695965,
+    "upper": 3.3277842063465677,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.21509609278945843,
+    "intended": null,
+    "in_range": null
+   }
+  },
+  "maniac": {
+   "vpip": {
+    "estimate": 54.5786985736352,
+    "lower": 52.77751174383325,
+    "upper": 56.37988540343715,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 6.972496460132614,
+    "intended": [
+     45,
+     75
+    ],
+    "in_range": true
+   },
+   "pfr": {
+    "estimate": 38.83851899347902,
+    "lower": 37.33723588352462,
+    "upper": 40.33980210343342,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.811552136967887,
+    "intended": [
+     32,
+     60
+    ],
+    "in_range": true
+   },
+   "three_bet": {
+    "estimate": 27.935130633952006,
+    "lower": 26.349597491066437,
+    "upper": 29.520663776837576,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 6.1376887967852545,
+    "intended": [
+     12,
+     30
+    ],
+    "in_range": true
+   },
+   "fold_to_3bet": {
+    "estimate": 54.60166139554356,
+    "lower": 53.31393506738016,
+    "upper": 55.88938772370696,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 4.9848617123889065,
+    "intended": null,
+    "in_range": null
+   },
+   "af": {
+    "estimate": 3.616328420300268,
+    "lower": 3.3312858777778134,
+    "upper": 3.901370962822723,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 1.1034158621643648,
+    "intended": [
+     3,
+     8
+    ],
+    "in_range": true
+   },
+   "cbet": {
+    "estimate": 85.75863187694685,
+    "lower": 84.35847425997723,
+    "upper": 87.15878949391647,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.4200896133700125,
+    "intended": [
+     75,
+     95
+    ],
+    "in_range": true
+   },
+   "fold_to_cbet": {
+    "estimate": 33.131037096214506,
+    "lower": 30.38625208083837,
+    "upper": 35.87582211159064,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 10.625218598583393,
+    "intended": [
+     10,
+     35
+    ],
+    "in_range": true
+   },
+   "fold_to_bet": {
+    "estimate": 31.46210807789927,
+    "lower": 28.892313476555355,
+    "upper": 34.03190267924318,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 9.947820772767098,
+    "intended": null,
+    "in_range": null
+   },
+   "wtsd": {
+    "estimate": 51.035178115113325,
+    "lower": 49.59369807044083,
+    "upper": 52.47665815978582,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 5.580051076620368,
+    "intended": null,
+    "in_range": null
+   },
+   "wsd": {
+    "estimate": 41.84810271599641,
+    "lower": 40.87975103249028,
+    "upper": 42.81645439950254,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 3.748544334044642,
+    "intended": null,
+    "in_range": null
+   },
+   "bet_size": {
+    "estimate": 1.0122412298489254,
+    "lower": 0.9605839431582871,
+    "upper": 1.0638985165395638,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.19996828903647665,
+    "intended": null,
+    "in_range": null
+   },
+   "open_size": {
+    "estimate": 4.310069744481763,
+    "lower": 4.210932716387569,
+    "upper": 4.409206772575956,
+    "n": 60,
+    "method": "t",
+    "confidence": 0.95,
+    "player_sd": 0.38376506313386594,
+    "intended": null,
+    "in_range": null
+   }
+  }
+ },
+ "orderings": [
+  {
+   "stat": "wtsd",
+   "higher": "calling_station",
+   "lower": "nit",
+   "values": [
+    69.95438020084963,
+    44.33411643154529
+   ],
+   "holds": true
+  },
+  {
+   "stat": "wtsd",
+   "higher": "calling_station",
+   "lower": "tag",
+   "values": [
+    69.95438020084963,
+    43.45183929596565
+   ],
+   "holds": true
+  },
+  {
+   "stat": "wsd",
+   "higher": "nit",
+   "lower": "calling_station",
+   "values": [
+    59.89217677682029,
+    47.350826669299664
+   ],
+   "holds": true
+  },
+  {
+   "stat": "wsd",
+   "higher": "tag",
+   "lower": "maniac",
+   "values": [
+    54.8538241162231,
+    41.84810271599641
+   ],
+   "holds": true
+  }
+ ],
+ "driver_correlations": [
+  {
+   "param": "range_width",
+   "stat": "vpip",
+   "spearman_all": 0.9949423871248563,
+   "spearman_within_archetype": {
+    "nit": 0.9869408168935817,
+    "tag": 0.9876076687968882,
+    "lag": 0.9822587144420349,
+    "calling_station": 0.9791053070297309,
+    "maniac": 0.961933870519589
+   }
+  },
+  {
+   "param": "raise_share",
+   "stat": "pfr_over_vpip",
+   "spearman_all": 0.9040193566638421,
+   "spearman_within_archetype": {
+    "nit": 0.7578877173240062,
+    "tag": 0.8071130869686025,
+    "lag": 0.6520144484579051,
+    "calling_station": 0.7861072520144486,
+    "maniac": 0.668685746040567
+   }
+  },
+  {
+   "param": "three_bet_freq",
+   "stat": "three_bet",
+   "spearman_all": 0.8653509483438704,
+   "spearman_within_archetype": {
+    "nit": 0.5219783273131426,
+    "tag": 0.3429285912753543,
+    "lag": 0.48719088635732166,
+    "calling_station": 0.9606001667129759,
+    "maniac": 0.7786607390941929
+   }
+  },
+  {
+   "param": "cbet_freq",
+   "stat": "cbet",
+   "spearman_all": 0.9742482885255762,
+   "spearman_within_archetype": {
+    "nit": 0.7218315760501899,
+    "tag": 0.8818928276412732,
+    "lag": 0.8623626336291194,
+    "calling_station": 0.7467107554730587,
+    "maniac": 0.9318143928869131
+   }
+  },
+  {
+   "param": "fold_to_aggression",
+   "stat": "fold_to_bet",
+   "spearman_all": 0.955466278010459,
+   "spearman_within_archetype": {
+    "nit": 0.3057515976660184,
+    "tag": 0.6075576549041402,
+    "lag": 0.9488191164212283,
+    "calling_station": 0.9653237010280634,
+    "maniac": 0.9687691025284804
+   }
+  },
+  {
+   "param": "value_aggression",
+   "stat": "aggr_share",
+   "spearman_all": 0.7923703930957621,
+   "spearman_within_archetype": {
+    "nit": 0.7135076580215267,
+    "tag": 0.5418727424284524,
+    "lag": 0.27663239788830235,
+    "calling_station": 0.7896637954987498,
+    "maniac": 0.20361211447624344
+   }
+  },
+  {
+   "param": "bluff_freq",
+   "stat": "aggr_share",
+   "spearman_all": 0.6752531448457452,
+   "spearman_within_archetype": {
+    "nit": 0.09214438579270874,
+    "tag": 0.32936926924145604,
+    "lag": 0.33764934704084476,
+    "calling_station": 0.3371492081133649,
+    "maniac": 0.38949708252292314
+   }
+  },
+  {
+   "param": "bet_size_pot",
+   "stat": "bet_size",
+   "spearman_all": 0.9992866587406527,
+   "spearman_within_archetype": {
+    "nit": 0.9952208946929706,
+    "tag": 0.9969435954431787,
+    "lag": 0.9961100305640458,
+    "calling_station": 0.9981661572659075,
+    "maniac": 0.9981661572659075
+   }
+  }
+ ]
+}

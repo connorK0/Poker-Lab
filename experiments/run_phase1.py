@@ -1,7 +1,7 @@
 """Reproduce every Phase 1 experiment from one master seed.
 
-    python -m experiments.run_phase1 --seed 2026              # full run (~25 min, 16 cores)
-    python -m experiments.run_phase1 --seed 2026 --quick      # smoke test (~3 min)
+    python -m experiments.run_phase1 --seed 2026              # full run (~11 min, 16 cores)
+    python -m experiments.run_phase1 --seed 2026 --quick      # smoke test (~1 min)
 
 Steps:
 1. M3 sanity check: archetype bots vs intended tendencies -> ``<out>/bot_sanity/``.
