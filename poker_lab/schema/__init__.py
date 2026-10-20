@@ -33,6 +33,7 @@ from poker_lab.schema.hand_history import (
     TableConfig,
 )
 from poker_lab.schema.positions import assign_positions, position_names, seat_order_from_button
+from poker_lab.schema.redaction import redact_hole_cards
 from poker_lab.schema.serialization import (
     dumps_hand,
     hand_from_dict,
@@ -94,6 +95,7 @@ __all__ = [
     "parse_cards",
     "position_names",
     "read_jsonl",
+    "redact_hole_cards",
     "seat_order_from_button",
     "validate_hand_history",
     "write_jsonl",
