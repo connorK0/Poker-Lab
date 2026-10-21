@@ -126,7 +126,9 @@ def markdown_summary(results: dict[str, Any]) -> str:
         "",
         "Exploitability (NashConv / 2, chips per hand) of the average strategy. Full-width",
         "variants are deterministic; MCCFR rows are geometric means over seeds with 95%",
-        "t-intervals on the log scale.",
+        "t-intervals on the log scale. Timings (ms per iteration) are wall-clock on the",
+        "recording machine and vary between runs; every other number is reproduced exactly",
+        "by the seed.",
         "",
     ]
     for game in results["full_width"]:
@@ -180,14 +182,21 @@ def make_figures(results: dict[str, Any], out_dir: Path) -> None:
             for power, text in ((0.5, "1/sqrt(T)"), (1.0, "1/T")):
                 ys = x0["exploitability"] * (xs / xs[0]) ** -power
                 ax.plot(xs, ys, color=theme["muted"], linewidth=1, linestyle="--")
+                xm = xs[0] * (xs[1] / xs[0]) ** 0.35  # label a third of the way along
+                ym = x0["exploitability"] * (xm / xs[0]) ** -power
                 ax.annotate(
-                    text, (xs[1], ys[1]), color=theme["ink2"], fontsize=8, ha="right", va="bottom"
+                    text,
+                    (xm, ym),
+                    xytext=(6, 6),
+                    textcoords="offset points",
+                    color=theme["ink2"],
+                    fontsize=8,
                 )
             ax.set_xscale("log")
             ax.set_yscale("log")
             ax.set_xlabel("Iterations")
             ax.set_ylabel("Exploitability (chips / hand)")
-            ax.set_title(GAME_LABEL[game], loc="left", fontsize=10)
+            ax.set_title(GAME_LABEL[game], loc="left", fontsize=10, color=theme["ink"])
             legend(ax, theme, loc="lower left")
         title(
             fig,
@@ -215,12 +224,13 @@ def make_figures(results: dict[str, Any], out_dir: Path) -> None:
                 band(ax, x, lo, hi, color)
                 label = f"{VARIANT_LABEL[variant]} ({agg['points'][0]['n']} seeds)"
                 y = [p["geo_mean"] for p in agg["points"]]
-                line(ax, theme, x, y, color, label, markevery=4)
+                style = "--" if variant == "es_linear" else "-"
+                line(ax, theme, x, y, color, label, markevery=4, linestyle=style)
             ax.set_xscale("log")
             ax.set_yscale("log")
             ax.set_xlabel("Tree nodes touched")
             ax.set_ylabel("Exploitability (chips / hand)")
-            ax.set_title(GAME_LABEL[game], loc="left", fontsize=10)
+            ax.set_title(GAME_LABEL[game], loc="left", fontsize=10, color=theme["ink"])
             legend(ax, theme, loc="lower left")
         title(
             fig,
