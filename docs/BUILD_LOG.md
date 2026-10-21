@@ -49,6 +49,7 @@ $B(a,b)$ the beta function.
   * [Step 17: Small games and a tree compiler](#step-17-small-games-and-a-tree-compiler-p21)
   * [Step 18: Exact evaluation and an LP solver](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22)
   * [Step 19: CFR and its variants](#step-19-cfr-and-its-variants-p23)
+  * [Step 20: Deep CFR in PyTorch](#step-20-deep-cfr-in-pytorch-p24-p210)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -180,6 +181,7 @@ the sanity check ([Step 9](#step-9-the-sanity-check-tuning-against-pre-registere
 | phevaluator 0.6 (Apache-2.0) | fast 5-7 card hand evaluation in C |
 | pytest, ruff | tests, lint and formatting |
 | PyYAML | experiment configs |
+| PyTorch 2.14.1 (CPU; optional `nn` extra) | Deep CFR networks (Phase 2) |
 
 ## A.6 Game theory in one page
 
@@ -1377,6 +1379,137 @@ variant converges, and check them against the exact LP.
 3. *Checkpoints that missed powers of 10.* They left table cells empty in the first smoke run;
    `log_checkpoints` now aligns them.
 
+## Step 20: Deep CFR in PyTorch (P2.4, P2.10)
+
+**Goal.** Replace CFR's regret table with neural networks, the step that lets CFR scale to
+games too large to enumerate, and measure honestly what that costs in a game small enough to
+check exactly.
+
+**What was built.**
+* [`solvers/deep_cfr.py`](../poker_lab/solvers/deep_cfr.py): `DeepCFR`, `InfosetEncoder`,
+  `Reservoir`.
+* [`experiments/phase2_deep_cfr.py`](../experiments/phase2_deep_cfr.py): the experiment.
+* PyTorch 2.14.1 (CPU) as the `nn` extra. Its version is recorded in every results file.
+
+**Concepts and math.**
+
+* **Why networks.** A table needs a regret for every information set, and NLHE has about
+  $10^{160}$ of them. A network that maps information-set *features* to regrets generalizes:
+  similar situations get similar regrets without being visited. The rank-only features here
+  merge Leduc's 936 information sets into 288 classes (the suits never matter), so even this
+  small network shares statistics across suit-isomorphic situations. A test checks that count.
+* **The algorithm** (Brown, Lerer, Gross, Sandholm 2019). On iteration $t$, for each player
+  $p$:
+  1. *Traverse.* Run $K$ external-sampling traversals (Step 19). At $p$'s information sets,
+     play regret matching on the *predicted* advantages $V_p(I)$. If none is positive, play the
+     largest. Store $(I, t, \tilde r)$ in $p$'s advantage memory, where
+     $\tilde r(a) = v(a) - \sum_b \sigma(b)\,v(b)$ are the sampled regrets. Store
+     $(I, t, \sigma(I))$ in the strategy memory at the opponent's information sets.
+  2. *Fit.* Re-initialize $V_p$ and train it from scratch on the whole memory, minimizing
+     $\sum_i t_i \,\lVert V_p(I_i) - \tilde r_i \rVert^2$ over legal actions.
+
+  At the end, a policy network $\Pi$ is fit to the strategy memory (cross-entropy, weights
+  $t$).
+* **Why that regression target is right.** For a fixed $I$, the minimizer of
+  $\sum_i t_i (V - \tilde r_i)^2$ is the weighted mean $\sum t_i \tilde r_i / \sum t_i$. That is
+  proportional to linear CFR's cumulative regret, estimated from samples, and regret matching
+  ignores the proportionality constant. Likewise $\Pi$'s minimizer is linear CFR's average
+  strategy. A network with enough capacity, trained to convergence, would therefore reproduce
+  sampled linear CFR. Everything Deep CFR loses comes from finite data, finite capacity and
+  imperfect training.
+* **Reservoir sampling** (Vitter's algorithm R). Keep the first $C$ items. For the $n$-th
+  item ($n > C$), overwrite a random slot with probability $C/n$. By induction every item seen
+  so far is in memory with probability exactly $C/n$, so the memory is always a uniform sample
+  of everything generated, using fixed space. A statistical test checks this.
+* **A small-game shortcut that changes nothing.** Within an iteration the networks are frozen,
+  so the strategy is a fixed function of the information set. Evaluating the network once on
+  all 936 information sets and traversing with that table is therefore *identical* to querying
+  the network at every visited node, just faster.
+* **Exact evaluation of four policies.** Because everything can be enumerated:
+  1. the policy network (Deep CFR's output);
+  2. the strategy-memory average ($\Pi$'s regression target);
+  3. the *exact* reach- and $t$-weighted average of the strategies the advantage networks
+     played, which is what Single Deep CFR (Steinberger 2019) plays;
+  4. the current strategy.
+
+  Comparing them separates the error of fitting $\Pi$ from everything else.
+* **A controlled ablation: the perfect regressor.** Replace each network by the exact minimizer
+  of its loss (per-information-set weighted means), keeping traversals and memories identical.
+  The comparisons then read:
+  * *tabular MCCFR → perfect regressor:* the cost of updating the strategy only once per $K$
+    traversals;
+  * *perfect regressor → Deep CFR:* the cost of function approximation.
+* **Fair comparisons.**
+  * *Matched traversals.* Tabular external-sampling MCCFR with linear weights gets $KT$
+    iterations of 2 traversals each, the same budget.
+  * *Tuning off the reporting seeds.* The training budget was tuned on development seed 99,
+    never on a reporting seed, by how well the network fits a realistic memory snapshot
+    ($R^2$ against the per-information-set targets):
+
+    | Steps | Learning rate | $R^2$ | Time |
+    |---|---|---|---|
+    | 300 | $10^{-3}$ constant | 0.875 | 1.0 s |
+    | 600 | $10^{-3}$ constant | 0.929 | 1.9 s |
+    | 600 | $3\cdot10^{-3}$ cosine | 0.943 | 1.9 s |
+    | 1,000 | $3\cdot10^{-3}$ cosine | 0.954 | 3.2 s |
+
+    600 steps with cosine decay was chosen.
+
+**Results** ([`deep_cfr_summary.md`](../experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
+commit `d09ad62`; 5 seeds; geometric means with 95% intervals; uniform policy at 2.37):
+
+| Method | 20k traversals | 60k | 200k |
+|---|---|---|---|
+| Tabular ES-MCCFR, linear weights | 0.240 [0.211, 0.273] | 0.141 [0.133, 0.150] | 0.072 [0.069, 0.075] |
+| Deep CFR with a perfect regressor | 0.563 [0.504, 0.628] | 0.180 [0.157, 0.206] | 0.087 [0.074, 0.102] |
+| Deep CFR, policy network | 0.537 [0.408, 0.707] | 0.230 [0.190, 0.278] | 0.161 [0.134, 0.193] |
+| Deep CFR, exact average (SD-CFR) | 0.540 [0.405, 0.720] | 0.230 [0.194, 0.272] | 0.160 [0.136, 0.188] |
+| Deep CFR, current strategy | 0.843 | 0.972 | 1.196 |
+
+1. *Deep CFR works but plateaus.* It falls from 2.37 to 0.16 chips per hand. From iteration 50
+   to 100 it barely moves (0.18 → 0.16), while the perfect regressor keeps improving
+   (0.12 → 0.087). This is the signature of an approximation-error floor: more data does not
+   fix errors the network makes near zero advantage, where regret matching is most sensitive.
+2. *The cost decomposes cleanly.* At 200k traversals, batching costs a factor of 1.2
+   (0.072 → 0.087) and function approximation a factor of 1.85 (0.087 → 0.161). Early on,
+   batching dominates: with only 10 strategy updates, the perfect regressor is 2.3 times worse
+   than tabular MCCFR.
+3. *Fitting the policy network is not the bottleneck.* $\Pi$, the memory average and the exact
+   average agree to three decimals. In this game Single Deep CFR (no $\Pi$) would give the same
+   answer.
+4. *The current strategy does not converge* (0.84 → 1.20). Only averages carry CFR's
+   guarantee.
+5. *Cost.* About 5.7 s per iteration (single thread, 8 runs in parallel), against microseconds
+   per tabular iteration. In Leduc, Deep CFR loses to a table on every axis. That is expected:
+   its purpose is games where no table fits. The value of this step is a correct, measured
+   implementation whose error sources are known before it is pointed at larger games.
+
+**Verification.** [`tests/test_deep_cfr.py`](../tests/test_deep_cfr.py) (5 tests; skipped
+without PyTorch):
+* the encoder gives 288 distinct rows and correct legal masks;
+* the reservoir keeps a uniform sample;
+* the perfect-regressor variant converges on Kuhn;
+* the network variant is reproducible from its seed, and its trajectory does not depend on
+  when it is evaluated;
+* the config is validated.
+
+**Pitfalls.**
+1. *Evaluation changed the experiment.* Training the policy network at a checkpoint drew new
+   random weights from PyTorch's global generator. That shifted the initialization of every
+   later advantage network, so the same seed gave 0.39 or 0.44 depending on the evaluation
+   schedule. Every network now gets a seed derived from (seed, iteration, role) inside
+   `torch.random.fork_rng`, and a test checks that extra checkpoints change nothing.
+2. *A tie broken badly.* Before training, all advantages are zero. The "play the largest"
+   rule then picked the first legal action (fold or check) with probability 1. Untrained
+   players now play uniformly.
+3. *A wrong test, not a wrong algorithm.* I expected both players to have played uniformly
+   after iteration 1. With alternating updates, player 0's network is retrained *before* player
+   1 traverses, exactly as in the paper's Algorithm 1. The test was corrected.
+4. *A diagnostic that silently failed.* A scratch script outside the repo could not import
+   `poker_lab` (Python puts the *script's* directory on the path, not the working directory),
+   and a polling loop waited ten minutes for output that would never come. Set `PYTHONPATH`, and
+   check a background job's first lines before waiting on it.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1454,6 +1587,9 @@ numeric table next to it, so no number depends on reading a color.
 | Policy constructor renormalized valid input by one ulp | exact-equality test | repair only sums off by more than $10^{-12}$ | [18](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22) |
 | Plan asked for seeds on deterministic CFR curves | thinking about what a seed would change | seeds only for sampled methods | [19](#step-19-cfr-and-its-variants-p23) |
 | Checkpoints missed powers of 10 | empty cells in the smoke-run table | decade-aligned `log_checkpoints` | [19](#step-19-cfr-and-its-variants-p23) |
+| Evaluating the policy network shifted later network initializations | same seed, different results with a different checkpoint schedule | derived per-network seeds in `fork_rng` | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
+| Argmax rule on all-zero advantages played fold/check with certainty | first-iteration strategy inspection | uniform play until first trained | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
+| Scratch diagnostic could not import the package; wait loop never noticed | empty output after ten minutes | `PYTHONPATH`, check first lines early | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
 
 ---
 
@@ -1472,6 +1608,7 @@ numeric table next to it, so no number depends on reading a color.
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
 | Credible interval | interval containing the parameter with a given posterior probability |
+| Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | ECE | expected calibration error |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
@@ -1490,6 +1627,7 @@ numeric table next to it, so no number depends on reading a color.
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
+| Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
 | Regret matching | play actions in proportion to their positive cumulative regret |
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
@@ -1538,6 +1676,9 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
   Minimization.* AAAI. (Linear and discounted CFR)
 * Brown, N., Lerer, A., Gross, S., Sandholm, T. (2019). *Deep Counterfactual Regret
   Minimization.* ICML.
+* Steinberger, E. (2019). *Single Deep Counterfactual Regret Minimization.* arXiv:1901.07621.
+* Vitter, J. S. (1985). *Random Sampling with a Reservoir.* ACM Transactions on Mathematical
+  Software 11. (Reservoir sampling)
 * Johanson, M., Zinkevich, M., Bowling, M. (2008). *Computing Robust Counter-Strategies.*
   NeurIPS. (Restricted Nash response)
 * Johanson, M., Bowling, M. (2009). *Data Biased Robust Counter Strategies.* AISTATS.
@@ -1583,3 +1724,5 @@ Software design
   compiler) and Step 18 (best responses, exploitability, sequence-form LP).
 * 2026-10-21: Step 19 (CFR, CFR+, linear/discounted CFR, external-sampling MCCFR). Results
   from commit `53eb199`, cross-checked against `experiments/results/phase2/cfr/cfr_summary.md`.
+* 2026-10-21: Step 20 (Deep CFR). Results from commit `d09ad62`, cross-checked against
+  `experiments/results/phase2/deep_cfr/deep_cfr_summary.md`.
