@@ -26,6 +26,7 @@ $B(a,b)$ the beta function.
   * [A.3 HUD statistics and why denominators matter](#a3-hud-statistics-and-why-denominators-matter)
   * [A.4 Player archetypes](#a4-player-archetypes)
   * [A.5 Toolchain](#a5-toolchain)
+  * [A.6 Game theory in one page](#a6-game-theory-in-one-page)
 * [Part B: the steps](#part-b-the-steps)
   * [Step 0: Bootstrap and working agreements](#step-0-bootstrap-and-working-agreements)
   * [Step 1: Choosing the engine and evaluator by measurement](#step-1-choosing-the-engine-and-evaluator-by-measurement)
@@ -44,6 +45,9 @@ $B(a,b)$ the beta function.
   * [Step 14: Experimental design](#step-14-experimental-design-m5)
   * [Step 15: Phase 1 results and how to read them](#step-15-phase-1-results-and-how-to-read-them-m5)
   * [Step 16: Interfaces for Phases 2-5](#step-16-interfaces-for-phases-2-5-m6)
+  * Phase 2
+  * [Step 17: Small games and a tree compiler](#step-17-small-games-and-a-tree-compiler-p21)
+  * [Step 18: Exact evaluation and an LP solver](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -175,6 +179,54 @@ the sanity check ([Step 9](#step-9-the-sanity-check-tuning-against-pre-registere
 | phevaluator 0.6 (Apache-2.0) | fast 5-7 card hand evaluation in C |
 | pytest, ruff | tests, lint and formatting |
 | PyYAML | experiment configs |
+
+## A.6 Game theory in one page
+
+Phase 2 computes equilibrium ("GTO") strategies and measures how far other strategies are from
+them. This is the vocabulary it uses.
+
+* **Extensive-form game.** A tree. An internal node is either a *decision node*, where a
+  player picks an action, or a *chance node*, where nature picks an outcome with known
+  probabilities (dealing a card). Leaves (*terminal nodes*) carry payoffs. A *history* $h$ is
+  the path from the root to a node.
+* **Information set.** A player cannot see the opponent's cards, so several histories look the
+  same to them. An information set $I$ groups the histories the acting player cannot tell
+  apart, and the player must act the same way at all of them. In poker,
+  $I$ = (own cards, public cards, betting so far).
+* **Perfect recall.** Players never forget their own actions or what they saw. Formally, all
+  histories in $I$ share the same sequence of the player's own (information set, action)
+  pairs. Every algorithm in Phase 2 assumes this, and the tree compiler checks it.
+* **Behavior strategy.** $\sigma_i(I)$ is a probability distribution over the actions at each
+  of player $i$'s information sets. A *profile* $\sigma = (\sigma_1, \sigma_2)$ fixes both
+  players. The probability of reaching $h$ factors into chance's and each player's
+  contributions: $\pi^\sigma(h) = \pi_c(h)\,\pi_1^\sigma(h)\,\pi_2^\sigma(h)$.
+* **Zero-sum games and the value.** Player 2's payoff is minus player 1's, $u_2 = -u_1$. Von
+  Neumann's minimax theorem says
+  $\max_{\sigma_1}\min_{\sigma_2} u_1 = \min_{\sigma_2}\max_{\sigma_1} u_1 = v^*$, the *game
+  value*. Kuhn poker has $v^* = -1/18$ for the first player and Leduc hold'em $-0.0856$:
+  acting first is a disadvantage in both.
+* **Best response.** $\mathrm{BR}_1(\sigma_2) = \max_{\sigma_1'} u_1(\sigma_1', \sigma_2)$, the
+  most player 1 can get against a fixed opponent. Some best response is always pure (one
+  action per information set).
+* **Nash equilibrium.** A profile in which each strategy is a best response to the other. In
+  two-player zero-sum games every equilibrium strategy guarantees at least the value against
+  *any* opponent, and equilibrium strategies are interchangeable. This is what "game-theory
+  optimal" means in poker.
+* **NashConv and exploitability.**
+  $\operatorname{NashConv}(\sigma) = \mathrm{BR}_1(\sigma_2) + \mathrm{BR}_2(\sigma_1)
+  = [\mathrm{BR}_1(\sigma_2) - v^*] + [\mathrm{BR}_2(\sigma_1) + v^*]$: the total that the two
+  players could gain by deviating. It is $\ge 0$, and $0$ exactly at an equilibrium.
+  *Exploitability* is $\operatorname{NashConv}/2$: what a best-responding opponent wins per
+  hand against $\sigma$, above the game value, averaged over both seats.
+* **Equilibrium versus exploitation.** An equilibrium guarantees the value but does not punish
+  mistakes as hard as possible. Against a calling station, a best response wins far more than
+  the equilibrium does. Exploiting someone means deviating from equilibrium, which opens you
+  to counter-exploitation. Phase 2 measures both sides of that trade-off exactly in Leduc.
+
+**Kuhn poker** (3 cards, one bet) and **Leduc hold'em** (6 cards, two betting rounds, one
+public card) are the standard small poker games of the research literature. They are small
+enough to solve exactly and rich enough to contain bluffing, slow-playing and card removal.
+Their rules are in [Step 17](#step-17-small-games-and-a-tree-compiler-p21).
 
 ---
 
@@ -983,6 +1035,191 @@ and *contract tests* every future implementation must pass.
   illegal sequence (by replaying the log through PokerKit) or payout that contradicts a fully
   known showdown becomes a typed `Conflict` for human review. Nothing is silently fixed.
 
+## Step 17: Small games and a tree compiler (P2.1)
+
+**Goal.** Poker games small enough to solve *exactly*, represented so that solvers are both
+fast and simple. Exact answers turn every Phase 2 question ("how exploitable is this?", "how
+much does exploiting this bot gain?") into a computation instead of a noisy simulation.
+
+**What was built.**
+* [`games/base.py`](../poker_lab/games/base.py): the `Game` interface. The rules are eight
+  pure functions on immutable states: initial state, is-terminal, whose turn, legal actions,
+  chance outcomes, next state, payoff, and information-set key.
+* [`games/kuhn.py`](../poker_lab/games/kuhn.py) and
+  [`games/leduc.py`](../poker_lab/games/leduc.py). Leduc takes the deck, ante, bet sizes and
+  raise cap as parameters, so larger variants can be built later to test scaling.
+* [`games/tree.py`](../poker_lab/games/tree.py): `compile_tree` turns a game into a
+  `GameTree` of flat NumPy arrays.
+* [`games/policy.py`](../poker_lab/games/policy.py): `TabularPolicy`, a strategy for both
+  players with one probability per (information set, action).
+
+**The rules.**
+* *Kuhn poker*: cards J < Q < K. Each player antes 1 and gets one card. Player 0 checks or
+  bets 1. After a check, player 1 checks (showdown for the antes) or bets 1. Facing a bet, a
+  player folds or calls, and a call goes to showdown.
+* *Leduc hold'em*: six cards (J, Q, K in two suits). Each player antes 1 and gets one private
+  card. In round 1 bets and raises are 2 chips, with at most two per round (a bet counts as the
+  first). Then one public card is dealt and round 2 is played the same way with bets of 4.
+  Player 0 acts first in both rounds. At showdown, a private card that pairs the public card
+  wins; otherwise the higher card wins, and equal ranks split. The largest possible pot is
+  13 chips from each player.
+
+**Concepts.**
+
+* **Describe the rules once, compile once.** Everything after the `Game` interface works on
+  compiled arrays. This separates two questions that are easy to confuse when debugging. "Are
+  the poker rules right?" is tested against hand-computed payoffs. "Is the algorithm right?"
+  is tested against brute force and an independent LP solver (Step 18).
+* **Breadth-first numbering makes tree algorithms into array operations.** Numbering nodes
+  breadth first puts each depth level in a contiguous block, every node after its parent, and
+  each node's children next to each other. The two passes every algorithm needs become one
+  vectorized line per level:
+  * *top-down (reach probabilities):* `reach[level] = reach[parent[level]] * edge[level]`;
+  * *bottom-up (expected values):* `v[parent] += edge * v[child]`, summed over siblings with
+    `np.bincount(parent, weights=...)`.
+
+  Leduc has 9,457 nodes and 11 levels, so a full expected-value pass is about 20 small NumPy
+  calls (well under a millisecond) instead of a recursive walk over 9,457 Python objects.
+* **Sequences.** A *sequence* is an (information set, action) pair. Sequences are numbered so
+  that each information set's actions are contiguous, so a whole strategy profile is one
+  vector (2,184 numbers for Leduc). Per-information-set sums, for normalizing or for regret
+  matching later, are a single `np.add.reduceat(x, offsets)`.
+* **Counting the information sets** is a good check that you understood the game.
+  * *Kuhn:* 3 cards $\times$ 4 betting points (player 0 at the start and after check-bet,
+    player 1 after a check or a bet) = 12.
+  * *Leduc round 1:* 6 betting points (player 0 at `""`, `kb` and `br`; player 1 at `k`, `b`
+    and `kbr`) $\times$ 6 private cards = 36.
+  * *Leduc round 2:* five round-1 lines reach the public card (`kk`, `bc`, `kbc`, `brc`,
+    `kbrc`). Each has 6 betting points $\times$ 6 private cards $\times$ 5 public cards, so
+    $5 \times 6 \times 30 = 900$.
+  * *Leduc total:* $36 + 900 = 936$, the standard count. Ignoring suits (they never matter in
+    Leduc) would give 288, but the standard game keeps them, and comparing with published
+    numbers requires the standard game.
+* **The information-set key is the small-game firewall.** A policy is a function of the key,
+  and the key contains only the actor's own card and public information. A test visits all
+  3,780 Leduc decision states, swaps the opponent's card for every unseen card, and checks that
+  the key never changes.
+* **The compiler checks its own assumptions.**
+  * chance probabilities are positive and sum to 1;
+  * each information set has one owner and one list of actions;
+  * all of an information set's nodes sit at the same depth, which the level-by-level best
+    response in Step 18 needs;
+  * every node of an information set is reached by the same sequence of the owner's own
+    actions (perfect recall). A test game whose player "forgets" their first action is
+    rejected.
+
+**Verification.** [`tests/test_games.py`](../tests/test_games.py):
+* *Tree sizes.* Kuhn has 58 nodes, 30 leaves and 12 information sets. Leduc has 9,457 nodes,
+  5,520 leaves, 936 information sets and 2,184 sequences.
+* *Payoffs.* Nine hand-computed Leduc outcomes, including the 13-chip maximum, folds in both
+  rounds and a split pot.
+* *Betting rules.* The raise cap and illegal-action errors.
+* *Vectorized values.* Expected values from the arrays equal a plain recursive evaluation to
+  $10^{-12}$ for random policies in both games.
+* *Structure.* Children are contiguous and point back to their parents, and leaf reach
+  probabilities sum to 1.
+* *Firewall and recall.* The card-swapping firewall test and the imperfect-recall rejection.
+* *Policy validation.* `TabularPolicy` construction and validation.
+
+## Step 18: Exact evaluation: best responses, exploitability and an LP solver (P2.2)
+
+**Goal.** Measure any strategy exactly (its value, the best response to it, its
+exploitability), and compute an exact equilibrium to check every later solver against.
+
+**What was built.** [`games/evaluate.py`](../poker_lab/games/evaluate.py) (`expected_value`,
+`head_to_head`, `best_response`, `exploitability_report`) and
+[`solvers/lp.py`](../poker_lab/solvers/lp.py) (`sequence_form`, `solve_lp`).
+
+**Concepts and math.**
+
+* **Expected value** is one bottom-up pass (Step 17).
+* **Best response by backward induction over information sets.** Fix the opponent's strategy.
+  Let $\pi_{-i}(h)$ be the probability that chance and the opponent play to history $h$, with
+  the responder's own choices counted as 1. At the responder's information set $I$, the
+  *counterfactual value* of action $a$ is
+
+  $$q(I, a) = \sum_{h \in I} \pi_{-i}(h)\, v(h \cdot a),$$
+
+  where $v$ below $I$ already uses the responder's best choices. The responder plays
+  $\arg\max_a q(I, a)$ at every node of $I$.
+
+  Why weight by $\pi_{-i}(h)$? By Bayes' rule, the responder's belief that it is at $h$
+  (rather than another history in $I$) is proportional to $\pi(h)$. Its own contribution to
+  $\pi(h)$ is identical for all $h \in I$ (perfect recall), so it cancels, leaving
+  $\pi_{-i}(h)$. Ties go to the first action, so the result is deterministic.
+* **Why one level at a time is enough.** Every node of an information set is at the same
+  depth (the compiler checks this). Processing the deepest level first therefore means every
+  child value is final when $I$ is decided. Each level is vectorized:
+  1. `np.bincount` sums $\pi_{-i}(h)\,v(h\cdot a)$ into $q$;
+  2. `np.maximum.reduceat` finds each information set's best value;
+  3. `np.minimum.reduceat` over candidate indices picks the first action that attains it.
+* **Worked example: uniform random Kuhn.** Against an opponent who picks uniformly
+  everywhere, these are the best responses and their values:
+
+  | Card | Player 0's best response | Value | Player 1's best response | Value |
+  |---|---|---|---|---|
+  | J | bet (bluff): $\tfrac12(+1) + \tfrac12(-2)$ | $-0.5$ | fold to a bet; bet after a check | $-0.75$ |
+  | Q | bet: $\tfrac12(+1) + \tfrac12 \cdot 0$ | $+0.5$ | call a bet; bet after a check | $+0.25$ |
+  | K | bet or check | $+1.5$ | call; bet after a check | $+1.75$ |
+  | **mean** | | $\mathrm{BR}_0 = 0.5$ | | $\mathrm{BR}_1 = 5/12$ |
+
+  So NashConv $= 1/2 + 5/12 = 11/12$. The code reproduces this exactly. For Leduc it gives
+  NashConv $= 4.747222\ldots$, the value OpenSpiel's test suite uses for the uniform policy.
+  That match is good evidence that the Leduc rules are the standard ones.
+* **The sequence form: equilibria by linear programming.** In a behavior strategy, the
+  probability of reaching a leaf is a *product* of the player's action probabilities, which
+  is not linear. The sequence form instead uses the *realization plan* $x[s]$: the probability
+  that the player's own actions along the path include sequence $s$. Realization plans
+  satisfy linear constraints:
+
+  $$x[\varnothing] = 1, \qquad \sum_{a} x[I, a] = x[\text{parent sequence of } I]
+  \quad \text{for every } I, \qquad x \ge 0,$$
+
+  written $Ex = e$ for player 0 and $Fy = f$ for player 1. The expected payoff is bilinear,
+  $x^\top A y$, where $A[s_0, s_1]$ sums (chance probability $\times$ payoff) over the leaves
+  whose last own sequences are $s_0$ and $s_1$.
+
+  Player 0 maximizes $\min_y x^\top A y$. For a fixed $x$ the inner minimum is itself an LP,
+  and LP duality replaces it by $\max_q f^\top q$ subject to $F^\top q \le A^\top x$. The
+  result is a single LP for player 0's equilibrium strategy and the game value:
+
+  $$\max_{x, q}\ f^\top q \quad \text{s.t.} \quad F^\top q - A^\top x \le 0,\ \ Ex = e,\ \ x \ge 0.$$
+
+  Player 1's LP is symmetric. The behavior strategy is recovered as
+  $\sigma(I, a) = x[I, a] / x[\text{parent}]$. Leduc has 1,092 sequences per player, and
+  SciPy's HiGHS solver handles each LP in about 0.1 s. The sequence form is *linear* in the
+  size of the game tree. The alternative, listing every pure strategy, is exponential (Kuhn
+  already has $2^6 = 64$ pure strategies per player; Leduc has astronomically many).
+
+**Three independent checks agree.**
+* *Published values.* The LP reproduces Kuhn's value $-1/18$ and the published Leduc value
+  $-0.0856064$, and its strategies have exploitability below $10^{-9}$.
+* *Closed form.* The known Kuhn equilibrium family has exploitability 0 (to $10^{-12}$) at
+  four values of its parameter $\alpha \in [0, 1/3]$, and leaving the family makes it
+  exploitable. Player 0 bets J with probability $\alpha$ and K with $3\alpha$, and calls a bet
+  with Q with probability $\alpha + 1/3$; player 1 bluffs J and calls with Q one third of the
+  time.
+* *Brute force.* On Kuhn, the best-response value equals the maximum over all 64 pure
+  strategies for both players. On Leduc, the reported best-response value is achieved by the
+  returned policy, and no deviation at 60 randomly chosen information sets improves it.
+
+**Verification.** [`tests/test_best_response.py`](../tests/test_best_response.py) (12 tests),
+including `head_to_head`. An equilibrium never loses on average over both seats. A best
+response to a fixed opponent beats it by exactly that opponent's exploitability.
+
+**Pitfalls.**
+1. *A name collision under lazy re-exports.* The function `best_response` lived in a module
+   also called `best_response.py`. When Python imports a submodule, it sets an attribute of
+   the same name on the package. After that, `from poker_lab.games import best_response`
+   returned the *module*, and tests failed with "'module' object is not callable", but only in
+   some test orders. The module is now `evaluate.py`. Rule: a submodule must never share a
+   name with something its package re-exports.
+2. *Renormalizing valid input changed it.* The policy constructor always divided by the
+   per-information-set sums, which moved already-valid probabilities by one unit in the last
+   place. An exact-equality test ("the opponent's part is untouched") caught it. The
+   constructor now repairs only sums that are off by more than $10^{-12}$, so valid input is
+   kept bit for bit.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -994,6 +1231,7 @@ and *contract tests* every future implementation must pass.
 | Construction invariants | `HandHistory` rejects hole cards while in progress | bugs fail at the source, not downstream |
 | Hand-crafted scenarios | `tests/test_stats.py` scripts hands street by street | exact expected counts for every corner case |
 | Differential testing | replay every simulated hand through unmodified PokerKit | a reference implementation is the best oracle |
+| Independent solvers | LP equilibrium vs closed-form Kuhn family vs brute-force best response | three methods that share no code must agree |
 | Statistical recovery | simulate from a known prior, check recovery and 95% coverage | tests the estimator, not one number |
 | Contract tests | every `StrategyProvider` and `ExploitEngine` through the same checks | future implementations inherit the guarantees |
 | Adversarial tests | ten attempts to smuggle opponent cards into the Advisor | a firewall is only as good as its attack tests |
@@ -1002,7 +1240,7 @@ and *contract tests* every future implementation must pass.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 143 tests and runs in about 40 seconds.
+players). The suite has 172 tests and runs in about 40 seconds.
 
 ## C.2 Reproducibility and provenance
 
@@ -1044,7 +1282,9 @@ numeric table next to it, so no number depends on reading a color.
 | All-in flag computed after PokerKit paid out the pot | schema validator on hand 285 of a smoke run | use the stack before the action | [4](#step-4-the-simulation-engine-m2) |
 | Heads-up blinds recorded BB first | heads-up order test | sort forced posts | [4](#step-4-the-simulation-engine-m2) |
 | Strings inside lists not parsed by `Card.clean` | evaluator equivalence test | normalize input in the fast hand type | [4](#step-4-the-simulation-engine-m2) |
-| Bluff raise when raising was illegal turned into a junk call | code review of the policy | fold in bluff branches | [6](#step-6-parameterized-bots-and-archetypes-m3) |
+| Best response | a strategy that maximizes payoff against a fixed opponent |
+| Button (BTN) | dealer position; acts last after the flop |
+ raise when raising was illegal turned into a junk call | code review of the policy | fold in bluff branches | [6](#step-6-parameterized-bots-and-archetypes-m3) |
 | Wrong expected pot size (19, not 15) | the test failed against correct code | fixed the test | [2](#step-2-the-hand-history-schema-m1) |
 | Synthetic counters with more successes than opportunities | shrinkage test returned impossible intervals | shrinker rejects $k > m$ | [10](#step-10-empirical-bayes-shrinkage-m4) |
 | 15 workers exhausted memory on Windows | crash ("paging file is too small") | lazy imports, worker cap | [8](#step-8-running-a-league-parallel-reproducible-simulation) |
@@ -1053,6 +1293,8 @@ numeric table next to it, so no number depends on reading a color.
 | Plain $R^2$ flattered by between-type variance | reviewing "too good" regression numbers | within-archetype $R^2$ (post hoc) | [12](#step-12-parameter-regression-m4) |
 | Cache key ignored code version and equity samples | provenance review | code fingerprint in every cache key | [14](#step-14-experimental-design-m5) |
 | Provenance read at the end of a long run | provenance review | capture at the start | [14](#step-14-experimental-design-m5) |
+| Function and submodule both named `best_response` under lazy re-exports | "'module' object is not callable" in some test orders | renamed the module to `evaluate.py` | [18](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22) |
+| Policy constructor renormalized valid input by one ulp | exact-equality test | repair only sums off by more than $10^{-12}$ | [18](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22) |
 
 ---
 
@@ -1068,18 +1310,26 @@ numeric table next to it, so no number depends on reading a color.
 | Capability | an unforgeable reference whose possession grants a permission |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
+| Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | ECE | expected calibration error |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
-| Exploitability | how much a best response wins against a strategy |
+| Exploitability | how much a best response wins against a strategy (NashConv / 2) |
+| Game value | what the first player gets when both play an equilibrium (minimax theorem) |
 | HUD | heads-up display of opponent statistics |
+| Information set | the histories a player cannot tell apart when acting |
 | Log-loss | mean negative log-probability of the true class |
 | mbb/hand | milli-big-blinds per hand |
 | Muck | discard a hand without showing it |
+| Nash equilibrium | a profile where each strategy is a best response to the other |
+| NashConv | sum of both players' best-response gains; 0 at equilibrium |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
+| Perfect recall | players never forget their own actions or observations |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Range | the set of hands a player plays in a spot |
+| Realization plan | sequence-form strategy: probability of each own action sequence |
+| Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Side pot | pot that an all-in player for less is not eligible for |
 | Street | betting round: preflop, flop, turn, river |
@@ -1103,9 +1353,16 @@ Poker, games and engines
   Leduc hold'em.
 * Ganzfried, S., Sandholm, T. (2011). *Game theory-based opponent modeling in large
   imperfect-information games.* AAMAS.
+* Kuhn, H. W. (1950). *A simplified two-person poker.* Contributions to the Theory of Games 1.
+* Lanctot, M. et al. (2019). *OpenSpiel: A Framework for Reinforcement Learning in Games.*
+  arXiv:1908.09453. Source of the uniform-policy NashConv used as a check.
 
 Equilibrium, exploitation, evaluation (Phase 2 and 5)
 
+* Koller, D., Megiddo, N., von Stengel, B. (1996). *Efficient Computation of Equilibria for
+  Extensive Two-Person Games.* Games and Economic Behavior 14. (The sequence form)
+* Huangfu, Q., Hall, J. A. J. (2018). *Parallelizing the dual revised simplex method.*
+  Mathematical Programming Computation 10. (HiGHS, SciPy's LP solver)
 * Zinkevich, M., Johanson, M., Bowling, M., Piccione, C. (2007). *Regret Minimization in Games
   with Incomplete Information.* NeurIPS. (CFR)
 * Tammelin, O. (2014). *Solving Large Imperfect Information Games Using CFR+.* arXiv:1407.5042.
@@ -1152,3 +1409,5 @@ Software design
 * 2026-10-20: Log created at the user's request and backfilled for Steps 0-16 (M0-M6 and the
   Phase 1 results). Results quoted are from the final run at commit `98c6dab` (simulation
   fingerprint `7799e1e5ceac`), cross-checked against `phase1_summary.md`.
+* 2026-10-21: Phase 2 begun. Added A.6 (game theory), Step 17 (small games and the tree
+  compiler) and Step 18 (best responses, exploitability, sequence-form LP).
