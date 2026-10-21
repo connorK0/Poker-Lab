@@ -5,6 +5,10 @@
 * External-sampling MCCFR (plain and linearly weighted) is random: it runs once per derived
   seed. Exploitability spans orders of magnitude, so seeds are summarized on the log scale:
   the geometric mean with a 95% t-interval of log10(exploitability) across seeds.
+* Ablation (post hoc, added after linear CFR stalled on Leduc in the first run): the 2 x 2 x 2
+  grid of discounted-CFR exponents alpha in {1, 1.5} (positive regrets), beta in {0, 1}
+  (negative regrets), gamma in {1, 2} (averaging). It contains linear CFR (1, 1, 1) and DCFR
+  (1.5, 0, 2).
 
 Every exploitability is exact (best responses on the full tree), in chips per hand, for the
 *average* strategy. Work is measured in iterations and in tree nodes touched, the fair unit
@@ -25,7 +29,13 @@ import numpy as np
 
 from experiments.common import RESULTS_ROOT, derive_seeds, load_config, run_metadata, save_json
 from poker_lab.games import KuhnPoker, LeducHoldem, compile_tree, exploitability
-from poker_lab.solvers import CFRSolver, ExternalSamplingMCCFR, log_checkpoints, solve_lp
+from poker_lab.solvers import (
+    CFRSolver,
+    CFRVariant,
+    ExternalSamplingMCCFR,
+    log_checkpoints,
+    solve_lp,
+)
 
 # matplotlib and scipy.stats are imported inside the functions that need them: worker
 # processes re-import this module and should stay light.
@@ -66,6 +76,14 @@ def full_width_task(game: str, variant: str, iterations: int, per_decade: int) -
     solver = CFRSolver(tree, variant)
     curve = _timed_curve(solver, log_checkpoints(iterations, per_decade))
     return {"game": game, "variant": variant, "curve": curve}
+
+
+def ablation_task(alpha: float, beta: float, gamma: float, iterations: int) -> dict[str, Any]:
+    tree = compile_tree(LeducHoldem())
+    name = f"dcfr({alpha:g},{beta:g},{gamma:g})"
+    solver = CFRSolver(tree, CFRVariant(name, alpha=alpha, beta=beta, gamma=gamma))
+    curve = _timed_curve(solver, sorted({min(1000, iterations), iterations}))
+    return {"alpha": alpha, "beta": beta, "gamma": gamma, "curve": curve}
 
 
 def mccfr_task(
@@ -159,6 +177,21 @@ def markdown_summary(results: dict[str, Any]) -> str:
                 f"touched, {ms:.3f} ms / it.) exploitability {last['geo_mean']:.3g} "
                 f"[{last['lower']:.3g}, {last['upper']:.3g}]."
             )
+        lines.append("")
+    if results.get("ablation"):
+        its = [p["iteration"] for p in results["ablation"][0]["curve"]]
+        lines += [
+            "## Ablation: discounted-CFR exponents on Leduc (post hoc)",
+            "",
+            "alpha discounts positive regrets, beta negative regrets, and gamma sets the",
+            "averaging weight t^gamma. Linear CFR is (1, 1, 1); DCFR is (1.5, 0, 2).",
+            "",
+            "| alpha | beta | gamma | " + " | ".join(f"{t:,} it." for t in its) + " |",
+            "|---|---|---|" + "---|" * len(its),
+        ]
+        for r in results["ablation"]:
+            cells = " | ".join(f"{p['exploitability']:.2e}" for p in r["curve"])
+            lines.append(f"| {r['alpha']:g} | {r['beta']:g} | {r['gamma']:g} | {cells} |")
         lines.append("")
     return "\n".join(lines)
 
@@ -273,12 +306,20 @@ def run(
         for linear in (False, True)
         for s in seeds
     ]
-    n_workers = max(1, min(workers or 8, len(full_tasks) + len(mc_tasks)))
-    with ProcessPoolExecutor(max_workers=n_workers) as pool:
+    ab_tasks = [
+        (alpha, beta, gamma, cfg["ablation_iterations"])
+        for alpha in (1.0, 1.5)
+        for beta in (0.0, 1.0)
+        for gamma in (1.0, 2.0)
+    ]
+    n_tasks = len(full_tasks) + len(mc_tasks) + len(ab_tasks)
+    with ProcessPoolExecutor(max_workers=max(1, min(workers or 8, n_tasks))) as pool:
         full_futures = [pool.submit(full_width_task, *t) for t in full_tasks]
         mc_futures = [pool.submit(mccfr_task, *t) for t in mc_tasks]
+        ab_futures = [pool.submit(ablation_task, *t) for t in ab_tasks]
         full = [f.result() for f in full_futures]
         mc = [f.result() for f in mc_futures]
+        ablation = [f.result() for f in ab_futures]
 
     full_width: dict[str, dict[str, Any]] = {}
     for r in full:
@@ -290,6 +331,7 @@ def run(
         "full_width": full_width,
         "mccfr": aggregate_mccfr(mc),
         "mccfr_runs": mc,
+        "ablation": ablation,
         "elapsed_seconds": round(time.perf_counter() - t_start, 1),
     }
     save_json(results, out_dir / "cfr_convergence.json")

@@ -7,3 +7,4 @@ cfr:
   mccfr_seeds: 5
   mccfr_iterations: {kuhn: 100000, leduc: 300000}
   mccfr_per_decade: 4
+  ablation_iterations: 3000  # post hoc: discounted-CFR exponent grid on Leduc
