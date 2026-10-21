@@ -8,3 +8,12 @@ cfr:
   mccfr_iterations: {kuhn: 100000, leduc: 300000}
   mccfr_per_decade: 4
   ablation_iterations: 3000  # post hoc: discounted-CFR exponent grid on Leduc
+deep_cfr:
+  seeds: 5
+  traversals: 1000          # per player per iteration
+  checkpoints: [1, 2, 3, 5, 7, 10, 15, 20, 30, 50, 70, 100]
+  policy_checkpoints: [10, 30, 100]
+  hidden: [64, 64, 64]
+  advantage_steps: 600      # chosen on development seed 99 (see poker_lab/solvers/deep_cfr.py)
+  policy_steps: 2000
+  workers: 8

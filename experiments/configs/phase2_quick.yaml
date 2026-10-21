@@ -8,3 +8,12 @@ cfr:
   mccfr_iterations: {kuhn: 2000, leduc: 1000}
   mccfr_per_decade: 2
   ablation_iterations: 100  # post hoc: discounted-CFR exponent grid on Leduc
+deep_cfr:
+  seeds: 2
+  traversals: 100
+  checkpoints: [1, 2, 4]
+  policy_checkpoints: [4]
+  hidden: [16, 16]
+  advantage_steps: 30
+  policy_steps: 100
+  workers: 6

@@ -21,7 +21,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "ruff>=0.6"]
-nn = ["torch>=2.2"]
+nn = ["torch>=2.14,<3"]  # tested with 2.14.1 (CPU); the version is recorded in results
 
 [tool.setuptools.packages.find]
 include = ["poker_lab*"]

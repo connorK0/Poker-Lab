@@ -19,7 +19,16 @@ import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 RESULTS_ROOT = REPO_ROOT / "experiments" / "results"
-PACKAGES = ("numpy", "pandas", "scipy", "scikit-learn", "matplotlib", "pokerkit", "phevaluator")
+PACKAGES = (
+    "numpy",
+    "pandas",
+    "scipy",
+    "scikit-learn",
+    "matplotlib",
+    "pokerkit",
+    "phevaluator",
+    "torch",
+)
 
 
 def git_state() -> dict[str, Any]:

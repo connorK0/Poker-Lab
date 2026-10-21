@@ -69,13 +69,13 @@ def style_axes(ax: plt.Axes, theme: dict[str, object], *, grid_axis: str = "y") 
     ax.yaxis.label.set_color(theme["ink2"])
 
 
-def line(ax: plt.Axes, theme: dict[str, object], x, y, color, label=None, **kw):
+def line(ax: plt.Axes, theme: dict[str, object], x, y, color, label=None, *, marker="o", **kw):
     return ax.plot(
         x,
         y,
         color=color,
         linewidth=LINE_WIDTH,
-        marker="o",
+        marker=marker,
         markersize=MARKER_SIZE,
         markeredgecolor=theme["surface"],
         markeredgewidth=1.5,
