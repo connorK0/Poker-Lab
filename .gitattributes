@@ -1,0 +1,6 @@
+# Store text with LF line endings regardless of platform (Python on Windows writes CRLF by
+# default, which made whole files show as changed).
+* text=auto eol=lf
+*.png binary
+*.npz binary
+*.gz binary
