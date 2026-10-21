@@ -1,0 +1,9 @@
+# Phase 2 experiments: python -m experiments.run_phase2 --seed 2026
+name: phase2
+cfr:
+  variants: [cfr, cfr+, lcfr, dcfr]
+  iterations: {kuhn: 10000, leduc: 10000}
+  per_decade: 8
+  mccfr_seeds: 5
+  mccfr_iterations: {kuhn: 100000, leduc: 300000}
+  mccfr_per_decade: 4

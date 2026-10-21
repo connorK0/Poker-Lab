@@ -1,0 +1,9 @@
+# Small, fast version of phase2.yaml for smoke tests. Not for reporting.
+name: phase2_quick
+cfr:
+  variants: [cfr, cfr+, lcfr, dcfr]
+  iterations: {kuhn: 300, leduc: 100}
+  per_decade: 4
+  mccfr_seeds: 2
+  mccfr_iterations: {kuhn: 2000, leduc: 1000}
+  mccfr_per_decade: 2
