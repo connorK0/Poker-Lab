@@ -17,3 +17,11 @@ deep_cfr:
   advantage_steps: 600      # chosen on development seed 99 (see poker_lab/solvers/deep_cfr.py)
   policy_steps: 2000
   workers: 8
+exploit:
+  seeds: 5
+  train_per_archetype: 20   # used only to fit the parameter prior
+  test_per_archetype: 6     # held-out bots evaluated per seed
+  sizes: [10, 30, 100, 300, 1000, 3000]
+  ps: [0.25, 0.5, 0.75, 0.9]
+  dbr_pseudocount: 10       # data-biased confidence c_I = n_I / (n_I + 10)
+  workers: 10

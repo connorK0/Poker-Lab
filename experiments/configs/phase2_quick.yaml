@@ -17,3 +17,11 @@ deep_cfr:
   advantage_steps: 30
   policy_steps: 100
   workers: 6
+exploit:
+  seeds: 2
+  train_per_archetype: 4
+  test_per_archetype: 1
+  sizes: [10, 100]
+  ps: [0.5, 0.9]
+  dbr_pseudocount: 10
+  workers: 4

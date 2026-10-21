@@ -3,8 +3,9 @@
 ``solve_lp`` computes an exact equilibrium with the sequence-form linear program; ``CFRSolver``
 runs full-width CFR variants (CFR, CFR+, linear CFR, discounted CFR); ``ExternalSamplingMCCFR``
 is the sampled, seeded version; ``DeepCFR`` (needs PyTorch, the ``nn`` extra) replaces the
-regret table with neural networks. Names are re-exported lazily (PEP 562), so importing this
-package never imports torch.
+regret table with neural networks; ``RobustResponder`` computes restricted Nash and
+data-biased responses against an opponent model. Names are re-exported lazily (PEP 562), so
+importing this package never imports torch.
 """
 
 from importlib import import_module
@@ -15,6 +16,7 @@ _EXPORTS = {
     "poker_lab.solvers.cfr": ("VARIANTS", "CFRSolver", "CFRVariant", "log_checkpoints"),
     "poker_lab.solvers.mccfr": ("ExternalSamplingMCCFR",),
     "poker_lab.solvers.deep_cfr": ("DeepCFR", "DeepCFRConfig", "InfosetEncoder", "Reservoir"),
+    "poker_lab.solvers.robust": ("RobustResponder", "realization_plan"),
 }
 _WHERE = {name: module for module, names in _EXPORTS.items() for name in names}
 __all__ = sorted(_WHERE)
