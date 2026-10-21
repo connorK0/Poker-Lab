@@ -375,3 +375,44 @@ def public_visit_counts(
                 rounds.append("")
     width = len(game.deck[0])
     return np.array([counts.get(key[width:], 0) for key in tree.infoset_keys], dtype=float)
+
+
+def card_blind_policy(
+    builder: BotPolicyBuilder, game: LeducHoldem, observations: Sequence[Observation]
+) -> TabularPolicy:
+    """A deliberately misspecified, HUD-style model: action frequencies that ignore the cards.
+
+    Three Laplace-smoothed frequencies from public information only: bet when not facing a bet,
+    fold when facing one, and raise (when allowed) given not folding. The same frequencies are
+    used at every information set, whatever the bot's hand. Comparing exploitation based on
+    this model with the correctly specified five-parameter model measures what hand-reading
+    structure is worth.
+    """
+    counts = np.ones(6)  # Laplace: k, b, f, c (raise allowed), c (capped), r
+    for obs in observations:
+        rounds = [""]
+        for action in obs.actions:
+            history = rounds[-1]
+            if len(history) % 2 == obs.bot_seat:
+                facing = bool(history) and history[-1] in "br"
+                raises = sum(a in "br" for a in history)
+                if not facing:
+                    counts[{"k": 0, "b": 1}[action]] += 1
+                elif action == "f":
+                    counts[2] += 1
+                elif action == "r":
+                    counts[5] += 1
+                else:
+                    counts[3 if raises < game.max_raises else 4] += 1
+            rounds[-1] = history + action
+            if len(rounds) == 1 and (rounds[0].endswith("c") or rounds[0] == "kk"):
+                rounds.append("")
+    bet = counts[1] / (counts[0] + counts[1])
+    fold = counts[2] / (counts[2] + counts[3] + counts[4] + counts[5])
+    raise_ = counts[5] / (counts[3] + counts[5])
+    k = builder.kind
+    probs = np.select(
+        [k == 0, k == 1, k == 2, k == 3, k == 4, k == 5],
+        [1 - bet, bet, fold, (1 - fold) * (1 - raise_), 1 - fold, (1 - fold) * raise_],
+    )
+    return TabularPolicy(builder.tree, probs)
