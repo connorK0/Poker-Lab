@@ -1,0 +1,5349 @@
+{
+ "meta": {
+  "seed": 2026,
+  "config": {
+   "variants": [
+    "cfr",
+    "cfr+",
+    "lcfr",
+    "dcfr"
+   ],
+   "iterations": {
+    "kuhn": 10000,
+    "leduc": 10000
+   },
+   "per_decade": 8,
+   "mccfr_seeds": 5,
+   "mccfr_iterations": {
+    "kuhn": 100000,
+    "leduc": 300000
+   },
+   "mccfr_per_decade": 4,
+   "ablation_iterations": 3000
+  },
+  "git": {
+   "commit": "53eb199734ac93f136722fcb09ca585a0d9f706e",
+   "dirty": false
+  },
+  "timestamp_utc": "2026-10-21T05:42:29+00:00",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "packages": {
+   "numpy": "2.4.6",
+   "pandas": "2.3.3",
+   "scipy": "1.18.0",
+   "scikit-learn": "1.9.0",
+   "matplotlib": "3.11.0",
+   "pokerkit": "0.7.7",
+   "phevaluator": "0.6.0"
+  }
+ },
+ "mccfr_seeds": [
+  2727543821,
+  2207150826,
+  508070823,
+  1505698380,
+  1703033196
+ ],
+ "lp": {
+  "kuhn": {
+   "value": -0.05555555555555552,
+   "exploitability": 0.0,
+   "seconds": 0.012581999995745718
+  },
+  "leduc": {
+   "value": -0.0856064240780006,
+   "exploitability": -3.7470027081099033e-16,
+   "seconds": 0.29325110001082066
+  }
+ },
+ "full_width": {
+  "kuhn": {
+   "cfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 116,
+     "seconds": 0.0006477999995695427,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 232,
+     "seconds": 0.001066900003934279,
+     "exploitability": 0.3125
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 348,
+     "seconds": 0.001491100003477186,
+     "exploitability": 0.27083333333333337
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 464,
+     "seconds": 0.001880299998447299,
+     "exploitability": 0.23263888888888892
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 696,
+     "seconds": 0.0027348000003257766,
+     "exploitability": 0.15120798034104485
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 812,
+     "seconds": 0.003143800000543706,
+     "exploitability": 0.124221197198398
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 1160,
+     "seconds": 0.0043476999999256805,
+     "exploitability": 0.09620850020140503
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 1508,
+     "seconds": 0.005521099999896251,
+     "exploitability": 0.07667747878740555
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 2088,
+     "seconds": 0.007513999997172505,
+     "exploitability": 0.061403870208415035
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 2784,
+     "seconds": 0.009896699993987568,
+     "exploitability": 0.0572658059843206
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 3712,
+     "seconds": 0.013614900002721697,
+     "exploitability": 0.050514997786184485
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 4872,
+     "seconds": 0.017917899996973574,
+     "exploitability": 0.04153774564602289
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 6496,
+     "seconds": 0.023303299996769056,
+     "exploitability": 0.03389002891254003
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 8700,
+     "seconds": 0.03083219999098219,
+     "exploitability": 0.02958769353542684
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 11600,
+     "seconds": 0.03781279998656828,
+     "exploitability": 0.025674735846948127
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 15428,
+     "seconds": 0.04807019999134354,
+     "exploitability": 0.02190627872207529
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 20648,
+     "seconds": 0.06544939999002963,
+     "exploitability": 0.0181783014178169
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 27492,
+     "seconds": 0.08525469998130575,
+     "exploitability": 0.016172969687869382
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 36656,
+     "seconds": 0.1075684999814257,
+     "exploitability": 0.013582601125959798
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 48952,
+     "seconds": 0.14312319998862222,
+     "exploitability": 0.011556302190678935
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 65192,
+     "seconds": 0.1943940999917686,
+     "exploitability": 0.010186367481757469
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 87000,
+     "seconds": 0.2391759999882197,
+     "exploitability": 0.008655238195131393
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 116000,
+     "seconds": 0.32836299999326,
+     "exploitability": 0.007269106408564402
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 154744,
+     "seconds": 0.43890059998375364,
+     "exploitability": 0.006290764731838455
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 206248,
+     "seconds": 0.6054754999931902,
+     "exploitability": 0.005444935691705288
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 275036,
+     "seconds": 0.8329490999894915,
+     "exploitability": 0.004871420383505853
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 366792,
+     "seconds": 1.101263199976529,
+     "exploitability": 0.004175460822529259
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 489172,
+     "seconds": 1.4781642999878386,
+     "exploitability": 0.003525837269177573
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 652268,
+     "seconds": 1.9942894999840064,
+     "exploitability": 0.003065210617969244
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 869884,
+     "seconds": 2.6379333999793744,
+     "exploitability": 0.0026781535090497632
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 1160000,
+     "seconds": 3.482240399971488,
+     "exploitability": 0.002317786314974396
+    }
+   ],
+   "cfr+": [
+    {
+     "iteration": 1,
+     "nodes_touched": 116,
+     "seconds": 0.000698900010320358,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 232,
+     "seconds": 0.0012531000102171674,
+     "exploitability": 0.26388888888888884
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 348,
+     "seconds": 0.0017396000039298087,
+     "exploitability": 0.14131701631701632
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 464,
+     "seconds": 0.0022301999997580424,
+     "exploitability": 0.10014430014430015
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 696,
+     "seconds": 0.0031710000039311126,
+     "exploitability": 0.05045870065856842
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 812,
+     "seconds": 0.003643100004410371,
+     "exploitability": 0.04510920057013745
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 1160,
+     "seconds": 0.0050251000066054985,
+     "exploitability": 0.0326870906683448
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 1508,
+     "seconds": 0.006420300007448532,
+     "exploitability": 0.01933435361819716
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 2088,
+     "seconds": 0.008720600017113611,
+     "exploitability": 0.01227863579378033
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 2784,
+     "seconds": 0.010488700019777752,
+     "exploitability": 0.005884725558754078
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 3712,
+     "seconds": 0.01293520002218429,
+     "exploitability": 0.0042782058313391436
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 4872,
+     "seconds": 0.01758000002882909,
+     "exploitability": 0.0031465481125831363
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 6496,
+     "seconds": 0.023990500034415163,
+     "exploitability": 0.0012726416064204604
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 8700,
+     "seconds": 0.032920700032263994,
+     "exploitability": 0.0014182485997045469
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 11600,
+     "seconds": 0.04376400003093295,
+     "exploitability": 0.001194404101111629
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 15428,
+     "seconds": 0.058337000038591214,
+     "exploitability": 0.00099568354796839
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 20648,
+     "seconds": 0.07658100004482549,
+     "exploitability": 0.0007458420863911963
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 27492,
+     "seconds": 0.09731460004695691,
+     "exploitability": 0.0005873999106650596
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 36656,
+     "seconds": 0.1220621000538813,
+     "exploitability": 0.0003541477303035945
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 48952,
+     "seconds": 0.1565115000557853,
+     "exploitability": 0.0003228413260091545
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 65192,
+     "seconds": 0.2161961000674637,
+     "exploitability": 3.565569482563702e-05
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 87000,
+     "seconds": 0.2745579000620637,
+     "exploitability": 0.00013043415431754357
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 116000,
+     "seconds": 0.36152510007377714,
+     "exploitability": 8.736532252059948e-05
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 154744,
+     "seconds": 0.48012530006235465,
+     "exploitability": 5.1576536628183955e-05
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 206248,
+     "seconds": 0.6426395000598859,
+     "exploitability": 7.284435290585978e-05
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 275036,
+     "seconds": 0.8838940000568982,
+     "exploitability": 6.0002015580207235e-05
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 366792,
+     "seconds": 1.2036517000524327,
+     "exploitability": 3.0148963204940094e-05
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 489172,
+     "seconds": 1.6511425000499003,
+     "exploitability": 4.662887681691763e-05
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 652268,
+     "seconds": 2.2080486000486417,
+     "exploitability": 3.411370542344416e-05
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 869884,
+     "seconds": 2.946505200045067,
+     "exploitability": 2.4337438516486287e-05
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 1160000,
+     "seconds": 3.9449402000464033,
+     "exploitability": 9.632756981514667e-06
+    }
+   ],
+   "lcfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 116,
+     "seconds": 0.0004676999960793182,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 232,
+     "seconds": 0.0009033999958774075,
+     "exploitability": 0.26388888888888884
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 348,
+     "seconds": 0.0014197999989846721,
+     "exploitability": 0.14062499999999994
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 464,
+     "seconds": 0.0019260999979451299,
+     "exploitability": 0.06961805555555553
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 696,
+     "seconds": 0.0029202000005170703,
+     "exploitability": 0.058352936555792795
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 812,
+     "seconds": 0.0034161999938078225,
+     "exploitability": 0.05142196567869786
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 1160,
+     "seconds": 0.004909700001007877,
+     "exploitability": 0.021250730612166313
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 1508,
+     "seconds": 0.006356500001857057,
+     "exploitability": 0.01937798001224661
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 2088,
+     "seconds": 0.008923200002755038,
+     "exploitability": 0.011325318162998643
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 2784,
+     "seconds": 0.011794599995482713,
+     "exploitability": 0.008705909173120502
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 3712,
+     "seconds": 0.01637549999577459,
+     "exploitability": 0.005886110189641747
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 4872,
+     "seconds": 0.020475699988310225,
+     "exploitability": 0.003559247368733476
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 6496,
+     "seconds": 0.027130699992994778,
+     "exploitability": 0.001752621084342737
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 8700,
+     "seconds": 0.03575209999689832,
+     "exploitability": 0.0015202800700147012
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 11600,
+     "seconds": 0.04521519999252632,
+     "exploitability": 0.0010890273650584203
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 15428,
+     "seconds": 0.06099849999009166,
+     "exploitability": 0.0010677137046630203
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 20648,
+     "seconds": 0.08187529999122489,
+     "exploitability": 0.0006093849139976459
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 27492,
+     "seconds": 0.10430249998171348,
+     "exploitability": 0.000476813452972763
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 36656,
+     "seconds": 0.13738899998134002,
+     "exploitability": 0.00032776240881438046
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 48952,
+     "seconds": 0.18053699997835793,
+     "exploitability": 0.00022929611362842994
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 65192,
+     "seconds": 0.24604589997034054,
+     "exploitability": 0.00018613200342310066
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 87000,
+     "seconds": 0.3346867999789538,
+     "exploitability": 0.00013735130623038216
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 116000,
+     "seconds": 0.41243279998889193,
+     "exploitability": 9.352973956636146e-05
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 154744,
+     "seconds": 0.5360231999948155,
+     "exploitability": 6.82328797981524e-05
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 206248,
+     "seconds": 0.7134045999846421,
+     "exploitability": 5.32392347961097e-05
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 275036,
+     "seconds": 0.9736271999863675,
+     "exploitability": 3.768899616915511e-05
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 366792,
+     "seconds": 1.3335833999881288,
+     "exploitability": 2.9470325885155857e-05
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 489172,
+     "seconds": 1.781645799987018,
+     "exploitability": 2.1776630153486076e-05
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 652268,
+     "seconds": 2.3800012999854516,
+     "exploitability": 1.5806198537388072e-05
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 869884,
+     "seconds": 3.2001292999921134,
+     "exploitability": 1.1780636483299523e-05
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 1160000,
+     "seconds": 4.234926099990844,
+     "exploitability": 8.61334725441032e-06
+    }
+   ],
+   "dcfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 116,
+     "seconds": 0.0007483999943360686,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 232,
+     "seconds": 0.0011752999853342772,
+     "exploitability": 0.2583333333333333
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 348,
+     "seconds": 0.0017864999826997519,
+     "exploitability": 0.13318452380952386
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 464,
+     "seconds": 0.0023621999862371013,
+     "exploitability": 0.10172565394698851
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 696,
+     "seconds": 0.0035626999742817134,
+     "exploitability": 0.05880265451722508
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 812,
+     "seconds": 0.004107499975361861,
+     "exploitability": 0.033809586859966906
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 1160,
+     "seconds": 0.005760699976235628,
+     "exploitability": 0.022778783925763685
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 1508,
+     "seconds": 0.007336099981330335,
+     "exploitability": 0.013225572800102448
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 2088,
+     "seconds": 0.01005709997843951,
+     "exploitability": 0.010222473680922661
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 2784,
+     "seconds": 0.012417599980835803,
+     "exploitability": 0.007689338683248614
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 3712,
+     "seconds": 0.014783299979171716,
+     "exploitability": 0.007239050949249204
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 4872,
+     "seconds": 0.019521699970937334,
+     "exploitability": 0.0053915430156466215
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 6496,
+     "seconds": 0.026775199978146702,
+     "exploitability": 0.0023855296471854692
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 8700,
+     "seconds": 0.03633069997886196,
+     "exploitability": 0.0024549556012211093
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 11600,
+     "seconds": 0.0444512999674771,
+     "exploitability": 0.0016663419704103788
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 15428,
+     "seconds": 0.06048699996608775,
+     "exploitability": 0.001369629769508024
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 20648,
+     "seconds": 0.08136809997085948,
+     "exploitability": 0.0008418628770446579
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 27492,
+     "seconds": 0.10445279997657053,
+     "exploitability": 0.0006639092420654136
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 36656,
+     "seconds": 0.12644929997622967,
+     "exploitability": 0.0006106330889335543
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 48952,
+     "seconds": 0.17554569996718783,
+     "exploitability": 0.00029550065039823936
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 65192,
+     "seconds": 0.24069389996293467,
+     "exploitability": 0.00029267802182808556
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 87000,
+     "seconds": 0.3196454999706475,
+     "exploitability": 0.00023397291523075125
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 116000,
+     "seconds": 0.40715479996288195,
+     "exploitability": 0.00014650022832488063
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 154744,
+     "seconds": 0.5323922999668866,
+     "exploitability": 0.00011787289131215406
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 206248,
+     "seconds": 0.7008905999682611,
+     "exploitability": 8.934823587056218e-05
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 275036,
+     "seconds": 0.9463417999650119,
+     "exploitability": 5.971061449297488e-05
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 366792,
+     "seconds": 1.2928399999655085,
+     "exploitability": 6.808226596263789e-05
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 489172,
+     "seconds": 1.7672696999652544,
+     "exploitability": 4.580724575442563e-05
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 652268,
+     "seconds": 2.36615169995639,
+     "exploitability": 3.991743952663773e-05
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 869884,
+     "seconds": 3.145431099954294,
+     "exploitability": 1.534240428169298e-05
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 1160000,
+     "seconds": 4.192520499957027,
+     "exploitability": 2.387232525630223e-05
+    }
+   ]
+  },
+  "leduc": {
+   "cfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 18914,
+     "seconds": 0.001344999996945262,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 37828,
+     "seconds": 0.003191199997672811,
+     "exploitability": 2.300970804988662
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 56742,
+     "seconds": 0.005014700000174344,
+     "exploitability": 2.0969889709481926
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 75656,
+     "seconds": 0.006857399988803081,
+     "exploitability": 1.7685663643111138
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 113484,
+     "seconds": 0.010635399987222627,
+     "exploitability": 1.3109524006348283
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 132398,
+     "seconds": 0.012447199987946078,
+     "exploitability": 1.1773212444697745
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 189140,
+     "seconds": 0.01692439999897033,
+     "exploitability": 0.9270185719676691
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 245882,
+     "seconds": 0.02015110000502318,
+     "exploitability": 0.7745123400082818
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 340452,
+     "seconds": 0.029300499998498708,
+     "exploitability": 0.6371363714947138
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 453936,
+     "seconds": 0.03790540000773035,
+     "exploitability": 0.48855056820909765
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 605248,
+     "seconds": 0.04791190000833012,
+     "exploitability": 0.3547214882483092
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 794388,
+     "seconds": 0.0587367000116501,
+     "exploitability": 0.3049646183756576
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 1059184,
+     "seconds": 0.07357230001071002,
+     "exploitability": 0.2738066973661243
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 1418550,
+     "seconds": 0.10383770002226811,
+     "exploitability": 0.2299342631243583
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1891400,
+     "seconds": 0.13956710002094042,
+     "exploitability": 0.17303431192082003
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 2515562,
+     "seconds": 0.1973040000157198,
+     "exploitability": 0.13144516397306222
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 3366692,
+     "seconds": 0.24303630001668353,
+     "exploitability": 0.10962761810925847
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 4482618,
+     "seconds": 0.3422908000211464,
+     "exploitability": 0.08965856315071993
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 5976824,
+     "seconds": 0.46519470000930596,
+     "exploitability": 0.0832566658352864
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 7981708,
+     "seconds": 0.6428306000161683,
+     "exploitability": 0.06484720593290355
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 10629668,
+     "seconds": 0.8691912000213051,
+     "exploitability": 0.05515217477426421
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 14185500,
+     "seconds": 1.1758872000209522,
+     "exploitability": 0.04530729476746875
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.5753524000174366,
+     "exploitability": 0.0398133943175714
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 25231276,
+     "seconds": 2.129548100012471,
+     "exploitability": 0.03266985297176993
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 33629092,
+     "seconds": 2.8320786000113003,
+     "exploitability": 0.027846285047646024
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 44845094,
+     "seconds": 3.798258100010571,
+     "exploitability": 0.022127218083010824
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 59806068,
+     "seconds": 5.056995400009328,
+     "exploitability": 0.018959440691769053
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 79760338,
+     "seconds": 6.792901300010271,
+     "exploitability": 0.016546782711249985
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 106353422,
+     "seconds": 8.972297400017851,
+     "exploitability": 0.014544520048380763
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 141836086,
+     "seconds": 11.919230000014068,
+     "exploitability": 0.011688844106405583
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 189140000,
+     "seconds": 15.995725300017511,
+     "exploitability": 0.010122453341288001
+    }
+   ],
+   "cfr+": [
+    {
+     "iteration": 1,
+     "nodes_touched": 18914,
+     "seconds": 0.0022793999960413203,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 37828,
+     "seconds": 0.004290099997888319,
+     "exploitability": 2.0579166666666664
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 56742,
+     "seconds": 0.006290699995588511,
+     "exploitability": 1.7935440823803706
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 75656,
+     "seconds": 0.008280899986857548,
+     "exploitability": 1.609655082121953
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 113484,
+     "seconds": 0.011442099988926202,
+     "exploitability": 1.1951131391231193
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 132398,
+     "seconds": 0.01340699999127537,
+     "exploitability": 1.011154072526026
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 189140,
+     "seconds": 0.017011299991281703,
+     "exploitability": 0.6104389015904066
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 245882,
+     "seconds": 0.021044299995992333,
+     "exploitability": 0.40992496406491635
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 340452,
+     "seconds": 0.0313519999908749,
+     "exploitability": 0.2158148781400626
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 453936,
+     "seconds": 0.04248759998881724,
+     "exploitability": 0.1307906699608573
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 605248,
+     "seconds": 0.058108699988224544,
+     "exploitability": 0.0715943093978814
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 794388,
+     "seconds": 0.07702079998853151,
+     "exploitability": 0.04508078678758967
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 1059184,
+     "seconds": 0.1029870999918785,
+     "exploitability": 0.02723456857705131
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 1418550,
+     "seconds": 0.14082970000163186,
+     "exploitability": 0.021345359589013957
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1891400,
+     "seconds": 0.1875463999895146,
+     "exploitability": 0.013415994974063657
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 2515562,
+     "seconds": 0.25027119999867864,
+     "exploitability": 0.009478560125221247
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 3366692,
+     "seconds": 0.3272735999926226,
+     "exploitability": 0.005351296315164844
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 4482618,
+     "seconds": 0.4385848999809241,
+     "exploitability": 0.0034446409548209156
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 5976824,
+     "seconds": 0.578179399977671,
+     "exploitability": 0.002073597206624353
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 7981708,
+     "seconds": 0.7781170999805909,
+     "exploitability": 0.0011460167999630538
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 10629668,
+     "seconds": 1.0207136999815702,
+     "exploitability": 0.0007427032770643688
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 14185500,
+     "seconds": 1.3526696999761043,
+     "exploitability": 0.00044593897723660403
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.7897917999798665,
+     "exploitability": 0.0002608775701077315
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 25231276,
+     "seconds": 2.3563938999723177,
+     "exploitability": 0.00014476281765730958
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 33629092,
+     "seconds": 3.1616448999848217,
+     "exploitability": 9.439439522325455e-05
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 44845094,
+     "seconds": 4.136162299982971,
+     "exploitability": 5.379574568087353e-05
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 59806068,
+     "seconds": 5.497107099974528,
+     "exploitability": 3.308230958121161e-05
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 79760338,
+     "seconds": 7.37075009997352,
+     "exploitability": 1.868414181722955e-05
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 106353422,
+     "seconds": 9.766849899970111,
+     "exploitability": 1.2981730580036155e-05
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 141836086,
+     "seconds": 12.916053799970541,
+     "exploitability": 8.362467043443456e-06
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 189140000,
+     "seconds": 17.31124759998056,
+     "exploitability": 5.671277218788351e-06
+    }
+   ],
+   "lcfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 18914,
+     "seconds": 0.0015310000017052516,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 37828,
+     "seconds": 0.0028414999978849664,
+     "exploitability": 2.0579166666666664
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 56742,
+     "seconds": 0.004985999999917112,
+     "exploitability": 1.8026596027668262
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 75656,
+     "seconds": 0.007209800009150058,
+     "exploitability": 1.6450323275196714
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 113484,
+     "seconds": 0.009712100014439784,
+     "exploitability": 1.4637001985165772
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 132398,
+     "seconds": 0.011373600020306185,
+     "exploitability": 1.168057732781554
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 189140,
+     "seconds": 0.01526510002440773,
+     "exploitability": 0.7210651557072465
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 245882,
+     "seconds": 0.021017100036260672,
+     "exploitability": 0.4620250020571957
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 340452,
+     "seconds": 0.027746700041461736,
+     "exploitability": 0.3020155438002232
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 453936,
+     "seconds": 0.03959860003669746,
+     "exploitability": 0.1956746132986619
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 605248,
+     "seconds": 0.05449580003914889,
+     "exploitability": 0.13946782829967772
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 794388,
+     "seconds": 0.06816050004272256,
+     "exploitability": 0.09491636968380375
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 1059184,
+     "seconds": 0.09319730004062876,
+     "exploitability": 0.06318044478744456
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 1418550,
+     "seconds": 0.11653330003900919,
+     "exploitability": 0.04201874677452033
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1891400,
+     "seconds": 0.15155430004233494,
+     "exploitability": 0.03448981136977977
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 2515562,
+     "seconds": 0.1992166000418365,
+     "exploitability": 0.040449918108655086
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 3366692,
+     "seconds": 0.29005900003539864,
+     "exploitability": 0.029359957275737668
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 4482618,
+     "seconds": 0.40926400004536845,
+     "exploitability": 0.01945545809331807
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 5976824,
+     "seconds": 0.5497409000381595,
+     "exploitability": 0.011570071855698028
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 7981708,
+     "seconds": 0.746523200039519,
+     "exploitability": 0.009031597557559654
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 10629668,
+     "seconds": 1.0047648000327172,
+     "exploitability": 0.01017312960623662
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 14185500,
+     "seconds": 1.3566264000255615,
+     "exploitability": 0.007168491344999209
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.81696110003395,
+     "exploitability": 0.005242399164323119
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 25231276,
+     "seconds": 2.381074200035073,
+     "exploitability": 0.004709085783189737
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 33629092,
+     "seconds": 3.217306800041115,
+     "exploitability": 0.004477492254105722
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 44845094,
+     "seconds": 4.365455900042434,
+     "exploitability": 0.0031186549587305656
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 59806068,
+     "seconds": 5.86403170003905,
+     "exploitability": 0.0028282334575849832
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 79760338,
+     "seconds": 7.883191400047508,
+     "exploitability": 0.0017633719110841245
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 106353422,
+     "seconds": 10.39896850004152,
+     "exploitability": 0.0014712334995012344
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 141836086,
+     "seconds": 13.852987000049325,
+     "exploitability": 0.0012098450032052704
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 189140000,
+     "seconds": 18.48882480004977,
+     "exploitability": 0.0011251496206189787
+    }
+   ],
+   "dcfr": [
+    {
+     "iteration": 1,
+     "nodes_touched": 18914,
+     "seconds": 0.002464799996232614,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 37828,
+     "seconds": 0.00466039999446366,
+     "exploitability": 2.055194444444444
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 56742,
+     "seconds": 0.006784499986679293,
+     "exploitability": 1.8158296856419902
+    },
+    {
+     "iteration": 4,
+     "nodes_touched": 75656,
+     "seconds": 0.00897989998338744,
+     "exploitability": 1.6547655971487838
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 113484,
+     "seconds": 0.013223699992522597,
+     "exploitability": 1.3993607871239677
+    },
+    {
+     "iteration": 7,
+     "nodes_touched": 132398,
+     "seconds": 0.015434999993885867,
+     "exploitability": 1.1753267654942432
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 189140,
+     "seconds": 0.021845800001756288,
+     "exploitability": 0.7788020469962059
+    },
+    {
+     "iteration": 13,
+     "nodes_touched": 245882,
+     "seconds": 0.028417900000931695,
+     "exploitability": 0.3833457475566806
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 340452,
+     "seconds": 0.03905950000626035,
+     "exploitability": 0.19394441767232617
+    },
+    {
+     "iteration": 24,
+     "nodes_touched": 453936,
+     "seconds": 0.051813300015055574,
+     "exploitability": 0.11104944959171063
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 605248,
+     "seconds": 0.06829490000382066,
+     "exploitability": 0.05683313895096406
+    },
+    {
+     "iteration": 42,
+     "nodes_touched": 794388,
+     "seconds": 0.08887330000288785,
+     "exploitability": 0.032813323979081765
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 1059184,
+     "seconds": 0.11423250001098495,
+     "exploitability": 0.022494945297180123
+    },
+    {
+     "iteration": 75,
+     "nodes_touched": 1418550,
+     "seconds": 0.15437390000442974,
+     "exploitability": 0.013332630744746624
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1891400,
+     "seconds": 0.2002941000100691,
+     "exploitability": 0.007761588557354315
+    },
+    {
+     "iteration": 133,
+     "nodes_touched": 2515562,
+     "seconds": 0.2633471000153804,
+     "exploitability": 0.003956718314429619
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 3366692,
+     "seconds": 0.35429780001868494,
+     "exploitability": 0.002535206424592776
+    },
+    {
+     "iteration": 237,
+     "nodes_touched": 4482618,
+     "seconds": 0.474298400018597,
+     "exploitability": 0.001617194067639563
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 5976824,
+     "seconds": 0.6278275000222493,
+     "exploitability": 0.0011175641548563375
+    },
+    {
+     "iteration": 422,
+     "nodes_touched": 7981708,
+     "seconds": 0.8061157000192907,
+     "exploitability": 0.0006276334490081387
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 10629668,
+     "seconds": 1.0719804000254953,
+     "exploitability": 0.000390706914179223
+    },
+    {
+     "iteration": 750,
+     "nodes_touched": 14185500,
+     "seconds": 1.4137403000349877,
+     "exploitability": 0.00026595977560101014
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8857214000308886,
+     "exploitability": 0.00015841905271789247
+    },
+    {
+     "iteration": 1334,
+     "nodes_touched": 25231276,
+     "seconds": 2.5052373000362422,
+     "exploitability": 9.593986800110477e-05
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 33629092,
+     "seconds": 3.3412291000277037,
+     "exploitability": 7.637070787372413e-05
+    },
+    {
+     "iteration": 2371,
+     "nodes_touched": 44845094,
+     "seconds": 4.522722500027157,
+     "exploitability": 4.2751739627103214e-05
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 59806068,
+     "seconds": 5.96907140003168,
+     "exploitability": 2.357190139823384e-05
+    },
+    {
+     "iteration": 4217,
+     "nodes_touched": 79760338,
+     "seconds": 7.969632500040461,
+     "exploitability": 1.5621492403250503e-05
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 106353422,
+     "seconds": 10.66307490003237,
+     "exploitability": 1.3728417246006153e-05
+    },
+    {
+     "iteration": 7499,
+     "nodes_touched": 141836086,
+     "seconds": 14.2517098000244,
+     "exploitability": 1.2244918810869199e-05
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 189140000,
+     "seconds": 18.91271010003402,
+     "exploitability": 8.43973361935868e-06
+    }
+   ]
+  }
+ },
+ "mccfr": {
+  "kuhn": {
+   "es": {
+    "seeds": [
+     2727543821,
+     2207150826,
+     508070823,
+     1505698380,
+     1703033196
+    ],
+    "points": [
+     {
+      "iteration": 1,
+      "nodes_touched_mean": 14.4,
+      "seconds_mean": 6.857999833300709e-05,
+      "geo_mean": 0.44030276050403344,
+      "lower": 0.39387450695868603,
+      "upper": 0.49220377933169246,
+      "n": 5
+     },
+     {
+      "iteration": 2,
+      "nodes_touched_mean": 29.0,
+      "seconds_mean": 0.00011249999806750566,
+      "geo_mean": 0.4411886887174102,
+      "lower": 0.3589240262762115,
+      "upper": 0.5423082457633974,
+      "n": 5
+     },
+     {
+      "iteration": 3,
+      "nodes_touched_mean": 43.4,
+      "seconds_mean": 0.00015301999519579113,
+      "geo_mean": 0.4346690463116998,
+      "lower": 0.33827242578027755,
+      "upper": 0.5585355631210845,
+      "n": 5
+     },
+     {
+      "iteration": 6,
+      "nodes_touched_mean": 87.0,
+      "seconds_mean": 0.00023735999711789192,
+      "geo_mean": 0.3906391381370357,
+      "lower": 0.3022950083446667,
+      "upper": 0.5048013762452135,
+      "n": 5
+     },
+     {
+      "iteration": 10,
+      "nodes_touched_mean": 141.6,
+      "seconds_mean": 0.00033509999921079727,
+      "geo_mean": 0.3146854022048829,
+      "lower": 0.1726878545519083,
+      "upper": 0.5734445112993306,
+      "n": 5
+     },
+     {
+      "iteration": 18,
+      "nodes_touched_mean": 258.2,
+      "seconds_mean": 0.0005239599966444075,
+      "geo_mean": 0.20396762338286745,
+      "lower": 0.09481242765978358,
+      "upper": 0.43879048786451263,
+      "n": 5
+     },
+     {
+      "iteration": 32,
+      "nodes_touched_mean": 457.6,
+      "seconds_mean": 0.0008451999980024994,
+      "geo_mean": 0.1568967484388648,
+      "lower": 0.0993058144763125,
+      "upper": 0.2478866902255783,
+      "n": 5
+     },
+     {
+      "iteration": 56,
+      "nodes_touched_mean": 809.4,
+      "seconds_mean": 0.0014113799959886819,
+      "geo_mean": 0.13586093479360647,
+      "lower": 0.11455628976652762,
+      "upper": 0.16112771843965498,
+      "n": 5
+     },
+     {
+      "iteration": 100,
+      "nodes_touched_mean": 1463.2,
+      "seconds_mean": 0.002276500000152737,
+      "geo_mean": 0.10083238690794478,
+      "lower": 0.06568109694567366,
+      "upper": 0.15479598731371635,
+      "n": 5
+     },
+     {
+      "iteration": 178,
+      "nodes_touched_mean": 2602.6,
+      "seconds_mean": 0.004032379999989644,
+      "geo_mean": 0.0794186064373151,
+      "lower": 0.05914308729852431,
+      "upper": 0.1066450085131508,
+      "n": 5
+     },
+     {
+      "iteration": 316,
+      "nodes_touched_mean": 4636.2,
+      "seconds_mean": 0.0072861799970269205,
+      "geo_mean": 0.052798322278241924,
+      "lower": 0.02892770687564375,
+      "upper": 0.09636653355832449,
+      "n": 5
+     },
+     {
+      "iteration": 562,
+      "nodes_touched_mean": 8219.0,
+      "seconds_mean": 0.013079539994942024,
+      "geo_mean": 0.046723463579176734,
+      "lower": 0.04100909816655096,
+      "upper": 0.053234090639312906,
+      "n": 5
+     },
+     {
+      "iteration": 1000,
+      "nodes_touched_mean": 14606.6,
+      "seconds_mean": 0.022418419996392915,
+      "geo_mean": 0.022144712211559798,
+      "lower": 0.013954772671430549,
+      "upper": 0.035141258871007774,
+      "n": 5
+     },
+     {
+      "iteration": 1778,
+      "nodes_touched_mean": 25997.6,
+      "seconds_mean": 0.03905151999788359,
+      "geo_mean": 0.019529524496011575,
+      "lower": 0.012210499018162803,
+      "upper": 0.031235605233904857,
+      "n": 5
+     },
+     {
+      "iteration": 3162,
+      "nodes_touched_mean": 46244.2,
+      "seconds_mean": 0.06955078000028152,
+      "geo_mean": 0.011065457653090676,
+      "lower": 0.005782442486796873,
+      "upper": 0.02117519600963119,
+      "n": 5
+     },
+     {
+      "iteration": 5623,
+      "nodes_touched_mean": 82243.6,
+      "seconds_mean": 0.1304506800021045,
+      "geo_mean": 0.009161536718445837,
+      "lower": 0.004574078055308455,
+      "upper": 0.01834987379500921,
+      "n": 5
+     },
+     {
+      "iteration": 10000,
+      "nodes_touched_mean": 146276.6,
+      "seconds_mean": 0.2254536199994618,
+      "geo_mean": 0.007885586812292332,
+      "lower": 0.005304173082038021,
+      "upper": 0.011723312646936927,
+      "n": 5
+     },
+     {
+      "iteration": 17783,
+      "nodes_touched_mean": 259742.6,
+      "seconds_mean": 0.3956692199979443,
+      "geo_mean": 0.0052453674525035155,
+      "lower": 0.003482208166059003,
+      "upper": 0.007901273674549477,
+      "n": 5
+     },
+     {
+      "iteration": 31623,
+      "nodes_touched_mean": 461585.8,
+      "seconds_mean": 0.6965070999984164,
+      "geo_mean": 0.0037093186426153495,
+      "lower": 0.002557732248850425,
+      "upper": 0.0053793921543733875,
+      "n": 5
+     },
+     {
+      "iteration": 56234,
+      "nodes_touched_mean": 820036.4,
+      "seconds_mean": 1.2465372199978446,
+      "geo_mean": 0.0030115222071512796,
+      "lower": 0.0015125281773064395,
+      "upper": 0.005996097223336471,
+      "n": 5
+     },
+     {
+      "iteration": 100000,
+      "nodes_touched_mean": 1457751.4,
+      "seconds_mean": 2.2200429599994096,
+      "geo_mean": 0.0030351683541957578,
+      "lower": 0.001522589309558277,
+      "upper": 0.00605038199104654,
+      "n": 5
+     }
+    ]
+   },
+   "es_linear": {
+    "seeds": [
+     2727543821,
+     2207150826,
+     508070823,
+     1505698380,
+     1703033196
+    ],
+    "points": [
+     {
+      "iteration": 1,
+      "nodes_touched_mean": 14.4,
+      "seconds_mean": 5.495999939739704e-05,
+      "geo_mean": 0.44030276050403344,
+      "lower": 0.39387450695868603,
+      "upper": 0.49220377933169246,
+      "n": 5
+     },
+     {
+      "iteration": 2,
+      "nodes_touched_mean": 29.0,
+      "seconds_mean": 9.661999938543886e-05,
+      "geo_mean": 0.44466304457528366,
+      "lower": 0.35711287436626404,
+      "upper": 0.5536771071663148,
+      "n": 5
+     },
+     {
+      "iteration": 3,
+      "nodes_touched_mean": 43.4,
+      "seconds_mean": 0.00013438000169117004,
+      "geo_mean": 0.4355017517402825,
+      "lower": 0.33219262261906946,
+      "upper": 0.5709391565457576,
+      "n": 5
+     },
+     {
+      "iteration": 6,
+      "nodes_touched_mean": 87.0,
+      "seconds_mean": 0.0002250399993499741,
+      "geo_mean": 0.4041865909758858,
+      "lower": 0.29881369672007135,
+      "upper": 0.5467179119227255,
+      "n": 5
+     },
+     {
+      "iteration": 10,
+      "nodes_touched_mean": 141.0,
+      "seconds_mean": 0.00032665999606251717,
+      "geo_mean": 0.2943745357338108,
+      "lower": 0.16389395945629254,
+      "upper": 0.5287343571170862,
+      "n": 5
+     },
+     {
+      "iteration": 18,
+      "nodes_touched_mean": 257.8,
+      "seconds_mean": 0.0005348799953935668,
+      "geo_mean": 0.19395381907309775,
+      "lower": 0.10565524979546975,
+      "upper": 0.35604557280269583,
+      "n": 5
+     },
+     {
+      "iteration": 32,
+      "nodes_touched_mean": 463.6,
+      "seconds_mean": 0.0008860399946570396,
+      "geo_mean": 0.15970259855743893,
+      "lower": 0.10509629643810675,
+      "upper": 0.24268143455482122,
+      "n": 5
+     },
+     {
+      "iteration": 56,
+      "nodes_touched_mean": 818.2,
+      "seconds_mean": 0.0014686799957416951,
+      "geo_mean": 0.09803706828473606,
+      "lower": 0.04699502731086233,
+      "upper": 0.20451667565356374,
+      "n": 5
+     },
+     {
+      "iteration": 100,
+      "nodes_touched_mean": 1447.8,
+      "seconds_mean": 0.0024851599970133974,
+      "geo_mean": 0.09099756863729505,
+      "lower": 0.07390945110370774,
+      "upper": 0.11203651730927036,
+      "n": 5
+     },
+     {
+      "iteration": 178,
+      "nodes_touched_mean": 2576.8,
+      "seconds_mean": 0.0043196399987209585,
+      "geo_mean": 0.058069745717509814,
+      "lower": 0.027584840082856266,
+      "upper": 0.1222445139274879,
+      "n": 5
+     },
+     {
+      "iteration": 316,
+      "nodes_touched_mean": 4589.8,
+      "seconds_mean": 0.0077750399999786165,
+      "geo_mean": 0.03211792565606912,
+      "lower": 0.01707071141717709,
+      "upper": 0.06042871461178785,
+      "n": 5
+     },
+     {
+      "iteration": 562,
+      "nodes_touched_mean": 8143.6,
+      "seconds_mean": 0.013508539996109903,
+      "geo_mean": 0.035939678850134486,
+      "lower": 0.020168672870092934,
+      "upper": 0.06404291071457359,
+      "n": 5
+     },
+     {
+      "iteration": 1000,
+      "nodes_touched_mean": 14549.4,
+      "seconds_mean": 0.023664559997268953,
+      "geo_mean": 0.018174723910216264,
+      "lower": 0.012530427687221027,
+      "upper": 0.02636147763331808,
+      "n": 5
+     },
+     {
+      "iteration": 1778,
+      "nodes_touched_mean": 25896.4,
+      "seconds_mean": 0.04323988000105601,
+      "geo_mean": 0.01938834875258359,
+      "lower": 0.012922273460472488,
+      "upper": 0.029089932859079497,
+      "n": 5
+     },
+     {
+      "iteration": 3162,
+      "nodes_touched_mean": 46219.6,
+      "seconds_mean": 0.07660850000102074,
+      "geo_mean": 0.0170928039203038,
+      "lower": 0.011018596500477085,
+      "upper": 0.026515531796204965,
+      "n": 5
+     },
+     {
+      "iteration": 5623,
+      "nodes_touched_mean": 82203.6,
+      "seconds_mean": 0.13551729999890086,
+      "geo_mean": 0.008550857243373032,
+      "lower": 0.00431557203229026,
+      "upper": 0.016942634498848124,
+      "n": 5
+     },
+     {
+      "iteration": 10000,
+      "nodes_touched_mean": 146187.8,
+      "seconds_mean": 0.23206411999708507,
+      "geo_mean": 0.0060270860136819905,
+      "lower": 0.004042643070696874,
+      "upper": 0.008985647553114108,
+      "n": 5
+     },
+     {
+      "iteration": 17783,
+      "nodes_touched_mean": 259365.6,
+      "seconds_mean": 0.40257411999627946,
+      "geo_mean": 0.004703440569979197,
+      "lower": 0.0029111458902170585,
+      "upper": 0.007599190844288731,
+      "n": 5
+     },
+     {
+      "iteration": 31623,
+      "nodes_touched_mean": 461112.6,
+      "seconds_mean": 0.7238285799947335,
+      "geo_mean": 0.0037799620331559927,
+      "lower": 0.0018471489829524532,
+      "upper": 0.007735224989412004,
+      "n": 5
+     },
+     {
+      "iteration": 56234,
+      "nodes_touched_mean": 820658.8,
+      "seconds_mean": 1.2812495999911335,
+      "geo_mean": 0.0033536277937566607,
+      "lower": 0.001957292306827001,
+      "upper": 0.0057461112680147275,
+      "n": 5
+     },
+     {
+      "iteration": 100000,
+      "nodes_touched_mean": 1458271.2,
+      "seconds_mean": 2.2654683799890334,
+      "geo_mean": 0.0032864364078868673,
+      "lower": 0.0018374199897717824,
+      "upper": 0.00587816847710786,
+      "n": 5
+     }
+    ]
+   }
+  },
+  "leduc": {
+   "es": {
+    "seeds": [
+     2727543821,
+     2207150826,
+     508070823,
+     1505698380,
+     1703033196
+    ],
+    "points": [
+     {
+      "iteration": 1,
+      "nodes_touched_mean": 41.0,
+      "seconds_mean": 0.0001420999993570149,
+      "geo_mean": 2.373611111111111,
+      "lower": 2.373611111111111,
+      "upper": 2.373611111111111,
+      "n": 5
+     },
+     {
+      "iteration": 2,
+      "nodes_touched_mean": 77.0,
+      "seconds_mean": 0.00026137999957427384,
+      "geo_mean": 2.4136189378372954,
+      "lower": 2.3657736376435086,
+      "upper": 2.4624318592414167,
+      "n": 5
+     },
+     {
+      "iteration": 3,
+      "nodes_touched_mean": 118.6,
+      "seconds_mean": 0.00039391999889630823,
+      "geo_mean": 2.4163058577678593,
+      "lower": 2.382817133588246,
+      "upper": 2.4502652410808867,
+      "n": 5
+     },
+     {
+      "iteration": 6,
+      "nodes_touched_mean": 245.0,
+      "seconds_mean": 0.000774000003002584,
+      "geo_mean": 2.4612120877768437,
+      "lower": 2.380081155297908,
+      "upper": 2.54510856805664,
+      "n": 5
+     },
+     {
+      "iteration": 10,
+      "nodes_touched_mean": 426.8,
+      "seconds_mean": 0.0013437600020552054,
+      "geo_mean": 2.478823001486047,
+      "lower": 2.4172951745506985,
+      "upper": 2.5419169067089133,
+      "n": 5
+     },
+     {
+      "iteration": 18,
+      "nodes_touched_mean": 754.2,
+      "seconds_mean": 0.002270720005617477,
+      "geo_mean": 2.4536719144066943,
+      "lower": 2.3968336732007076,
+      "upper": 2.5118580112021243,
+      "n": 5
+     },
+     {
+      "iteration": 32,
+      "nodes_touched_mean": 1385.8,
+      "seconds_mean": 0.004044020001310855,
+      "geo_mean": 2.5205108780710215,
+      "lower": 2.4334419468908464,
+      "upper": 2.610695149145187,
+      "n": 5
+     },
+     {
+      "iteration": 56,
+      "nodes_touched_mean": 2459.6,
+      "seconds_mean": 0.006699539997498505,
+      "geo_mean": 2.520954480907655,
+      "lower": 2.4138677624608578,
+      "upper": 2.632791900882532,
+      "n": 5
+     },
+     {
+      "iteration": 100,
+      "nodes_touched_mean": 4518.0,
+      "seconds_mean": 0.011449040001025423,
+      "geo_mean": 2.4687267845209138,
+      "lower": 2.315116918515045,
+      "upper": 2.632528788446743,
+      "n": 5
+     },
+     {
+      "iteration": 178,
+      "nodes_touched_mean": 7951.0,
+      "seconds_mean": 0.018736680000438356,
+      "geo_mean": 2.2886278558049162,
+      "lower": 2.1227335743663835,
+      "upper": 2.4674869826420163,
+      "n": 5
+     },
+     {
+      "iteration": 316,
+      "nodes_touched_mean": 14073.4,
+      "seconds_mean": 0.03209455999603961,
+      "geo_mean": 2.005260146181925,
+      "lower": 1.8635482236042962,
+      "upper": 2.1577484300826897,
+      "n": 5
+     },
+     {
+      "iteration": 562,
+      "nodes_touched_mean": 25131.0,
+      "seconds_mean": 0.05776483999507036,
+      "geo_mean": 1.637231066891446,
+      "lower": 1.5866323499467179,
+      "upper": 1.6894434091707005,
+      "n": 5
+     },
+     {
+      "iteration": 1000,
+      "nodes_touched_mean": 45323.2,
+      "seconds_mean": 0.1023625399946468,
+      "geo_mean": 1.2292212237512115,
+      "lower": 1.183984300094756,
+      "upper": 1.276186531189222,
+      "n": 5
+     },
+     {
+      "iteration": 1778,
+      "nodes_touched_mean": 81060.0,
+      "seconds_mean": 0.18204987999633887,
+      "geo_mean": 0.8945033211918418,
+      "lower": 0.8316627015946705,
+      "upper": 0.9620921920497519,
+      "n": 5
+     },
+     {
+      "iteration": 3162,
+      "nodes_touched_mean": 145585.2,
+      "seconds_mean": 0.3166224799992051,
+      "geo_mean": 0.6398456315719369,
+      "lower": 0.5825378419765138,
+      "upper": 0.7027911368858276,
+      "n": 5
+     },
+     {
+      "iteration": 5623,
+      "nodes_touched_mean": 260102.0,
+      "seconds_mean": 0.5556975599960424,
+      "geo_mean": 0.4314983258679266,
+      "lower": 0.38700039296993494,
+      "upper": 0.4811127032661387,
+      "n": 5
+     },
+     {
+      "iteration": 10000,
+      "nodes_touched_mean": 457504.8,
+      "seconds_mean": 0.9667567599972244,
+      "geo_mean": 0.2843877067374337,
+      "lower": 0.25706144553275095,
+      "upper": 0.3146188164303017,
+      "n": 5
+     },
+     {
+      "iteration": 17783,
+      "nodes_touched_mean": 808338.2,
+      "seconds_mean": 1.6908979999978329,
+      "geo_mean": 0.19064051457284717,
+      "lower": 0.17858710794569785,
+      "upper": 0.20350744359246153,
+      "n": 5
+     },
+     {
+      "iteration": 31623,
+      "nodes_touched_mean": 1426386.2,
+      "seconds_mean": 2.9577664399985224,
+      "geo_mean": 0.13689283042210576,
+      "lower": 0.12099860525754536,
+      "upper": 0.15487490108739763,
+      "n": 5
+     },
+     {
+      "iteration": 56234,
+      "nodes_touched_mean": 2523680.4,
+      "seconds_mean": 5.186258239997551,
+      "geo_mean": 0.0975472328065872,
+      "lower": 0.09203017670489975,
+      "upper": 0.10339502724996844,
+      "n": 5
+     },
+     {
+      "iteration": 100000,
+      "nodes_touched_mean": 4471393.8,
+      "seconds_mean": 9.180915979997371,
+      "geo_mean": 0.0711730469517422,
+      "lower": 0.06483233777587208,
+      "upper": 0.07813388790493542,
+      "n": 5
+     },
+     {
+      "iteration": 177828,
+      "nodes_touched_mean": 7956509.2,
+      "seconds_mean": 16.173194459997468,
+      "geo_mean": 0.049974392100381036,
+      "lower": 0.04829456143243022,
+      "upper": 0.051712652351069366,
+      "n": 5
+     },
+     {
+      "iteration": 300000,
+      "nodes_touched_mean": 13422942.8,
+      "seconds_mean": 27.15020917999791,
+      "geo_mean": 0.04099412699255123,
+      "lower": 0.03770346651611243,
+      "upper": 0.04457198775511144,
+      "n": 5
+     }
+    ]
+   },
+   "es_linear": {
+    "seeds": [
+     2727543821,
+     2207150826,
+     508070823,
+     1505698380,
+     1703033196
+    ],
+    "points": [
+     {
+      "iteration": 1,
+      "nodes_touched_mean": 41.0,
+      "seconds_mean": 0.00012917999702040107,
+      "geo_mean": 2.373611111111111,
+      "lower": 2.373611111111111,
+      "upper": 2.373611111111111,
+      "n": 5
+     },
+     {
+      "iteration": 2,
+      "nodes_touched_mean": 77.2,
+      "seconds_mean": 0.00024297999625559895,
+      "geo_mean": 2.426739356420302,
+      "lower": 2.386599754803316,
+      "upper": 2.467554055574999,
+      "n": 5
+     },
+     {
+      "iteration": 3,
+      "nodes_touched_mean": 118.8,
+      "seconds_mean": 0.0003750200005015358,
+      "geo_mean": 2.4294408824320644,
+      "lower": 2.412523402917811,
+      "upper": 2.4464769933812582,
+      "n": 5
+     },
+     {
+      "iteration": 6,
+      "nodes_touched_mean": 245.2,
+      "seconds_mean": 0.000756940001156181,
+      "geo_mean": 2.4735590536239442,
+      "lower": 2.3843170859079876,
+      "upper": 2.5661412351264343,
+      "n": 5
+     },
+     {
+      "iteration": 10,
+      "nodes_touched_mean": 424.4,
+      "seconds_mean": 0.001298640004824847,
+      "geo_mean": 2.4768670233134626,
+      "lower": 2.407321654093061,
+      "upper": 2.548421496041814,
+      "n": 5
+     },
+     {
+      "iteration": 18,
+      "nodes_touched_mean": 760.8,
+      "seconds_mean": 0.0021738800045568497,
+      "geo_mean": 2.462262753440838,
+      "lower": 2.3917020363626276,
+      "upper": 2.534905174142198,
+      "n": 5
+     },
+     {
+      "iteration": 32,
+      "nodes_touched_mean": 1395.8,
+      "seconds_mean": 0.0036814000050071627,
+      "geo_mean": 2.4955288990335327,
+      "lower": 2.383537132008739,
+      "upper": 2.612782659132781,
+      "n": 5
+     },
+     {
+      "iteration": 56,
+      "nodes_touched_mean": 2471.4,
+      "seconds_mean": 0.006391800005803816,
+      "geo_mean": 2.5760890634588263,
+      "lower": 2.458813965844844,
+      "upper": 2.698957690600222,
+      "n": 5
+     },
+     {
+      "iteration": 100,
+      "nodes_touched_mean": 4487.0,
+      "seconds_mean": 0.011066220005159267,
+      "geo_mean": 2.495334407152869,
+      "lower": 2.384338657961313,
+      "upper": 2.611497231204977,
+      "n": 5
+     },
+     {
+      "iteration": 178,
+      "nodes_touched_mean": 8113.6,
+      "seconds_mean": 0.01861326000362169,
+      "geo_mean": 2.299491975905332,
+      "lower": 2.201852358615851,
+      "upper": 2.401461354373909,
+      "n": 5
+     },
+     {
+      "iteration": 316,
+      "nodes_touched_mean": 14516.0,
+      "seconds_mean": 0.032831320003606376,
+      "geo_mean": 1.9472757066938355,
+      "lower": 1.826736107053155,
+      "upper": 2.075769271346449,
+      "n": 5
+     },
+     {
+      "iteration": 562,
+      "nodes_touched_mean": 25807.8,
+      "seconds_mean": 0.05884182000299916,
+      "geo_mean": 1.5708688592560738,
+      "lower": 1.404871866979409,
+      "upper": 1.756479740950387,
+      "n": 5
+     },
+     {
+      "iteration": 1000,
+      "nodes_touched_mean": 45954.6,
+      "seconds_mean": 0.10271266000927426,
+      "geo_mean": 1.1212992530284869,
+      "lower": 1.0252377749167767,
+      "upper": 1.2263613823089035,
+      "n": 5
+     },
+     {
+      "iteration": 1778,
+      "nodes_touched_mean": 81354.6,
+      "seconds_mean": 0.17560858000942972,
+      "geo_mean": 0.7058732832003791,
+      "lower": 0.6333266351212691,
+      "upper": 0.7867300446643566,
+      "n": 5
+     },
+     {
+      "iteration": 3162,
+      "nodes_touched_mean": 143931.0,
+      "seconds_mean": 0.3053195800137473,
+      "geo_mean": 0.4883148865944916,
+      "lower": 0.42404359954227105,
+      "upper": 0.5623276208559329,
+      "n": 5
+     },
+     {
+      "iteration": 5623,
+      "nodes_touched_mean": 256610.8,
+      "seconds_mean": 0.5376753000164172,
+      "geo_mean": 0.34070293154825637,
+      "lower": 0.30602211411904734,
+      "upper": 0.3793140502271661,
+      "n": 5
+     },
+     {
+      "iteration": 10000,
+      "nodes_touched_mean": 450921.4,
+      "seconds_mean": 0.9462038400146412,
+      "geo_mean": 0.24027163287876263,
+      "lower": 0.21127905707011838,
+      "upper": 0.27324268844624555,
+      "n": 5
+     },
+     {
+      "iteration": 17783,
+      "nodes_touched_mean": 800441.4,
+      "seconds_mean": 1.6562890800181775,
+      "geo_mean": 0.18430671398610657,
+      "lower": 0.17298985650401,
+      "upper": 0.19636391119596702,
+      "n": 5
+     },
+     {
+      "iteration": 31623,
+      "nodes_touched_mean": 1421811.4,
+      "seconds_mean": 2.930470960016828,
+      "geo_mean": 0.13569944087875352,
+      "lower": 0.1258664912046785,
+      "upper": 0.14630056084475845,
+      "n": 5
+     },
+     {
+      "iteration": 56234,
+      "nodes_touched_mean": 2522070.8,
+      "seconds_mean": 5.172171320018242,
+      "geo_mean": 0.09343365215485216,
+      "lower": 0.08731988389080597,
+      "upper": 0.09997548056649544,
+      "n": 5
+     },
+     {
+      "iteration": 100000,
+      "nodes_touched_mean": 4484903.2,
+      "seconds_mean": 9.20236070001847,
+      "geo_mean": 0.07234833371741174,
+      "lower": 0.06941783915785633,
+      "upper": 0.07540253996934718,
+      "n": 5
+     },
+     {
+      "iteration": 177828,
+      "nodes_touched_mean": 7953912.4,
+      "seconds_mean": 16.196109300022364,
+      "geo_mean": 0.05394977281221246,
+      "lower": 0.05299184829237687,
+      "upper": 0.05492501356870089,
+      "n": 5
+     },
+     {
+      "iteration": 300000,
+      "nodes_touched_mean": 13426604.6,
+      "seconds_mean": 26.786488560025465,
+      "geo_mean": 0.04089628849188485,
+      "lower": 0.03624629224553584,
+      "upper": 0.046142827549967194,
+      "n": 5
+     }
+    ]
+   }
+  }
+ },
+ "mccfr_runs": [
+  {
+   "game": "kuhn",
+   "variant": "es",
+   "seed": 2727543821,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 13,
+     "seconds": 7.03999976394698e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 28,
+     "seconds": 0.00012080000306013972,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 44,
+     "seconds": 0.00016789999790489674,
+     "exploitability": 0.375
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 87,
+     "seconds": 0.00024170000688172877,
+     "exploitability": 0.3194444444444444
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 142,
+     "seconds": 0.0003225000109523535,
+     "exploitability": 0.14062500000000003
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 260,
+     "seconds": 0.0004685000021709129,
+     "exploitability": 0.07896825396825391
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 472,
+     "seconds": 0.0007323000027099624,
+     "exploitability": 0.09166666666666656
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 833,
+     "seconds": 0.0013575000048149377,
+     "exploitability": 0.12014466195532952
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1492,
+     "seconds": 0.0020527000160655007,
+     "exploitability": 0.10063699129023135
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2622,
+     "seconds": 0.003867300009005703,
+     "exploitability": 0.0671147741682328
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4611,
+     "seconds": 0.007187600014731288,
+     "exploitability": 0.05045424135376894
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8257,
+     "seconds": 0.013389400002779439,
+     "exploitability": 0.04958443750710484
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14669,
+     "seconds": 0.023059099999954924,
+     "exploitability": 0.013447787400590494
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 26162,
+     "seconds": 0.038683899998432025,
+     "exploitability": 0.025469224882593178
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46640,
+     "seconds": 0.07390699999814387,
+     "exploitability": 0.017130020073114927
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82749,
+     "seconds": 0.13842339999973774,
+     "exploitability": 0.013524594915744564
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 146934,
+     "seconds": 0.24522110000543762,
+     "exploitability": 0.007611250964946997
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 260130,
+     "seconds": 0.4215057999972487,
+     "exploitability": 0.008255938176725403
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 461280,
+     "seconds": 0.7175258000061149,
+     "exploitability": 0.004598554452237863
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 819062,
+     "seconds": 1.2817305000062333,
+     "exploitability": 0.002087867295388568
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1452230,
+     "seconds": 2.2330271000100765,
+     "exploitability": 0.0011887927279863597
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es",
+   "seed": 2207150826,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 7.550000736955553e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 30,
+     "seconds": 0.00012660000356845558,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 43,
+     "seconds": 0.00016730000788811594,
+     "exploitability": 0.5
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 86,
+     "seconds": 0.0002567000046838075,
+     "exploitability": 0.3333333333333333
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 141,
+     "seconds": 0.0003652000013971701,
+     "exploitability": 0.3125
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 256,
+     "seconds": 0.0005704999930458143,
+     "exploitability": 0.24687499999999998
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 453,
+     "seconds": 0.000988799991318956,
+     "exploitability": 0.173869301994302
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 800,
+     "seconds": 0.001556999995955266,
+     "exploitability": 0.16123093681917205
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1452,
+     "seconds": 0.002625699999043718,
+     "exploitability": 0.09197948212339774
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2619,
+     "seconds": 0.004528599994955584,
+     "exploitability": 0.060616282393651605
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4659,
+     "seconds": 0.008175199996912852,
+     "exploitability": 0.03367507794608249
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8181,
+     "seconds": 0.014066500007174909,
+     "exploitability": 0.04893678275148919
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14531,
+     "seconds": 0.024602500008768402,
+     "exploitability": 0.031115366163296104
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25801,
+     "seconds": 0.04284380000899546,
+     "exploitability": 0.012020970745620974
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 45834,
+     "seconds": 0.07500460001756437,
+     "exploitability": 0.006511105838222342
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 81350,
+     "seconds": 0.13134370002080686,
+     "exploitability": 0.009743902491400613
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 144863,
+     "seconds": 0.2259201000124449,
+     "exploitability": 0.005384691282978582
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 257055,
+     "seconds": 0.417697800003225,
+     "exploitability": 0.0045223343354133805
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 456862,
+     "seconds": 0.7248585000052117,
+     "exploitability": 0.005026645662255663
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 812021,
+     "seconds": 1.272920699993847,
+     "exploitability": 0.005442962872914375
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1444129,
+     "seconds": 2.1876498999918113,
+     "exploitability": 0.0036805725985178117
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es",
+   "seed": 508070823,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 9.600000339560211e-05,
+     "exploitability": 0.37499999999999994
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 28,
+     "seconds": 0.00014340000052470714,
+     "exploitability": 0.33333333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 42,
+     "seconds": 0.00018509999790694565,
+     "exploitability": 0.33333333333333326
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 88,
+     "seconds": 0.00028839999868068844,
+     "exploitability": 0.42881944444444436
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 142,
+     "seconds": 0.00040010000520851463,
+     "exploitability": 0.4871576171118854
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 258,
+     "seconds": 0.0006283000111579895,
+     "exploitability": 0.37777428470887686
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 454,
+     "seconds": 0.0010169000161113217,
+     "exploitability": 0.23810242760380362
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 798,
+     "seconds": 0.0016712000069674104,
+     "exploitability": 0.14415342890244282
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1433,
+     "seconds": 0.0028814999968744814,
+     "exploitability": 0.06099179310302971
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2580,
+     "seconds": 0.004748999999719672,
+     "exploitability": 0.11081793820369412
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4657,
+     "seconds": 0.00824129999091383,
+     "exploitability": 0.10327352736589551
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8239,
+     "seconds": 0.014971199983847328,
+     "exploitability": 0.05169901321899009
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14703,
+     "seconds": 0.02253789998940192,
+     "exploitability": 0.03162946957344187
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 26113,
+     "seconds": 0.03384959998948034,
+     "exploitability": 0.026236435177596967
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46373,
+     "seconds": 0.05690679998951964,
+     "exploitability": 0.01261721126012616
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82819,
+     "seconds": 0.12018909999460448,
+     "exploitability": 0.0054112730256608566
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 147709,
+     "seconds": 0.2050209999870276,
+     "exploitability": 0.011420603542706992
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 262613,
+     "seconds": 0.35415699999430217,
+     "exploitability": 0.0037474601743973934
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 467660,
+     "seconds": 0.6653829999850132,
+     "exploitability": 0.003973182294687211
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 831708,
+     "seconds": 1.244390799984103,
+     "exploitability": 0.0013918345799104614
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1477604,
+     "seconds": 2.243580899972585,
+     "exploitability": 0.003131055739788502
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es",
+   "seed": 1505698380,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 5.4799995268695056e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 30,
+     "seconds": 9.080000745598227e-05,
+     "exploitability": 0.5208333333333333
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 46,
+     "seconds": 0.00012100000458303839,
+     "exploitability": 0.5416666666666666
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 88,
+     "seconds": 0.00017840000509750098,
+     "exploitability": 0.53125
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 145,
+     "seconds": 0.00026130001060664654,
+     "exploitability": 0.42361111111111105
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 267,
+     "seconds": 0.0004070000140927732,
+     "exploitability": 0.2993650793650793
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 467,
+     "seconds": 0.0006159000186016783,
+     "exploitability": 0.19065461604158782
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 832,
+     "seconds": 0.0009890000219456851,
+     "exploitability": 0.11599559869713746
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1503,
+     "seconds": 0.0016593000327702612,
+     "exploitability": 0.11846663834517229
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2628,
+     "seconds": 0.0027601000329013914,
+     "exploitability": 0.07871847065908003
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4665,
+     "seconds": 0.0047463000228162855,
+     "exploitability": 0.03350152785994015
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8246,
+     "seconds": 0.00820750002458226,
+     "exploitability": 0.044667563128260895
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14688,
+     "seconds": 0.01674960003583692,
+     "exploitability": 0.01734911502430042
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 26132,
+     "seconds": 0.0363251000380842,
+     "exploitability": 0.013976178986487842
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46411,
+     "seconds": 0.0661132000386715,
+     "exploitability": 0.018798982988457724
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82385,
+     "seconds": 0.12264430003415328,
+     "exploitability": 0.005022287400634623
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 146100,
+     "seconds": 0.2102273000346031,
+     "exploitability": 0.010341970476863638
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 258854,
+     "seconds": 0.3499656000349205,
+     "exploitability": 0.004288213452800893
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 459728,
+     "seconds": 0.6536114000336966,
+     "exploitability": 0.002389393491517705
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 816306,
+     "seconds": 1.1707328000338748,
+     "exploitability": 0.0038675447849069733
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1449132,
+     "seconds": 2.160333800042281,
+     "exploitability": 0.0051818877606124025
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es",
+   "seed": 1703033196,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 14,
+     "seconds": 4.619998799171299e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 29,
+     "seconds": 8.089997572824359e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 42,
+     "seconds": 0.0001237999676959589,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 86,
+     "seconds": 0.00022159997024573386,
+     "exploitability": 0.37499999999999994
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 138,
+     "seconds": 0.0003263999678893015,
+     "exploitability": 0.34027777777777773
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 250,
+     "seconds": 0.0005454999627545476,
+     "exploitability": 0.16011904761904766
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 442,
+     "seconds": 0.0008720999612705782,
+     "exploitability": 0.13140873015873014
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 784,
+     "seconds": 0.0014821999502601102,
+     "exploitability": 0.14290704759967032
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1436,
+     "seconds": 0.0021632999560097232,
+     "exploitability": 0.15584187654047252
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2564,
+     "seconds": 0.004256899963365868,
+     "exploitability": 0.08902606270688762
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4589,
+     "seconds": 0.008080499959760346,
+     "exploitability": 0.06979763354507776
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8172,
+     "seconds": 0.014763099956326187,
+     "exploitability": 0.039739264749928754
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14442,
+     "seconds": 0.025142999948002398,
+     "exploitability": 0.023192908641940818
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25780,
+     "seconds": 0.043555199954425916,
+     "exploitability": 0.02530520140374387
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 45963,
+     "seconds": 0.07582229995750822,
+     "exploitability": 0.006270996320989181
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 81915,
+     "seconds": 0.1396528999612201,
+     "exploitability": 0.018021188481474743
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 145777,
+     "seconds": 0.2408785999577958,
+     "exploitability": 0.00629884447926915
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 260061,
+     "seconds": 0.4350198999600252,
+     "exploitability": 0.006618157005123054
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 462399,
+     "seconds": 0.7211567999620456,
+     "exploitability": 0.0031999628609692965
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 821085,
+     "seconds": 1.2629112999711651,
+     "exploitability": 0.004049198926619063
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1465662,
+     "seconds": 2.2756230999802938,
+     "exploitability": 0.0036283869635507504
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es_linear",
+   "seed": 2727543821,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 13,
+     "seconds": 4.189999890513718e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 28,
+     "seconds": 8.759999764151871e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 44,
+     "seconds": 0.0001348000077996403,
+     "exploitability": 0.3645833333333333
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 87,
+     "seconds": 0.00024059999850578606,
+     "exploitability": 0.3287037037037037
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 142,
+     "seconds": 0.0003569999971659854,
+     "exploitability": 0.15838068181818188
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 260,
+     "seconds": 0.000599599996348843,
+     "exploitability": 0.10202100207621853
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 471,
+     "seconds": 0.0010086999973282218,
+     "exploitability": 0.1535074277990194
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 825,
+     "seconds": 0.0016782000020612031,
+     "exploitability": 0.15467633425011693
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1454,
+     "seconds": 0.0028440000023692846,
+     "exploitability": 0.08253838241831318
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2609,
+     "seconds": 0.005038200004491955,
+     "exploitability": 0.05062461090175277
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4615,
+     "seconds": 0.008778999996138737,
+     "exploitability": 0.04429455668892107
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8149,
+     "seconds": 0.015316799996071495,
+     "exploitability": 0.027679329797713537
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14571,
+     "seconds": 0.02729420000105165,
+     "exploitability": 0.021874383052814778
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25990,
+     "seconds": 0.04857840000477154,
+     "exploitability": 0.028722425306198784
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46683,
+     "seconds": 0.0853380000044126,
+     "exploitability": 0.028715667181568733
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82654,
+     "seconds": 0.1400879000138957,
+     "exploitability": 0.003243000835844556
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 145974,
+     "seconds": 0.24465280000003986,
+     "exploitability": 0.0046879944951800645
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 258894,
+     "seconds": 0.4212719999923138,
+     "exploitability": 0.004587977993386755
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 461361,
+     "seconds": 0.7646756999893114,
+     "exploitability": 0.0031262876175185694
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 819274,
+     "seconds": 1.3313337999861687,
+     "exploitability": 0.001676411453704757
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1459899,
+     "seconds": 2.3326806999830296,
+     "exploitability": 0.001960769821468894
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es_linear",
+   "seed": 2207150826,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 4.959999932907522e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 30,
+     "seconds": 9.73999995039776e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 43,
+     "seconds": 0.0001353999978164211,
+     "exploitability": 0.5
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 86,
+     "seconds": 0.0002415999915683642,
+     "exploitability": 0.3333333333333333
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 139,
+     "seconds": 0.00034869999217335135,
+     "exploitability": 0.21924603174603172
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 258,
+     "seconds": 0.0005792999872937799,
+     "exploitability": 0.13045479302832233
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 463,
+     "seconds": 0.000958399978117086,
+     "exploitability": 0.14845136759368996
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 813,
+     "seconds": 0.0015617999742971733,
+     "exploitability": 0.11493096047505055
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1444,
+     "seconds": 0.002657799981534481,
+     "exploitability": 0.08217460275453237
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2552,
+     "seconds": 0.004535999978543259,
+     "exploitability": 0.027438291234471612
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4570,
+     "seconds": 0.008045599985052831,
+     "exploitability": 0.02562335810552993
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8159,
+     "seconds": 0.014272499975049868,
+     "exploitability": 0.02604416894474859
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14541,
+     "seconds": 0.025711699985549785,
+     "exploitability": 0.021880625499758805
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25853,
+     "seconds": 0.046233499990194105,
+     "exploitability": 0.012079504552975823
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46440,
+     "seconds": 0.0798258999857353,
+     "exploitability": 0.012540805187631426
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82898,
+     "seconds": 0.14170919997559395,
+     "exploitability": 0.012732498651864294
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 147158,
+     "seconds": 0.2326665999717079,
+     "exploitability": 0.0064011095509733384
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 260673,
+     "seconds": 0.3951600999716902,
+     "exploitability": 0.007106183770465652
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 461051,
+     "seconds": 0.6833074999594828,
+     "exploitability": 0.005574394096577839
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 820549,
+     "seconds": 1.2177875999477692,
+     "exploitability": 0.0040174374703437765
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1456750,
+     "seconds": 2.2343154999398394,
+     "exploitability": 0.00422847123686057
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es_linear",
+   "seed": 508070823,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 4.769999941345304e-05,
+     "exploitability": 0.37499999999999994
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 28,
+     "seconds": 8.379999781027436e-05,
+     "exploitability": 0.33333333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 42,
+     "seconds": 0.00012009999772999436,
+     "exploitability": 0.33333333333333326
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 88,
+     "seconds": 0.00020840000070165843,
+     "exploitability": 0.4817150297619047
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 142,
+     "seconds": 0.0003226999979233369,
+     "exploitability": 0.5387663118131867
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 258,
+     "seconds": 0.0005360999930417165,
+     "exploitability": 0.3068580321012038
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 460,
+     "seconds": 0.0008977999968919903,
+     "exploitability": 0.20898378481469088
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 807,
+     "seconds": 0.001512099988758564,
+     "exploitability": 0.12691826168511744
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1426,
+     "seconds": 0.002590399992186576,
+     "exploitability": 0.07748863970007641
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2563,
+     "seconds": 0.004648799993447028,
+     "exploitability": 0.14643822027314934
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4628,
+     "seconds": 0.008612699995865114,
+     "exploitability": 0.05269770716940139
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8241,
+     "seconds": 0.012899999986984767,
+     "exploitability": 0.03094202855727446
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14751,
+     "seconds": 0.021046799985924736,
+     "exploitability": 0.019039191661861132
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 26223,
+     "seconds": 0.036884299988741986,
+     "exploitability": 0.023742863915153484
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 46551,
+     "seconds": 0.072147099985159,
+     "exploitability": 0.012275741937333023
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 82829,
+     "seconds": 0.13506329998199362,
+     "exploitability": 0.009748508767218722
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 147787,
+     "seconds": 0.21998649998567998,
+     "exploitability": 0.0040997518532847055
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 261493,
+     "seconds": 0.4007733999751508,
+     "exploitability": 0.005976410561006312
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 464453,
+     "seconds": 0.7415226999728475,
+     "exploitability": 0.003967454787881547
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 824396,
+     "seconds": 1.2991012999700615,
+     "exploitability": 0.005464739180258998
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1460764,
+     "seconds": 2.282723599972087,
+     "exploitability": 0.005119573326850008
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es_linear",
+   "seed": 1505698380,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 15,
+     "seconds": 5.5900003644637764e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 30,
+     "seconds": 8.690000686328858e-05,
+     "exploitability": 0.5416666666666666
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 46,
+     "seconds": 0.0001162000116892159,
+     "exploitability": 0.5624999999999999
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 88,
+     "seconds": 0.0001705000177025795,
+     "exploitability": 0.5659722222222222
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 143,
+     "seconds": 0.00023460001102648675,
+     "exploitability": 0.3263789682539682
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 263,
+     "seconds": 0.00037110001721885055,
+     "exploitability": 0.24289760226626353
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 459,
+     "seconds": 0.0005741000204579905,
+     "exploitability": 0.09647002358614792
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 816,
+     "seconds": 0.0009359000250697136,
+     "exploitability": 0.0347457919532595
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1442,
+     "seconds": 0.00155870002345182,
+     "exploitability": 0.1059185467151135
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2544,
+     "seconds": 0.0026243000174872577,
+     "exploitability": 0.05783470331738608
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4524,
+     "seconds": 0.005286200015689246,
+     "exploitability": 0.03866483709106683
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8062,
+     "seconds": 0.01099580001027789,
+     "exploitability": 0.03309655978064274
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14404,
+     "seconds": 0.019312600008561276,
+     "exploitability": 0.020251279226142532
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25689,
+     "seconds": 0.04003780000493862,
+     "exploitability": 0.018059501394638272
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 45631,
+     "seconds": 0.07199780001246836,
+     "exploitability": 0.016517208579320125
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 81079,
+     "seconds": 0.12962660001358017,
+     "exploitability": 0.010830078492354095
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 144431,
+     "seconds": 0.23158090001379605,
+     "exploitability": 0.0070786475480266176
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 257321,
+     "seconds": 0.416185400026734,
+     "exploitability": 0.0025633168530648787
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 459407,
+     "seconds": 0.7417604000365827,
+     "exploitability": 0.0015857310818496728
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 819357,
+     "seconds": 1.3258556000364479,
+     "exploitability": 0.003362292118323146
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1455818,
+     "seconds": 2.302502800041111,
+     "exploitability": 0.004523478145676468
+    }
+   ]
+  },
+  {
+   "game": "kuhn",
+   "variant": "es_linear",
+   "seed": 1703033196,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 14,
+     "seconds": 7.9699995694682e-05,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 29,
+     "seconds": 0.00012739999510813504,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 42,
+     "seconds": 0.00016539999342057854,
+     "exploitability": 0.45833333333333326
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 86,
+     "seconds": 0.0002640999882714823,
+     "exploitability": 0.36111111111111116
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 139,
+     "seconds": 0.0003702999820234254,
+     "exploitability": 0.3620300751879698
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 250,
+     "seconds": 0.000588299983064644,
+     "exploitability": 0.27668226953096375
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 465,
+     "seconds": 0.0009911999804899096,
+     "exploitability": 0.22612123100274323
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 830,
+     "seconds": 0.0016553999885218218,
+     "exploitability": 0.11552190464389164
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 1473,
+     "seconds": 0.0027748999855248258,
+     "exploitability": 0.11208443989361341
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 2616,
+     "seconds": 0.004750899999635294,
+     "exploitability": 0.056129077903463886
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 4612,
+     "seconds": 0.008151700007147156,
+     "exploitability": 0.014778934768064994
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 8107,
+     "seconds": 0.014057600012165494,
+     "exploitability": 0.08122191969171819
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 14480,
+     "seconds": 0.024957500005257316,
+     "exploitability": 0.010745895126680505
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 25727,
+     "seconds": 0.044465400016633794,
+     "exploitability": 0.018415988111739556
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 45793,
+     "seconds": 0.07373370001732837,
+     "exploitability": 0.019981947682056772
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 81558,
+     "seconds": 0.13109950000944082,
+     "exploitability": 0.01048619161656017
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 145589,
+     "seconds": 0.23143380001420155,
+     "exploitability": 0.00913243803707317
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 258447,
+     "seconds": 0.37947970001550857,
+     "exploitability": 0.0046086935008801955
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 459291,
+     "seconds": 0.6878766000154428,
+     "exploitability": 0.007038320898395345
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 819718,
+     "seconds": 1.2321697000152199,
+     "exploitability": 0.003427991012709991
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 1458125,
+     "seconds": 2.1751193000091007,
+     "exploitability": 0.0019966866162249852
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es",
+   "seed": 2727543821,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 39,
+     "seconds": 0.00012250000145286322,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 76,
+     "seconds": 0.0002533000078983605,
+     "exploitability": 2.4202546296296297
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 115,
+     "seconds": 0.00037150000571273267,
+     "exploitability": 2.4202546296296297
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 248,
+     "seconds": 0.0007545000116806477,
+     "exploitability": 2.439699074074074
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 425,
+     "seconds": 0.0012972000113222748,
+     "exploitability": 2.4373066448801746
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 785,
+     "seconds": 0.0023264000192284584,
+     "exploitability": 2.4764584305944597
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1441,
+     "seconds": 0.004165800011833198,
+     "exploitability": 2.5850565039586657
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2517,
+     "seconds": 0.007053800014546141,
+     "exploitability": 2.6103111270745565
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4783,
+     "seconds": 0.01331970002502203,
+     "exploitability": 2.6160856314711416
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8507,
+     "seconds": 0.022197200029040687,
+     "exploitability": 2.3932757420534565
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 15232,
+     "seconds": 0.037656600019545294,
+     "exploitability": 2.1605217414475097
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 26655,
+     "seconds": 0.06265810001059435,
+     "exploitability": 1.6746008621232376
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 46691,
+     "seconds": 0.10691349999979138,
+     "exploitability": 1.2921519179285441
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 83321,
+     "seconds": 0.18242139999347273,
+     "exploitability": 0.9914744212513128
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 150266,
+     "seconds": 0.33680489999824204,
+     "exploitability": 0.6996351256360254
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 265849,
+     "seconds": 0.5761436999891885,
+     "exploitability": 0.4791358287897696
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 466738,
+     "seconds": 0.9716481999930693,
+     "exploitability": 0.30583564636734384
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 816222,
+     "seconds": 1.6518062999821268,
+     "exploitability": 0.18690260835605416
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1427346,
+     "seconds": 2.882430099984049,
+     "exploitability": 0.14097631656863113
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2525621,
+     "seconds": 4.986750099982601,
+     "exploitability": 0.10053406560642937
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4456536,
+     "seconds": 8.92841939999198,
+     "exploitability": 0.07270877176917492
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7950382,
+     "seconds": 15.829924399993615,
+     "exploitability": 0.0507867099426597
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13488127,
+     "seconds": 26.725955999994767,
+     "exploitability": 0.041365468165767624
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es",
+   "seed": 2207150826,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 42,
+     "seconds": 0.0001545999984955415,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 74,
+     "seconds": 0.00025499999173916876,
+     "exploitability": 2.4539556100217865
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 115,
+     "seconds": 0.0003514999843901023,
+     "exploitability": 2.414545887799564
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 235,
+     "seconds": 0.0006896999839227647,
+     "exploitability": 2.552433959694989
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 439,
+     "seconds": 0.0013506999821402133,
+     "exploitability": 2.5295164271670725
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 773,
+     "seconds": 0.0020921999821439385,
+     "exploitability": 2.482584296509554
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1401,
+     "seconds": 0.004054099976201542,
+     "exploitability": 2.4508898971916837
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2522,
+     "seconds": 0.006658599973889068,
+     "exploitability": 2.588969599726407
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4771,
+     "seconds": 0.01141419998020865,
+     "exploitability": 2.5845446873923956
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8242,
+     "seconds": 0.020116299972869456,
+     "exploitability": 2.4508708288572425
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14253,
+     "seconds": 0.034452499967301264,
+     "exploitability": 2.081514504620978
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 25065,
+     "seconds": 0.060202599968761206,
+     "exploitability": 1.6864070381649099
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 44833,
+     "seconds": 0.10684349997609388,
+     "exploitability": 1.2107508640523394
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 80933,
+     "seconds": 0.19024269997316878,
+     "exploitability": 0.8702672679221981
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 147188,
+     "seconds": 0.32900109997717664,
+     "exploitability": 0.6707434575265967
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 260971,
+     "seconds": 0.571298199967714,
+     "exploitability": 0.4182630217589749
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 450970,
+     "seconds": 0.9521282999776304,
+     "exploitability": 0.2646986367271096
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 802008,
+     "seconds": 1.6989154999755556,
+     "exploitability": 0.1801691307025293
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1430611,
+     "seconds": 2.965424299967708,
+     "exploitability": 0.12117824932255622
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2521959,
+     "seconds": 5.20912109996425,
+     "exploitability": 0.09827763327160269
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4486016,
+     "seconds": 9.238177499966696,
+     "exploitability": 0.06919675482695224
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7983581,
+     "seconds": 16.29669809996267,
+     "exploitability": 0.050650495317395475
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13401002,
+     "seconds": 27.16049829997064,
+     "exploitability": 0.03657638856191671
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es",
+   "seed": 508070823,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 41,
+     "seconds": 0.00018390000332146883,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 81,
+     "seconds": 0.000324500011629425,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 140,
+     "seconds": 0.0005307000101311132,
+     "exploitability": 2.4258101851851848
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 265,
+     "seconds": 0.00092530001711566,
+     "exploitability": 2.4873553240740742
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 418,
+     "seconds": 0.0014816000184509903,
+     "exploitability": 2.4520084021226416
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 716,
+     "seconds": 0.002501000024494715,
+     "exploitability": 2.4473968524341947
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1295,
+     "seconds": 0.004268800024874508,
+     "exploitability": 2.447897224502498
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2333,
+     "seconds": 0.007214500015834346,
+     "exploitability": 2.4164358752533137
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4272,
+     "seconds": 0.01226340001448989,
+     "exploitability": 2.319597882982886
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 7453,
+     "seconds": 0.02064330002758652,
+     "exploitability": 2.1207645857879696
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 13394,
+     "seconds": 0.03528550002374686,
+     "exploitability": 1.860097147467886
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 24884,
+     "seconds": 0.062128900026436895,
+     "exploitability": 1.5926330428722015
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 44524,
+     "seconds": 0.10750380002718884,
+     "exploitability": 1.1950095409856913
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 80217,
+     "seconds": 0.1894859000312863,
+     "exploitability": 0.8566872638691223
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 144393,
+     "seconds": 0.3300922000198625,
+     "exploitability": 0.5792832672178091
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 257913,
+     "seconds": 0.5538289000251098,
+     "exploitability": 0.38450349994864585
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 453470,
+     "seconds": 0.9869097000191687,
+     "exploitability": 0.2568481092268122
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 801723,
+     "seconds": 1.7304814000235638,
+     "exploitability": 0.1871170420185382
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1408130,
+     "seconds": 2.953640300023835,
+     "exploitability": 0.12545123176167416
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2517631,
+     "seconds": 5.2562643000273965,
+     "exploitability": 0.09120887265075255
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4472543,
+     "seconds": 9.241928400020697,
+     "exploitability": 0.07122974774334
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7928940,
+     "seconds": 16.14845490003063,
+     "exploitability": 0.05128195407270954
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13355205,
+     "seconds": 26.92206000002625,
+     "exploitability": 0.043064667981841845
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es",
+   "seed": 1505698380,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 41,
+     "seconds": 0.00015110000094864517,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 78,
+     "seconds": 0.00029499999072868377,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 113,
+     "seconds": 0.00045169999066274613,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 239,
+     "seconds": 0.0009281999955419451,
+     "exploitability": 2.459375
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 428,
+     "seconds": 0.0015931999951135367,
+     "exploitability": 2.5383444675256275
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 745,
+     "seconds": 0.002385100000537932,
+     "exploitability": 2.4869170367840567
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1382,
+     "seconds": 0.003706100003910251,
+     "exploitability": 2.5983733270585567
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2493,
+     "seconds": 0.005820000005769543,
+     "exploitability": 2.553183679315527
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4535,
+     "seconds": 0.009147300006588921,
+     "exploitability": 2.380066688276032
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8161,
+     "seconds": 0.014966000002459623,
+     "exploitability": 2.1857107502237016
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14155,
+     "seconds": 0.023864500006311573,
+     "exploitability": 1.9333060845419638
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 25147,
+     "seconds": 0.049047700013034046,
+     "exploitability": 1.6291778152941414
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 45016,
+     "seconds": 0.09117230000265408,
+     "exploitability": 1.2342029200466387
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 79786,
+     "seconds": 0.17226460001256783,
+     "exploitability": 0.876681403302788
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 141485,
+     "seconds": 0.27706690001650713,
+     "exploitability": 0.6486107318893259
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 252351,
+     "seconds": 0.523495900008129,
+     "exploitability": 0.41990443135751926
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 449662,
+     "seconds": 0.9275132000038866,
+     "exploitability": 0.2940480199473384
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 802570,
+     "seconds": 1.617555300006643,
+     "exploitability": 0.19279259666818588
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1404253,
+     "seconds": 2.8626382000074955,
+     "exploitability": 0.14990317951493554
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2485671,
+     "seconds": 5.126644600008149,
+     "exploitability": 0.10282766687534979
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4437320,
+     "seconds": 9.16544400001294,
+     "exploitability": 0.06438432352368641
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7956265,
+     "seconds": 16.296788400009973,
+     "exploitability": 0.04929414980390878
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13420567,
+     "seconds": 27.47699900000589,
+     "exploitability": 0.041174732370113404
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es",
+   "seed": 1703033196,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 42,
+     "seconds": 9.839999256655574e-05,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 76,
+     "seconds": 0.0001790999958757311,
+     "exploitability": 2.447916666666667
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 110,
+     "seconds": 0.00026420000358484685,
+     "exploitability": 2.447916666666667
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 238,
+     "seconds": 0.0005723000067519024,
+     "exploitability": 2.3707831815224463
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 424,
+     "seconds": 0.000996100003249012,
+     "exploitability": 2.4389752788297026
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 752,
+     "seconds": 0.002048900001682341,
+     "exploitability": 2.376740234975662
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1410,
+     "seconds": 0.004025299989734776,
+     "exploitability": 2.524377550472092
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2433,
+     "seconds": 0.0067507999774534255,
+     "exploitability": 2.442015746556401
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4229,
+     "seconds": 0.011100599978817627,
+     "exploitability": 2.4565596495157775
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 7392,
+     "seconds": 0.01576059997023549,
+     "exploitability": 2.309285270843877
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 13333,
+     "seconds": 0.02921369996329304,
+     "exploitability": 2.0048379991527243
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 23904,
+     "seconds": 0.0547868999565253,
+     "exploitability": 1.6054321598318266
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 45552,
+     "seconds": 0.09937959996750578,
+     "exploitability": 1.2162530557702216
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 81043,
+     "seconds": 0.17583479997119866,
+     "exploitability": 0.8837135592027467
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 144594,
+     "seconds": 0.3101472999842372,
+     "exploitability": 0.6082370643471109
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 263426,
+     "seconds": 0.5537210999900708,
+     "exploitability": 0.4623136344384075
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 466684,
+     "seconds": 0.9955843999923673,
+     "exploitability": 0.30424234240696857
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 819168,
+     "seconds": 1.755731500001275,
+     "exploitability": 0.20728914787986163
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1461591,
+     "seconds": 3.1246993000095244,
+     "exploitability": 0.14963972737205178
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2567520,
+     "seconds": 5.3525111000053585,
+     "exploitability": 0.09531467359658964
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4504554,
+     "seconds": 9.330610599994543,
+     "exploitability": 0.07915233182499866
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7963378,
+     "seconds": 16.29410649999045,
+     "exploitability": 0.04793402276585007
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13449813,
+     "seconds": 27.465532599992002,
+     "exploitability": 0.043153652114347754
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es_linear",
+   "seed": 2727543821,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 39,
+     "seconds": 0.0001112000027205795,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 76,
+     "seconds": 0.00021920001017861068,
+     "exploitability": 2.4202546296296297
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 115,
+     "seconds": 0.0003381000133231282,
+     "exploitability": 2.4202546296296297
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 248,
+     "seconds": 0.000699200012604706,
+     "exploitability": 2.463865740740741
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 425,
+     "seconds": 0.0011691000108839944,
+     "exploitability": 2.482183046250908
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 785,
+     "seconds": 0.0022253000061027706,
+     "exploitability": 2.5423042491126644
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1475,
+     "seconds": 0.0042178000148851424,
+     "exploitability": 2.6143292698089162
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2645,
+     "seconds": 0.007763200017507188,
+     "exploitability": 2.686506369009289
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4610,
+     "seconds": 0.011295200019958429,
+     "exploitability": 2.52866711340607
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8264,
+     "seconds": 0.020389300014358014,
+     "exploitability": 2.3512132460530495
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14631,
+     "seconds": 0.03612340001564007,
+     "exploitability": 1.8338531379987995
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 26102,
+     "seconds": 0.06293180001375731,
+     "exploitability": 1.3537942467210755
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 46451,
+     "seconds": 0.10690890002297238,
+     "exploitability": 1.0579198115856339
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 82123,
+     "seconds": 0.1791143000300508,
+     "exploitability": 0.6891407219103765
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 145823,
+     "seconds": 0.3256083000305807,
+     "exploitability": 0.4538175262562367
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 254373,
+     "seconds": 0.5421657000406412,
+     "exploitability": 0.3356422227657537
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 447920,
+     "seconds": 0.9430543000344187,
+     "exploitability": 0.21311567900494238
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 798767,
+     "seconds": 1.688520400042762,
+     "exploitability": 0.19406303805027175
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1417017,
+     "seconds": 2.9852256000449415,
+     "exploitability": 0.13121550583581582
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2519060,
+     "seconds": 5.26623390003806,
+     "exploitability": 0.09316214387786452
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4482021,
+     "seconds": 9.391122300032293,
+     "exploitability": 0.07331024358377304
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7958500,
+     "seconds": 16.53397880004195,
+     "exploitability": 0.05333917762558646
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13448800,
+     "seconds": 28.026182700050413,
+     "exploitability": 0.03850041868974462
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es_linear",
+   "seed": 2207150826,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 42,
+     "seconds": 0.00011930000619031489,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 74,
+     "seconds": 0.00022250000620260835,
+     "exploitability": 2.4539556100217865
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 115,
+     "seconds": 0.0003567000094335526,
+     "exploitability": 2.414545887799564
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 235,
+     "seconds": 0.0006839000125182793,
+     "exploitability": 2.576508033769063
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 426,
+     "seconds": 0.0012232000153744593,
+     "exploitability": 2.425736671252804
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 775,
+     "seconds": 0.001822700010961853,
+     "exploitability": 2.380922792247919
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1410,
+     "seconds": 0.0030587000073865056,
+     "exploitability": 2.4901775929220986
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2514,
+     "seconds": 0.005833500006701797,
+     "exploitability": 2.584653939741394
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4690,
+     "seconds": 0.012070300013874657,
+     "exploitability": 2.4613996630457464
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8563,
+     "seconds": 0.020053000014740974,
+     "exploitability": 2.302452645518973
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 15103,
+     "seconds": 0.03531810001004487,
+     "exploitability": 2.0890024463267176
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 26346,
+     "seconds": 0.061243000003742054,
+     "exploitability": 1.5510141435710498
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 46243,
+     "seconds": 0.10845650000555906,
+     "exploitability": 1.1558015536841904
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 82618,
+     "seconds": 0.17701430000306573,
+     "exploitability": 0.651093668805875
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 147890,
+     "seconds": 0.3140991000109352,
+     "exploitability": 0.44578732498167195
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 262616,
+     "seconds": 0.5609868000174174,
+     "exploitability": 0.39127212323460997
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 464540,
+     "seconds": 0.9765463000221644,
+     "exploitability": 0.2775179038352909
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 812466,
+     "seconds": 1.6773513000225648,
+     "exploitability": 0.18809011994953612
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1430388,
+     "seconds": 2.906946000017342,
+     "exploitability": 0.13321385055364737
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2537234,
+     "seconds": 5.123545500027831,
+     "exploitability": 0.09049766538041891
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4512967,
+     "seconds": 9.202378200032399,
+     "exploitability": 0.07118330644076573
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7986381,
+     "seconds": 16.03794360003667,
+     "exploitability": 0.053972933460929906
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13451827,
+     "seconds": 27.08279290003702,
+     "exploitability": 0.048428590345773626
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es_linear",
+   "seed": 508070823,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 41,
+     "seconds": 0.00010619999375194311,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 81,
+     "seconds": 0.00020099998801015317,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 140,
+     "seconds": 0.0004048999981023371,
+     "exploitability": 2.4258101851851848
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 265,
+     "seconds": 0.0008029000018723309,
+     "exploitability": 2.4965277777777777
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 418,
+     "seconds": 0.0012851000064983964,
+     "exploitability": 2.453740189339446
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 716,
+     "seconds": 0.002250400008051656,
+     "exploitability": 2.4580390904813143
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1345,
+     "seconds": 0.003795600001467392,
+     "exploitability": 2.3989869695136523
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2473,
+     "seconds": 0.006557000000611879,
+     "exploitability": 2.4431905943442533
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4470,
+     "seconds": 0.011458299995865673,
+     "exploitability": 2.4445568161363256
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 7998,
+     "seconds": 0.01694129999668803,
+     "exploitability": 2.3852931313872436
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14402,
+     "seconds": 0.027809399995021522,
+     "exploitability": 2.0130476952662066
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 26389,
+     "seconds": 0.05621919999248348,
+     "exploitability": 1.6989416152131938
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 47097,
+     "seconds": 0.0971309000015026,
+     "exploitability": 1.0420899121902618
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 82302,
+     "seconds": 0.1658105000096839,
+     "exploitability": 0.6518589394315187
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 142786,
+     "seconds": 0.29277470002125483,
+     "exploitability": 0.45255534319730273
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 256929,
+     "seconds": 0.5298552000167547,
+     "exploitability": 0.31520435027835125
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 451800,
+     "seconds": 0.9543004000151996,
+     "exploitability": 0.2485743464928556
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 806441,
+     "seconds": 1.6687852000177372,
+     "exploitability": 0.19125555122264204
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1443149,
+     "seconds": 3.012894600018626,
+     "exploitability": 0.1479549359205083
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2555621,
+     "seconds": 5.303705800019088,
+     "exploitability": 0.09916898273133852
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4530740,
+     "seconds": 9.385464900013176,
+     "exploitability": 0.07049087368947202
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 8006228,
+     "seconds": 16.320799800014356,
+     "exploitability": 0.055296843460409015
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13461358,
+     "seconds": 27.296798800016404,
+     "exploitability": 0.0382940048020059
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es_linear",
+   "seed": 1505698380,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 41,
+     "seconds": 0.00015539999003522098,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 79,
+     "seconds": 0.0002795999898808077,
+     "exploitability": 2.4388310185185187
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 114,
+     "seconds": 0.00037519999023061246,
+     "exploitability": 2.4388310185185187
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 240,
+     "seconds": 0.0008018999797059223,
+     "exploitability": 2.4620949074074074
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 429,
+     "seconds": 0.0014352999860420823,
+     "exploitability": 2.573720992104982
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 773,
+     "seconds": 0.002243399983854033,
+     "exploitability": 2.4763993633347887
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1385,
+     "seconds": 0.003806499982601963,
+     "exploitability": 2.56379493079585
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2454,
+     "seconds": 0.006701899983454496,
+     "exploitability": 2.645209299917612
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4491,
+     "seconds": 0.011514999976498075,
+     "exploitability": 2.6422518505148025
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 8087,
+     "seconds": 0.020780599967110902,
+     "exploitability": 2.2875183381921103
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14202,
+     "seconds": 0.03501039996626787,
+     "exploitability": 1.909421073194998
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 24838,
+     "seconds": 0.05819299997529015,
+     "exploitability": 1.6633131124412306
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 44978,
+     "seconds": 0.10333759998320602,
+     "exploitability": 1.2460161370324925
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 80164,
+     "seconds": 0.17644639997160994,
+     "exploitability": 0.7788861970845475
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 143343,
+     "seconds": 0.30614539996895473,
+     "exploitability": 0.5735707897641359
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 258932,
+     "seconds": 0.5410185999644455,
+     "exploitability": 0.319503493373676
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 446321,
+     "seconds": 0.9351005999633344,
+     "exploitability": 0.22211246439762097
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 798117,
+     "seconds": 1.6732477999612456,
+     "exploitability": 0.17371960471010317
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1403476,
+     "seconds": 2.888504299960914,
+     "exploitability": 0.14032472167221033
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2495765,
+     "seconds": 5.151427999968291,
+     "exploitability": 0.09790922199458459
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4432828,
+     "seconds": 9.063006699972902,
+     "exploitability": 0.07625535731525798
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7883139,
+     "seconds": 16.030886899970938,
+     "exploitability": 0.053614811701374845
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13378834,
+     "seconds": 26.007554499970865,
+     "exploitability": 0.04054686529457936
+    }
+   ]
+  },
+  {
+   "game": "leduc",
+   "variant": "es_linear",
+   "seed": 1703033196,
+   "curve": [
+    {
+     "iteration": 1,
+     "nodes_touched": 42,
+     "seconds": 0.00015379999240394682,
+     "exploitability": 2.373611111111111
+    },
+    {
+     "iteration": 2,
+     "nodes_touched": 76,
+     "seconds": 0.0002925999870058149,
+     "exploitability": 2.447916666666667
+    },
+    {
+     "iteration": 3,
+     "nodes_touched": 110,
+     "seconds": 0.00040019999141804874,
+     "exploitability": 2.447916666666667
+    },
+    {
+     "iteration": 6,
+     "nodes_touched": 238,
+     "seconds": 0.000796799999079667,
+     "exploitability": 2.3731308411214953
+    },
+    {
+     "iteration": 10,
+     "nodes_touched": 424,
+     "seconds": 0.0013805000053253025,
+     "exploitability": 2.451579355332276
+    },
+    {
+     "iteration": 18,
+     "nodes_touched": 755,
+     "seconds": 0.0023276000138139352,
+     "exploitability": 2.456346745662252
+    },
+    {
+     "iteration": 32,
+     "nodes_touched": 1364,
+     "seconds": 0.0035284000186948106,
+     "exploitability": 2.417192498422594
+    },
+    {
+     "iteration": 56,
+     "nodes_touched": 2271,
+     "seconds": 0.00510340002074372,
+     "exploitability": 2.528114285221368
+    },
+    {
+     "iteration": 100,
+     "nodes_touched": 4174,
+     "seconds": 0.008992300019599497,
+     "exploitability": 2.406554111650176
+    },
+    {
+     "iteration": 178,
+     "nodes_touched": 7656,
+     "seconds": 0.01490210002521053,
+     "exploitability": 2.1765588977051915
+    },
+    {
+     "iteration": 316,
+     "nodes_touched": 14242,
+     "seconds": 0.02989530003105756,
+     "exploitability": 1.9014195360280444
+    },
+    {
+     "iteration": 562,
+     "nodes_touched": 25364,
+     "seconds": 0.05562210002972279,
+     "exploitability": 1.6120509504029867
+    },
+    {
+     "iteration": 1000,
+     "nodes_touched": 45004,
+     "seconds": 0.09772940003313124,
+     "exploitability": 1.1164590062043342
+    },
+    {
+     "iteration": 1778,
+     "nodes_touched": 79566,
+     "seconds": 0.17965740003273822,
+     "exploitability": 0.7692273251212326
+    },
+    {
+     "iteration": 3162,
+     "nodes_touched": 139813,
+     "seconds": 0.28797040003701113,
+     "exploitability": 0.5287277663678605
+    },
+    {
+     "iteration": 5623,
+     "nodes_touched": 250204,
+     "seconds": 0.514350200042827,
+     "exploitability": 0.347101142248337
+    },
+    {
+     "iteration": 10000,
+     "nodes_touched": 444026,
+     "seconds": 0.9220176000380889,
+     "exploitability": 0.24523183821033548
+    },
+    {
+     "iteration": 17783,
+     "nodes_touched": 786416,
+     "seconds": 1.5735407000465784,
+     "exploitability": 0.17536143444984426
+    },
+    {
+     "iteration": 31623,
+     "nodes_touched": 1415027,
+     "seconds": 2.8587843000423163,
+     "exploitability": 0.12679207308575702
+    },
+    {
+     "iteration": 56234,
+     "nodes_touched": 2502674,
+     "seconds": 5.015943400037941,
+     "exploitability": 0.08698418872299737
+    },
+    {
+     "iteration": 100000,
+     "nodes_touched": 4465960,
+     "seconds": 8.969831400041585,
+     "exploitability": 0.07066373561115358
+    },
+    {
+     "iteration": 177828,
+     "nodes_touched": 7935314,
+     "seconds": 16.0569374000479,
+     "exploitability": 0.05354767716952727
+    },
+    {
+     "iteration": 300000,
+     "nodes_touched": 13392204,
+     "seconds": 25.519113900052616,
+     "exploitability": 0.03951519476733632
+    }
+   ]
+  }
+ ],
+ "ablation": [
+  {
+   "alpha": 1.0,
+   "beta": 0.0,
+   "gamma": 1.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8602897999953711,
+     "exploitability": 0.001989321262213961
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.554140299995197,
+     "exploitability": 0.0006346465486377073
+    }
+   ]
+  },
+  {
+   "alpha": 1.0,
+   "beta": 0.0,
+   "gamma": 2.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8591992000001483,
+     "exploitability": 0.0014638795777985325
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.615606799998204,
+     "exploitability": 0.0005040293688192976
+    }
+   ]
+  },
+  {
+   "alpha": 1.0,
+   "beta": 1.0,
+   "gamma": 1.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8977933999995003,
+     "exploitability": 0.005242399164323119
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.651912399989669,
+     "exploitability": 0.0026976282924514317
+    }
+   ]
+  },
+  {
+   "alpha": 1.0,
+   "beta": 1.0,
+   "gamma": 2.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.923517899995204,
+     "exploitability": 0.010653683080030674
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.625003999986802,
+     "exploitability": 0.004949218345307649
+    }
+   ]
+  },
+  {
+   "alpha": 1.5,
+   "beta": 0.0,
+   "gamma": 1.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.9220670999930007,
+     "exploitability": 0.00026234065028002407
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.607258699994418,
+     "exploitability": 4.4807608801156196e-05
+    }
+   ]
+  },
+  {
+   "alpha": 1.5,
+   "beta": 0.0,
+   "gamma": 2.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8872325999982422,
+     "exploitability": 0.00015841905271789247
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.568083499994827,
+     "exploitability": 2.7764993666481996e-05
+    }
+   ]
+  },
+  {
+   "alpha": 1.5,
+   "beta": 1.0,
+   "gamma": 1.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8770785999950022,
+     "exploitability": 0.0049177330410556525
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.39493529999163,
+     "exploitability": 0.0018201214543168698
+    }
+   ]
+  },
+  {
+   "alpha": 1.5,
+   "beta": 1.0,
+   "gamma": 2.0,
+   "curve": [
+    {
+     "iteration": 1000,
+     "nodes_touched": 18914000,
+     "seconds": 1.8917597999970894,
+     "exploitability": 0.012135620448037066
+    },
+    {
+     "iteration": 3000,
+     "nodes_touched": 56742000,
+     "seconds": 5.542864599992754,
+     "exploitability": 0.0030238559976686064
+    }
+   ]
+  }
+ ],
+ "elapsed_seconds": 46.3
+}

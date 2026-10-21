@@ -48,6 +48,7 @@ $B(a,b)$ the beta function.
   * Phase 2
   * [Step 17: Small games and a tree compiler](#step-17-small-games-and-a-tree-compiler-p21)
   * [Step 18: Exact evaluation and an LP solver](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22)
+  * [Step 19: CFR and its variants](#step-19-cfr-and-its-variants-p23)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1220,6 +1221,162 @@ response to a fixed opponent beats it by exactly that opponent's exploitability.
    constructor now repairs only sums that are off by more than $10^{-12}$, so valid input is
    kept bit for bit.
 
+## Step 19: CFR and its variants (P2.3)
+
+**Goal.** Compute equilibria with counterfactual regret minimization (CFR), the algorithm
+family behind every poker program that has beaten professionals. Measure how fast each
+variant converges, and check them against the exact LP.
+
+**What was built.**
+* [`solvers/cfr.py`](../poker_lab/solvers/cfr.py): `CFRSolver`, full-width CFR with the
+  variants below as configuration.
+* [`solvers/mccfr.py`](../poker_lab/solvers/mccfr.py): `ExternalSamplingMCCFR`, the seeded
+  Monte Carlo version.
+* [`experiments/phase2_cfr.py`](../experiments/phase2_cfr.py): the convergence experiment.
+
+**Concepts and math.**
+
+* **Regret.** Repeat a decision $T$ times; on round $t$ you play a mixed strategy $\sigma_t$,
+  and the environment reveals each action's payoff $u_t(a)$. Your *regret* for never having
+  played action $a$ is
+
+  $$R_T(a) = \sum_{t=1}^{T} \big[u_t(a) - u_t(\sigma_t)\big],$$
+
+  where $u_t(\sigma_t) = \sum_b \sigma_t(b)\,u_t(b)$.
+* **Regret matching** (Hart and Mas-Colell, 2000) plays each action in proportion to its
+  positive regret:
+
+  $$\sigma_{T+1}(a) = \frac{\max(R_T(a), 0)}{\sum_b \max(R_T(b), 0)},$$
+
+  or uniformly if no regret is positive. It guarantees an average regret
+  $R_T(a)/T \le \Delta\sqrt{|A|/T} \to 0$ against *any* sequence of payoffs, where $\Delta$ is
+  the payoff range. That robustness is the point: the opponent is also learning, so their
+  behavior is not a fixed distribution.
+* **Why low regret gives an equilibrium.** Suppose both players' average regrets are at most
+  $\varepsilon$, and let $\bar\sigma$ be the average strategies. Payoffs are linear in each
+  player's (sequence-form) strategy, so player 1's best response against $\bar\sigma_2$ earns
+  $\max_{\sigma'} \frac1T\sum_t u(\sigma', \sigma_2^t) \le \frac1T\sum_t u(\sigma_1^t, \sigma_2^t)
+  + \varepsilon$. Symmetrically, player 2 can push player 1's payoff down to at least
+  $\frac1T\sum_t u(\sigma_1^t, \sigma_2^t) - \varepsilon$. Adding the two gives
+  NashConv $\le 2\varepsilon$, so the exploitability of $\bar\sigma$ is at most $\varepsilon$.
+  Two consequences:
+  * It is the *average* strategy that converges; the current strategy can cycle forever.
+  * The average must be taken in the sequence form: iteration $t$'s strategy at $I$ is
+    weighted by the player's own probability of reaching $I$, $\pi_i^{\sigma_t}(I)$.
+* **Counterfactual regret** (Zinkevich et al., 2007). Running one regret matcher per
+  information set works if each one is fed *counterfactual values*: Step 18's
+  $q(I, a) = \sum_{h \in I} \pi_{-i}(h)\,v(h \cdot a)$. The instantaneous regret is
+  $r_t(I, a) = q(I, a) - \sum_b \sigma_t(I, b)\,q(I, b)$. The theorem: a player's total regret
+  is at most the sum of these local regrets, so the average regret is
+  $O(\Delta\,|\mathcal I|\sqrt{|A|}/\sqrt T)$. Vanilla CFR therefore converges like
+  $1/\sqrt T$.
+* **Vectorized implementation.** One iteration for player $i$ takes:
+  1. one backward pass for node values;
+  2. two forward passes, for the reach probabilities of "everyone but $i$" and of $i$;
+  3. one `np.bincount` for $q$;
+  4. one `np.add.reduceat` for $\sum_b \sigma q$.
+
+  On Leduc this is about 0.9 ms per player.
+* **The variants** differ only in how regrets and averages are accumulated:
+
+  | Variant | Regret update | Average weight | Updates |
+  |---|---|---|---|
+  | CFR | $R \leftarrow R + r$ | 1 | simultaneous |
+  | CFR+ | $R \leftarrow \max(R + r, 0)$ | $t$ | alternating |
+  | Linear CFR | iteration $t$'s regret weighted by $t$ | $t$ | alternating |
+  | Discounted CFR | positive $R$ $\times\, t^{1.5}/(t^{1.5}+1)$, negative $R$ $\times\, \tfrac12$ | $t^2$ | alternating |
+
+  * *CFR+'s floor* (regret matching+): an action with very negative regret is played again as
+    soon as it becomes good. It does not have to first "pay back" its debt.
+  * *Weighted averages* forget the poor early iterations.
+  * *Alternating updates* let player 1 respond to player 0's already-updated strategy.
+  * *Discounted CFR* generalizes linear CFR with three exponents: $\alpha$ (positive regrets),
+    $\beta$ (negative regrets) and $\gamma$ (average weight $t^\gamma$). Multiplying the
+    running sum by $t/(t+1)$ every iteration makes iteration $t$'s final weight
+    $\prod_{s=t}^{T} \frac{s}{s+1} = \frac{t}{T+1} \propto t$. That is how "weight by $t$" is
+    implemented without storing history.
+* **External-sampling MCCFR** (Lanctot et al., 2009). Each iteration runs one *traversal* per
+  player:
+  * the traverser explores all of their own actions;
+  * chance outcomes are sampled from the chance probabilities;
+  * the opponent's actions are sampled from their current strategy.
+
+  *Unbiased.* A traversal for player $i$ reaches $h$ with probability $\pi_c(h)\,\pi_{-i}(h)$,
+  so the expected sampled regret at $I$ is
+  $\sum_{h\in I}\pi_c(h)\pi_{-i}(h)\,[v(h\cdot a) - v(h)]$. This is exactly the
+  counterfactual regret (sampled values below $h$ are themselves unbiased). An iteration costs
+  tens of nodes instead of the whole tree, at the price of noise.
+
+  *Averaging.* The average strategy is accumulated at the *opponent's* information sets. They
+  are visited with probability proportional to the opponent's own reach, which is the weight
+  the average needs.
+* **Measuring convergence fairly.**
+  * *Exact evaluation.* Exploitability is evaluated exactly (Step 18) at log-spaced
+    checkpoints.
+  * *Work unit.* Methods are compared by *tree nodes touched*, because "iterations" mean very
+    different amounts of work for full-width and sampled CFR.
+  * *Seeds only where there is randomness.* Full-width CFR is deterministic, so seeds would
+    repeat an identical curve.
+  * *MCCFR summaries.* Five seeds are summarized on the log scale: a geometric mean and a
+    t-interval of $\log_{10}$ exploitability. Values span orders of magnitude, and the log
+    makes their spread closer to symmetric.
+
+**Results** ([`cfr_summary.md`](../experiments/results/phase2/cfr/cfr_summary.md), commit
+`53eb199`). Exploitability in chips per hand; the uniform policy starts at 0.458 (Kuhn) and
+2.37 (Leduc).
+
+| Leduc, iterations | 10 | 100 | 1,000 | 10,000 |
+|---|---|---|---|---|
+| CFR | 0.93 | 0.17 | 0.040 | 0.010 |
+| CFR+ | 0.61 | 0.013 | 2.6e-4 | 5.7e-6 |
+| Linear CFR | 0.72 | 0.035 | 5.2e-3 | 1.1e-3 |
+| Discounted CFR | 0.78 | 7.8e-3 | 1.6e-4 | 8.4e-6 |
+
+1. *Vanilla CFR follows its theory.* It runs parallel to the $1/\sqrt T$ reference line.
+   CFR+ and discounted CFR go faster than $1/T$ on Leduc and end 1,200 to 1,800 times less
+   exploitable than vanilla CFR after 10,000 iterations.
+2. *Linear CFR is fast on Kuhn but stalls on Leduc* (200 times worse than CFR+ at 10,000
+   iterations). A post-hoc ablation over the exponents $(\alpha, \beta, \gamma)$ explains most
+   of it (Leduc, 1,000 iterations):
+   * *Negative regrets (the biggest factor).* Keeping them ($\beta = 1$) makes discounted CFR
+     77 times worse (0.012 vs 1.6e-4).
+   * *Positive-regret discount.* Moving $\alpha$ from 1 to 1.5 gains about 8 times when
+     $\beta = 0$.
+   * *Averaging weight.* $\gamma$ matters least.
+
+   Linear CFR has $\alpha = \beta = 1$, so it loses on the two factors that matter most.
+3. *Sampling is a bad deal in a game this small.* At equal work (13.4 million nodes),
+   external-sampling MCCFR on Leduc reaches 0.041 [0.038, 0.045] (5 seeds), about 80 times
+   more exploitable than CFR+ at the same work. To get below 0.05 it needs about 10 times
+   more node visits. Linear weighting does not change MCCFR measurably (0.0409). Sampling
+   pays off when a single full traversal is unaffordable, which is the regime Deep CFR
+   (next step) is built for.
+4. *Cost.* Vectorized full-width CFR costs 1.6-1.9 ms per Leduc iteration (both players),
+   and the LP solves Leduc exactly in 0.3 s. At this size the LP is the fastest exact method;
+   CFR's advantage is that its memory and time grow gracefully with game size, while LP
+   solvers do not.
+
+**Verification.** [`tests/test_cfr.py`](../tests/test_cfr.py) (10 tests):
+* *Textbook equality.* Vectorized CFR equals a plain recursive textbook CFR after three
+  iterations on Kuhn *and* Leduc: regrets to $10^{-10}$, average strategies after
+  normalization.
+* *Regression thresholds* on exploitability after 1,000 iterations for every variant and game.
+* *LP agreement.* CFR+'s average value is within $10^{-3}$ of the LP value.
+* *MCCFR reproducibility* from its seed.
+* *Unbiasedness.* A statistical test: over 40,000 traversals, the mean sampled regret is within
+  four standard errors of the exact counterfactual regret for every player-0 sequence of Kuhn.
+
+**Pitfalls.**
+1. *Two correct implementations, different raw numbers.* The recursion adds the
+   own-reach-weighted strategy once per *history*; the vectorized code adds it once per
+   *information set*. The raw sums differ by a constant factor per information set, so the
+   differential test compares normalized averages.
+2. *Seeds without randomness.* The original plan asked for five seeds and intervals on every
+   convergence curve. Deterministic algorithms would just repeat the same curve, so seeds are
+   used only for MCCFR (logged as a decision).
+3. *Checkpoints that missed powers of 10.* They left table cells empty in the first smoke run;
+   `log_checkpoints` now aligns them.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1240,7 +1397,7 @@ response to a fixed opponent beats it by exactly that opponent's exploitability.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 172 tests and runs in about 40 seconds.
+players). The suite has 182 tests and runs in about 50 seconds.
 
 ## C.2 Reproducibility and provenance
 
@@ -1295,6 +1452,8 @@ numeric table next to it, so no number depends on reading a color.
 | Provenance read at the end of a long run | provenance review | capture at the start | [14](#step-14-experimental-design-m5) |
 | Function and submodule both named `best_response` under lazy re-exports | "'module' object is not callable" in some test orders | renamed the module to `evaluate.py` | [18](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22) |
 | Policy constructor renormalized valid input by one ulp | exact-equality test | repair only sums off by more than $10^{-12}$ | [18](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22) |
+| Plan asked for seeds on deterministic CFR curves | thinking about what a seed would change | seeds only for sampled methods | [19](#step-19-cfr-and-its-variants-p23) |
+| Checkpoints missed powers of 10 | empty cells in the smoke-run table | decade-aligned `log_checkpoints` | [19](#step-19-cfr-and-its-variants-p23) |
 
 ---
 
@@ -1311,6 +1470,7 @@ numeric table next to it, so no number depends on reading a color.
 | Cluster bootstrap | resampling whole clusters (players), not rows |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
+| CFR | counterfactual regret minimization: one regret matcher per information set |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | ECE | expected calibration error |
 | Empirical Bayes | estimating the prior from the population itself |
@@ -1320,6 +1480,7 @@ numeric table next to it, so no number depends on reading a color.
 | HUD | heads-up display of opponent statistics |
 | Information set | the histories a player cannot tell apart when acting |
 | Log-loss | mean negative log-probability of the true class |
+| MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | mbb/hand | milli-big-blinds per hand |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
@@ -1329,6 +1490,7 @@ numeric table next to it, so no number depends on reading a color.
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
+| Regret matching | play actions in proportion to their positive cumulative regret |
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Side pot | pot that an all-in player for less is not eligible for |
@@ -1363,9 +1525,17 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
   Extensive Two-Person Games.* Games and Economic Behavior 14. (The sequence form)
 * Huangfu, Q., Hall, J. A. J. (2018). *Parallelizing the dual revised simplex method.*
   Mathematical Programming Computation 10. (HiGHS, SciPy's LP solver)
+* Hart, S., Mas-Colell, A. (2000). *A Simple Adaptive Procedure Leading to Correlated
+  Equilibrium.* Econometrica 68. (Regret matching)
 * Zinkevich, M., Johanson, M., Bowling, M., Piccione, C. (2007). *Regret Minimization in Games
   with Incomplete Information.* NeurIPS. (CFR)
+* Lanctot, M., Waugh, K., Zinkevich, M., Bowling, M. (2009). *Monte Carlo Sampling for Regret
+  Minimization in Extensive Games.* NeurIPS. (MCCFR, external sampling)
+* Neller, T., Lanctot, M. (2013). *An Introduction to Counterfactual Regret Minimization.*
+  EAAI model AI assignment. The gentlest introduction, with code.
 * Tammelin, O. (2014). *Solving Large Imperfect Information Games Using CFR+.* arXiv:1407.5042.
+* Brown, N., Sandholm, T. (2019). *Solving Imperfect-Information Games via Discounted Regret
+  Minimization.* AAAI. (Linear and discounted CFR)
 * Brown, N., Lerer, A., Gross, S., Sandholm, T. (2019). *Deep Counterfactual Regret
   Minimization.* ICML.
 * Johanson, M., Zinkevich, M., Bowling, M. (2008). *Computing Robust Counter-Strategies.*
@@ -1411,3 +1581,5 @@ Software design
   fingerprint `7799e1e5ceac`), cross-checked against `phase1_summary.md`.
 * 2026-10-21: Phase 2 begun. Added A.6 (game theory), Step 17 (small games and the tree
   compiler) and Step 18 (best responses, exploitability, sequence-form LP).
+* 2026-10-21: Step 19 (CFR, CFR+, linear/discounted CFR, external-sampling MCCFR). Results
+  from commit `53eb199`, cross-checked against `experiments/results/phase2/cfr/cfr_summary.md`.
