@@ -50,6 +50,9 @@ $B(a,b)$ the beta function.
   * [Step 18: Exact evaluation and an LP solver](#step-18-exact-evaluation-best-responses-exploitability-and-an-lp-solver-p22)
   * [Step 19: CFR and its variants](#step-19-cfr-and-its-variants-p23)
   * [Step 20: Deep CFR in PyTorch](#step-20-deep-cfr-in-pytorch-p24-p210)
+  * [Step 21: Leduc archetypes and modeling them](#step-21-leduc-archetypes-and-modeling-them-from-what-a-player-can-see-p26)
+  * [Step 22: Exploiting the models, and how much it risks](#step-22-exploiting-the-models-and-how-much-it-risks-p27)
+  * [Step 23: Contracts, exact estimates, duplicate dealing](#step-23-contracts-for-small-game-strategies-exact-exploitability-estimates-duplicate-dealing-p25-p28-p29)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1510,6 +1513,211 @@ without PyTorch):
    and a polling loop waited ten minutes for output that would never come. Set `PYTHONPATH`, and
    check a background job's first lines before waiting on it.
 
+## Step 21: Leduc archetypes and modeling them from what a player can see (P2.6)
+
+**Goal.** Bring Phase 1's opponent modeling into a game where its consequences for
+exploitation can be computed *exactly*.
+
+**What was built.** [`games/leduc_bots.py`](../poker_lab/games/leduc_bots.py): bots, simulation,
+likelihood, fitting, and two controls (public visit counts and a card-blind model).
+
+**Concepts and math.**
+
+* **A bot is a behavior strategy.** In a small game the whole bot fits in a `TabularPolicy`
+  (both seats). Five interpretable parameters generate it: `bluff`, `medium_aggression` and
+  `value` (bet/raise probability with a weak, medium or strong hand), and `fold_weak` and
+  `fold_medium` (fold to a bet; strong hands never fold). Not facing a bet, the bot bets with
+  its bucket's aggression $a$. Facing one, it folds with the bucket's $f$; otherwise it raises
+  with probability $a$ if raising is allowed, and calls.
+* **Hand-strength buckets by equity.** In round 1 the bucket is the rank (J weak, Q medium,
+  K strong). In round 2 it is the showdown equity against a random unseen card:
+  * a pair wins 100%: strong;
+  * an unpaired card higher than the third rank (e.g. K on a Q board) wins 62.5%: medium;
+  * anything else wins 12.5%: weak.
+
+  So Q on a K board is "medium", like K on a Q board. A test pins this down.
+* **Archetypes as distributions.** Each parameter is drawn from
+  $\text{Beta}(\mu\kappa, (1-\mu)\kappa)$ with $\kappa = 30$, as in Phase 1. The five means range
+  from the nit (bluff 0.05, folds weak hands 90%) to the maniac (bluff 0.65, value 0.95).
+  The archetypes are very exploitable: about 1.0 chips per hand on average, while the
+  equilibrium itself already wins 0.28 per hand against them.
+* **Seeing only what a player sees.** `simulate_hands` records the hero's card, the board and
+  every action, but the bot's card only if the hand reaches showdown (46% of hands here). This
+  is the small-game version of Phase 1's redaction.
+* **The likelihood with a hidden card.** The bot's actions depend on its card, which is often
+  unknown. Given the hero's card $h$ and board $b$, the bot's card is uniform over the unseen
+  cards $C$ (independent of the hero's own actions), so
+
+  $$P(\text{bot's actions} \mid \theta) = \frac{1}{|C|} \sum_{c \in C} \prod_t \sigma_\theta(a_t \mid I_t(c)).$$
+
+  Computed in log space with a per-hand log-sum-exp over the candidates. The candidate rows
+  of all hands are flattened into arrays, so a log-likelihood for thousands of hands is two
+  `reduceat` calls. A test checks it against brute force.
+* **Fitting: the posterior mode, in the right parameterization.** The prior is an independent
+  Beta per parameter, fit by moments to a separate *training* population (never to the test
+  bots). The estimate maximizes log-likelihood + log-prior over $z = \operatorname{logit}\theta$,
+  *including the Jacobian* $\sum \log \theta(1-\theta)$. That is the mode of
+  $\text{Beta}(a+1, b+1)$, which sits exactly at the prior mean $a/(a+b)$: with no data the
+  estimate is the population mean, and data pull it away. The mean absolute parameter error
+  falls from 0.12 (10 hands) to 0.011 (3,000 hands).
+
+**Verification.** [`tests/test_leduc_exploit.py`](../tests/test_leduc_exploit.py):
+* parameter semantics and buckets;
+* observations hide unshown cards, and the mean payoff matches the exact value;
+* the marginal likelihood equals brute force;
+* parameters are recovered to within 0.06 from 3,000 hands;
+* zero hands give exactly the prior mean, and with 20 hands the posterior mode is closer to the
+  prior mean than the maximum-likelihood estimate.
+
+**Pitfall: a mode pulled to the boundary.** The first fit maximized the posterior density in
+$\theta$ itself. The population prior is diffuse ($a + b \approx 2$), and several shape
+parameters were below 1, so the prior density is infinite at 0. The fold parameter of a
+20-hand fit landed at 0.0001 instead of near the population mean, an artifact of the
+parameterization. A test written to show shrinkage failed and exposed it. Two lessons:
+* a posterior mode is not invariant to reparameterization (the posterior mean is);
+* Beta priors with $a < 1$ make $\theta$-space MAP estimates collapse onto the boundary.
+
+## Step 22: Exploiting the models, and how much it risks (P2.7)
+
+**Goal.** The question this whole project builds toward, answered exactly in a small game:
+*after watching an opponent for $n$ hands, how much more do you win by exploiting them, and
+how exposed does that make you?*
+
+**What was built.**
+* [`solvers/robust.py`](../poker_lab/solvers/robust.py): `RobustResponder`, restricted Nash and
+  data-biased responses as sequence-form LPs.
+* [`experiments/phase2_exploit.py`](../experiments/phase2_exploit.py): the experiment.
+
+**Concepts and math.**
+
+* **Best response to a model** maximizes $x^\top A y_{\text{fix}}$. It is optimal if the model is
+  right and arbitrarily bad if it is wrong.
+* **Restricted Nash response** (Johanson, Zinkevich, Bowling 2008). With probability $p$ the
+  opponent plays the model; otherwise it plays adversarially, and the hero does not know which.
+  The hero maximizes $p\,x^\top A y_{\text{fix}} + (1-p)\min_y x^\top A y$. Dualizing the inner
+  minimum exactly as in the equilibrium LP (Step 18) gives *one* LP:
+
+  $$\max_{x,q}\ p\,(A y_{\text{fix}})^\top x + (1-p)\,f^\top q \quad\text{s.t.}\quad
+  F^\top q - A^\top x \le 0,\ Ex = e,\ x \ge 0.$$
+
+  $p = 0$ is an equilibrium and $p = 1$ a best response. Sweeping $p$ traces the frontier of
+  gain against exploitability.
+* **Data-biased response** (Johanson and Bowling 2009). Trust the model per information set:
+  the opponent must play the model at $I$ with probability $c_I$. In the sequence form that is
+  a *linear* constraint, $y[I,a] \ge c_I\,\sigma_{\text{fix}}(I,a)\,y[\text{parent}(I)]$. It
+  dualizes into an extra non-negative variable block $r$:
+  $F^\top q + G^\top r - A^\top x \le 0$. Here
+  $c_I = n_I/(n_I + 10)$, where $n_I$ counts how often the bot was seen acting at $I$'s
+  public state.
+* **Why LPs rather than CFR on a modified game.** Both robust responses are LPs over the same
+  polytopes as the equilibrium LP. HiGHS solves each exactly in about 0.15 s on Leduc, so the
+  experiment needs no convergence tuning. Tests check the endpoints ($p = 0, 1$; $c = 0, 1$),
+  monotonicity of the frontier, and that no strategy beats the response on its own objective.
+* **The experiment** (pre-registered in the script's docstring):
+  * *Replicates.* 5 seeds, each with its own training population (for the prior) and 30
+    held-out bots.
+  * *Observation.* The hero plays the exact equilibrium against each bot for 3,000 hands,
+    seeing the bot's card only at showdown.
+  * *Models.* One model from the first $n \in \{10, \ldots, 3000\}$ hands.
+  * *Responses.* Best response, RNR for $p \in \{0.25, 0.5, 0.75, 0.9\}$, and DBR.
+  * *Metrics, both exact.* Gain against the *true* bot over the equilibrium, and the
+    response's exploitability.
+
+**Results** ([`exploit_summary.md`](../experiments/results/phase2/exploit/exploit_summary.md),
+commit `963cee6`; chips per hand; 95% intervals across seeds):
+
+| Hands observed | 10 | 100 | 3,000 | Oracle |
+|---|---|---|---|---|
+| Best response: gain | +0.591 | +0.700 | +0.736 | +0.738 |
+| Best response: exploitability | 1.48 | 1.61 | 1.60 | 1.58 |
+| RNR $p = 0.9$: gain | +0.581 | +0.675 | +0.705 | +0.706 |
+| RNR $p = 0.9$: exploitability | 0.70 | 0.71 | 0.69 | 0.69 |
+| RNR $p = 0.5$: gain | +0.438 | +0.486 | +0.494 | +0.494 |
+| RNR $p = 0.5$: exploitability | 0.13 | 0.14 | 0.13 | 0.13 |
+| DBR: gain | +0.001 | +0.098 | +0.483 | |
+
+1. *Exploitation pays off almost immediately here.* A best response to a 10-hand model gains
+   +0.591 [0.563, 0.619] per hand over the equilibrium, and no bot in any seed made it lose.
+2. *Robustness is cheap.* RNR with $p = 0.9$ keeps 96-98% of the best response's gain at
+   about 45% of its exploitability. With $p = 0.5$ it keeps two thirds of the gain at under a
+   tenth of the risk. This is the classic RNR result, reproduced exactly.
+3. *DBR is conservative by construction.* Confidence grows only where the bot has been seen
+   acting, so DBR starts at the equilibrium and approaches the best response with data
+   (+0.48 at 3,000 hands).
+
+**Then the results looked too good, so two post-hoc controls were added (and labeled so).**
+
+* **The population model, 0 hands.** A best response to the prior-mean bot, with no
+  observation at all, already gains **+0.512** [0.503, 0.522]. The 10-hand result was mostly
+  the *population prior*: these bots share systematic weaknesses that knowledge of the
+  population captures. The honest "value of watching this opponent" is the gain *above* the
+  population model:
+
+  | Hands observed | 10 | 30 | 100 | 300 | 3,000 | Oracle |
+  |---|---|---|---|---|---|---|
+  | Gain above the population model | +0.079 | +0.124 | +0.187 | +0.211 | +0.224 | +0.226 |
+
+  The value is concentrated in archetypes far from the population average. Against nits,
+  the population model gains only +0.14, while the oracle gains +0.66. This echoes Phase 1:
+  the population and the archetype carry most of the information; individual detail adds the
+  rest slowly.
+* **A misspecified model.** A card-blind, HUD-style model uses three action frequencies that
+  ignore hand strength, fit from the same hands. Its best response:
+  * gains only +0.15 to +0.22;
+  * *does not improve with data* (misspecification error does not shrink with $n$);
+  * loses to plain equilibrium play against **33-44% of the bots**.
+
+  Restricted Nash responses to the *same wrong model* gain +0.34 to +0.40 at $p = 0.5$-$0.75$,
+  nearly twice the best response, against the true bot. On the frontier plot the card-blind
+  curve bends *down*: trusting a wrong model more costs money. Robust responses are not just
+  safer; under misspecification they also exploit better.
+
+**Limits of these numbers.** The modeling is *correctly specified* (the five-parameter model is
+the bots' own family), and the bots are far more exploitable than strong humans. Real
+opponents are neither from a known family nor stationary. Treat these as upper bounds on what
+modeling buys. The card-blind control shows the downside when the model family is wrong.
+
+## Step 23: Contracts for small-game strategies, exact exploitability estimates, duplicate dealing (P2.5, P2.8, P2.9)
+
+**What was built.**
+* [`exploit/small_games.py`](../poker_lab/exploit/small_games.py): `PolicyExploitEngine`
+  (best response, restricted Nash, data-biased) returning `PolicyExploitResult` with an
+  *exact* `ExploitabilityEstimate`.
+* `ExploitabilityEstimate` now has `value` and `unit`: mbb/hand for no-limit, chips/hand for
+  the small games.
+* [`engine/duplicate.py`](../poker_lab/engine/duplicate.py): `duplicate_match`, with
+  `TableSimulator.play_hand(deck=...)` as the engine hook.
+
+**Concepts.**
+
+* **One strategy type per game family.** No-limit hold'em strategies answer one `SeatView` at
+  a time (`StrategyProvider`). In a small game every solver returns a complete `TabularPolicy`,
+  which can be evaluated exactly. Forcing one interface onto the other would need an action
+  and observation abstraction that does not exist yet. That is Phase 3's job.
+  Contract tests ([`tests/test_small_game_contracts.py`](../tests/test_small_game_contracts.py))
+  hold every source (LP, CFR+, MCCFR, Deep CFR) and every policy exploit engine to the same
+  rules:
+  * the result is a valid policy on the given tree;
+  * it is reproducible from its seed;
+  * it beats uniform play;
+  * engines report exact exploitability in chips per hand, and never do worse than the
+    equilibrium against the model (for BR and RNR).
+* **Duplicate dealing.** Deal $i$ is played at two tables with the same deck order and button.
+  The players swap seats at the second table, so each holds each side of the deal once. Each
+  player's two results share the card luck with opposite signs, so the pair's mean removes
+  most of it.
+  * *Agent isolation.* Agents at the two tables are separate instances (factories), so nothing
+    learned in the first play can leak into the second.
+  * *Separate randomness.* Each table has its own decision RNG, so only the cards, not the
+    agents' coin flips, are mirrored.
+  * *The decisive test:* two identical always-call agents. Every pot is then decided by the
+    cards alone, so each pair cancels *exactly*. The duplicate interval has zero width while
+    the naive one is over 10 bb/100 wide.
+
+**Verification.** `tests/test_small_game_contracts.py` (18 tests) and
+[`tests/test_duplicate.py`](../tests/test_duplicate.py) (3 tests): same cards in the same
+seats at both tables, boards from one run-out, exact cancellation, deck validation.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1530,7 +1738,8 @@ without PyTorch):
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 182 tests and runs in about 50 seconds.
+players). The suite has 215 tests and runs in about 65 seconds (the Deep CFR tests skip
+without PyTorch).
 
 ## C.2 Reproducibility and provenance
 
@@ -1554,6 +1763,14 @@ players). The suite has 182 tests and runs in about 50 seconds.
   when the commit succeeded; check `git log` rather than the exit code.
 * *Synced folders:* a virtual environment inside OneDrive syncs thousands of files; prefer one
   outside it, or record package versions as done here.
+* *Scripted edits of documents:* a find-and-replace pattern that occurs exactly once can still
+  be in the wrong place. A glossary insertion keyed on a short pattern landed inside the
+  mistakes table and went unnoticed for several commits. Anchor replacements on enough
+  surrounding context to be unambiguous *by meaning*, and re-read the result.
+* *Quoting inside generated code:* a backslash-n written inside a shell heredoc that feeds a
+  Python script can arrive as a real line break, so an exact-match replacement silently stops
+  matching (this happened twice, and once to this very sentence). Edit such files with an
+  editor tool, or use raw strings.
 
 ## C.4 Figures
 
@@ -1572,9 +1789,7 @@ numeric table next to it, so no number depends on reading a color.
 | All-in flag computed after PokerKit paid out the pot | schema validator on hand 285 of a smoke run | use the stack before the action | [4](#step-4-the-simulation-engine-m2) |
 | Heads-up blinds recorded BB first | heads-up order test | sort forced posts | [4](#step-4-the-simulation-engine-m2) |
 | Strings inside lists not parsed by `Card.clean` | evaluator equivalence test | normalize input in the fast hand type | [4](#step-4-the-simulation-engine-m2) |
-| Best response | a strategy that maximizes payoff against a fixed opponent |
-| Button (BTN) | dealer position; acts last after the flop |
- raise when raising was illegal turned into a junk call | code review of the policy | fold in bluff branches | [6](#step-6-parameterized-bots-and-archetypes-m3) |
+| Bluff raise when raising was illegal turned into a junk call | code review of the policy | fold in bluff branches | [6](#step-6-parameterized-bots-and-archetypes-m3) |
 | Wrong expected pot size (19, not 15) | the test failed against correct code | fixed the test | [2](#step-2-the-hand-history-schema-m1) |
 | Synthetic counters with more successes than opportunities | shrinkage test returned impossible intervals | shrinker rejects $k > m$ | [10](#step-10-empirical-bayes-shrinkage-m4) |
 | 15 workers exhausted memory on Windows | crash ("paging file is too small") | lazy imports, worker cap | [8](#step-8-running-a-league-parallel-reproducible-simulation) |
@@ -1590,6 +1805,9 @@ numeric table next to it, so no number depends on reading a color.
 | Evaluating the policy network shifted later network initializations | same seed, different results with a different checkpoint schedule | derived per-network seeds in `fork_rng` | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
 | Argmax rule on all-zero advantages played fold/check with certainty | first-iteration strategy inspection | uniform play until first trained | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
 | Scratch diagnostic could not import the package; wait loop never noticed | empty output after ten minutes | `PYTHONPATH`, check first lines early | [20](#step-20-deep-cfr-in-pytorch-p24-p210) |
+| MAP in theta-space collapsed onto 0 under a diffuse Beta prior | a shrinkage test failed | posterior mode in logit space (with Jacobian) | [21](#step-21-leduc-archetypes-and-modeling-them-from-what-a-player-can-see-p26) |
+| A 10-hand model "captured 80% of the oracle gain" | too good to be true | population-model and misspecified-model controls (post hoc) | [22](#step-22-exploiting-the-models-and-how-much-it-risks-p27) |
+| A scripted doc edit matched a unique but wrong spot (a row of this table starting with "Bluff", not the glossary) | sorting the glossary later showed a missing entry | anchor replacements on surrounding context, then re-read the result | [C.3](#c3-platform-lessons-windows-powershell-onedrive) |
 
 ---
 
@@ -1599,16 +1817,19 @@ numeric table next to it, so no number depends on reading a color.
 |---|---|
 | All-in | betting every remaining chip |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
+| Best response | a strategy that maximizes payoff against a fixed opponent |
 | Button (BTN) | dealer position; acts last after the flop |
 | C-bet | continuation bet: the preflop raiser bets the flop |
 | Calibration | predicted probabilities match observed frequencies |
 | Capability | an unforgeable reference whose possession grants a permission |
+| CFR | counterfactual regret minimization: one regret matcher per information set |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
-| CFR | counterfactual regret minimization: one regret matcher per information set |
 | Credible interval | interval containing the parameter with a given posterior probability |
+| Data-biased response | robust response that trusts the model per information set by data count |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
+| Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
@@ -1617,8 +1838,8 @@ numeric table next to it, so no number depends on reading a color.
 | HUD | heads-up display of opponent statistics |
 | Information set | the histories a player cannot tell apart when acting |
 | Log-loss | mean negative log-probability of the true class |
-| MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | mbb/hand | milli-big-blinds per hand |
+| MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
@@ -1627,8 +1848,9 @@ numeric table next to it, so no number depends on reading a color.
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
-| Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
 | Regret matching | play actions in proportion to their positive cumulative regret |
+| Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
+| Restricted Nash response | best response to a model, hedged against an adversary with probability 1-p |
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Side pot | pot that an all-in player for less is not eligible for |
@@ -1682,6 +1904,8 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
 * Johanson, M., Zinkevich, M., Bowling, M. (2008). *Computing Robust Counter-Strategies.*
   NeurIPS. (Restricted Nash response)
 * Johanson, M., Bowling, M. (2009). *Data Biased Robust Counter Strategies.* AISTATS.
+* Southey, F. et al. (2005). *Bayes' Bluff* (above) also introduces Bayesian opponent
+  modeling with hidden cards in Leduc, the idea behind Step 21's marginal likelihood.
 * Burch, N., Schmid, M., Moravcik, M., Morrill, D., Bowling, M. (2018). *AIVAT: A New Variance
   Reduction Technique for Agent Evaluation in Imperfect Information Games.* AAAI.
 
@@ -1726,3 +1950,6 @@ Software design
   from commit `53eb199`, cross-checked against `experiments/results/phase2/cfr/cfr_summary.md`.
 * 2026-10-21: Step 20 (Deep CFR). Results from commit `d09ad62`, cross-checked against
   `experiments/results/phase2/deep_cfr/deep_cfr_summary.md`.
+* 2026-10-21: Steps 21-23 (Leduc archetypes and likelihood fitting; robust exploitation with
+  post-hoc controls; small-game contracts and duplicate dealing). Exploitation results from
+  commit `963cee6`, cross-checked against `experiments/results/phase2/exploit/exploit_summary.md`.
