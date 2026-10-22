@@ -16,10 +16,10 @@
    }
   },
   "git": {
-   "commit": "98c6dabef9ec71ae68fa805c66ca8adb89b14795",
+   "commit": "348c4d555f56f833377a3c8a9f3e07974a162b39",
    "dirty": false
   },
-  "timestamp_utc": "2026-10-20T17:22:21+00:00",
+  "timestamp_utc": "2026-10-22T07:29:02+00:00",
   "python": "3.13.14",
   "platform": "Windows-11-10.0.26300-SP0",
   "packages": {
@@ -29,11 +29,12 @@
    "scikit-learn": "1.9.0",
    "matplotlib": "3.11.0",
    "pokerkit": "0.7.7",
-   "phevaluator": "0.6.0"
+   "phevaluator": "0.6.0",
+   "torch": "2.14.1"
   }
  },
  "hands_simulated": 150000,
- "seconds": 62.2,
+ "seconds": 70.1,
  "summary": {
   "cells_in_intended_range": 29,
   "cells_with_intended_range": 30,

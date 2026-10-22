@@ -5,7 +5,7 @@
   "test_players": 150,
   "hands_per_player": 2000,
   "hands_simulated": 150000,
-  "seconds": 64.72344719999819,
+  "seconds": 61.91937710001366,
   "train_decisions": 198384,
   "test_decisions": 101898
  },

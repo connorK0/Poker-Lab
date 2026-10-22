@@ -44,10 +44,10 @@
    }
   },
   "git": {
-   "commit": "98c6dabef9ec71ae68fa805c66ca8adb89b14795",
+   "commit": "348c4d555f56f833377a3c8a9f3e07974a162b39",
    "dirty": false
   },
-  "timestamp_utc": "2026-10-20T17:22:20+00:00",
+  "timestamp_utc": "2026-10-22T07:29:02+00:00",
   "python": "3.13.14",
   "platform": "Windows-11-10.0.26300-SP0",
   "packages": {
@@ -57,9 +57,10 @@
    "scikit-learn": "1.9.0",
    "matplotlib": "3.11.0",
    "pokerkit": "0.7.7",
-   "phevaluator": "0.6.0"
+   "phevaluator": "0.6.0",
+   "torch": "2.14.1"
   },
-  "simulation_fingerprint": "7799e1e5ceac"
+  "simulation_fingerprint": "dbec7cdce9d0"
  },
  "derived_seeds": [
   2727543821,
@@ -68,7 +69,7 @@
   1505698380,
   1703033196
  ],
- "elapsed_seconds": 310.5,
+ "elapsed_seconds": 641.6,
  "aggregate": {
   "sample_sizes": [
    25,
@@ -14068,7 +14069,7 @@
     "test_players": 150,
     "hands_per_player": 2000,
     "hands_simulated": 150000,
-    "seconds": 64.47185439999885,
+    "seconds": 69.0082345000119,
     "train_decisions": 199385,
     "test_decisions": 99565
    },
@@ -18882,7 +18883,7 @@
     "test_players": 150,
     "hands_per_player": 2000,
     "hands_simulated": 150000,
-    "seconds": 64.72344719999819,
+    "seconds": 61.91937710001366,
     "train_decisions": 198384,
     "test_decisions": 101898
    },
@@ -23696,7 +23697,7 @@
     "test_players": 150,
     "hands_per_player": 2000,
     "hands_simulated": 150000,
-    "seconds": 63.66314699999202,
+    "seconds": 61.99229129997548,
     "train_decisions": 199841,
     "test_decisions": 99792
    },
@@ -28510,7 +28511,7 @@
     "test_players": 150,
     "hands_per_player": 2000,
     "hands_simulated": 150000,
-    "seconds": 66.46390309999697,
+    "seconds": 64.66546829999425,
     "train_decisions": 200992,
     "test_decisions": 100255
    },
@@ -33324,7 +33325,7 @@
     "test_players": 150,
     "hands_per_player": 2000,
     "hands_simulated": 150000,
-    "seconds": 68.56997280001087,
+    "seconds": 63.547647299972596,
     "train_decisions": 199910,
     "test_decisions": 100245
    },
