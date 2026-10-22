@@ -2,12 +2,18 @@
 
 A research framework for answering one question rigorously: **how many hands of play does it
 take to recognize what kind of player someone is, and how much does that help predict what they
-will do next?** Phase 1, implemented here, answers it for synthetic opponents. Simulated
-no-limit hold'em bots with known ground truth are profiled from hand histories alone, and every
-claim is measured on held-out players across independent seeds with confidence intervals.
+will do next?** And once you know, **how much can you win by exploiting it, and at what risk?**
 
-The repository also contains the typed skeleton that Phases 2–5 (GTO baseline, exploitation,
-home-game capture, live evaluation) plug into, so later phases are drop-in additions.
+* **Phase 1** answers the first question for synthetic opponents. Simulated no-limit hold'em
+  bots with known ground truth are profiled from hand histories alone.
+* **Phase 2** builds the game-theoretic baseline and answers the second question exactly in
+  small games. It solves Kuhn and Leduc poker with CFR variants, Deep CFR and an LP. It then
+  models Leduc bots from what a player can see and exploits them with best, restricted Nash
+  and data-biased responses.
+
+Every claim is measured on held-out players across independent seeds with confidence
+intervals. The repository also contains the typed skeleton that Phases 3–5 (general
+framework, home-game capture, live evaluation) plug into.
 
 > **Scope.** Offline research only: no integration with any online poker site, no scraping or
 > screen reading, and no real-time assistance for real-money online play. Advice-producing code
@@ -22,8 +28,9 @@ poker, the statistics, the ML and the engineering) in enough detail to rebuild t
 evenly from five archetypes (nit, TAG, LAG, calling station, maniac), simulates 2,000 hands per
 bot (150k hands per seed), and refits everything. Training and test bots play in *separate*
 leagues, so held-out players never sat at a table with training players. Brackets are 95%
-t-intervals across seeds. Reproduce with `python -m experiments.run_phase1 --seed 2026`; these
-results come from commit `98c6dab` (simulation fingerprint `7799e1e5ceac`). All numbers per
+t-intervals across seeds. Reproduce with `python -m experiments.run_phase1 --seed 2026`. These
+results were first produced at commit `98c6dab` and reproduced exactly at `348c4d5`
+(simulation fingerprint `dbec7cdce9d0`). All numbers per
 seed are in `experiments/results/phase1/phase1_results.json`, and the full tables are in
 [`phase1_summary.md`](experiments/results/phase1/phase1_summary.md). Analyses marked
 *post hoc* were added after seeing a first run; everything else was fixed beforehand.
@@ -153,24 +160,169 @@ c-bet frequency→c-bet 0.97, fold-to-aggression→fold to bet 0.96, bluff frequ
 0.68). Figure: [`bot_sanity_stats.png`](experiments/results/phase1/bot_sanity/bot_sanity_stats.png).
 WTSD is far above typical human values, a known realism gap (see Limitations).
 
+## Phase 2 results: equilibrium baselines and exploitation in small games
+
+Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both are small
+enough that every strategy is evaluated **exactly**: exploitability comes from a full best
+response, never from sampled play. Exploitability is NashConv / 2 in chips per hand
+(OpenSpiel's convention), so 0 means an exact equilibrium and the uniform random policy scores
+0.46 in Kuhn and 2.37 in Leduc. Reproduce with `python -m experiments.run_phase2 --seed 2026`
+(~15 min on 16 cores). The CFR, Deep CFR and exploitation results come from commits `53eb199`,
+`d09ad62` and `963cee6`. A single `run_phase2` at commit `348c4d5` reproduced every number
+exactly; only wall-clock timings differ. Full tables:
+[`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
+[`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
+[`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md).
+
+**Checked against independent references first.** The best response reproduces the published
+uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
+Kuhn strategies. A sequence-form LP (SciPy HiGHS) that shares no code with CFR gives the known
+game values −1/18 and −0.0856064. Vectorized CFR equals a textbook recursive implementation on
+both games. Everything below rests on these agreements.
+
+### 1. CFR variants: the modern ones are ~1,000× better than vanilla CFR
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/cfr/cfr_convergence-dark.png">
+  <img alt="Exploitability vs iterations on log-log axes for CFR, CFR+, linear CFR and discounted CFR on Kuhn and Leduc, with 1/sqrt(T) and 1/T reference lines" src="experiments/results/phase2/cfr/cfr_convergence.png">
+</picture>
+
+| Leduc, exploitability after | 10 it. | 100 it. | 1,000 it. | 10,000 it. |
+|---|---|---|---|---|
+| CFR (vanilla) | 0.93 | 0.17 | 0.040 | 0.010 |
+| CFR+ | 0.61 | 0.013 | 2.6e-4 | 5.7e-6 |
+| Linear CFR | 0.72 | 0.034 | 5.2e-3 | 1.1e-3 |
+| Discounted CFR (α = 1.5, β = 0, γ = 2) | 0.78 | 7.8e-3 | 1.6e-4 | 8.4e-6 |
+
+* Vanilla CFR tracks its 1/√T rate. CFR+ and discounted CFR run faster than 1/T and finish
+  1,200–1,800× below vanilla CFR on Leduc. Full-width runs are deterministic, so each curve is
+  one exact run.
+* **Linear CFR stalls on Leduc** at 1.1e-3, ~130× worse than DCFR. A *post hoc* ablation of
+  the DCFR exponents finds the cause: negative regrets. Discarding them (β = 0, as CFR+ does)
+  is worth 4–10× at α = 1 and 41–109× at α = 1.5 after 3,000 iterations. With β = 1, no
+  setting of α or γ gets below 1.8e-3.
+* **Sampling does not pay in games this small.** At equal work (tree nodes touched),
+  external-sampling MCCFR reaches 0.041 [0.038, 0.045] on Leduc after 13.4M nodes, about 80×
+  above full-width CFR+ at the same work
+  ([figure](experiments/results/phase2/cfr/mccfr_vs_cfr.png)). Linear weighting does not
+  help it (0.041). MCCFR is here as the sampled baseline that Deep CFR is compared with.
+
+### 2. Deep CFR learns, but loses to a table in a game this small (a negative result)
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/deep_cfr/deep_cfr_leduc-dark.png">
+  <img alt="Exploitability vs traversals for tabular MCCFR, Deep CFR with a perfect regressor, and Deep CFR, with 95% bands over 5 seeds" src="experiments/results/phase2/deep_cfr/deep_cfr_leduc.png">
+</picture>
+
+| Leduc, exploitability after | 20,000 traversals | 60,000 | 200,000 |
+|---|---|---|---|
+| Tabular ES-MCCFR, linear weights | 0.240 [0.211, 0.273] | 0.141 [0.133, 0.150] | 0.072 [0.069, 0.075] |
+| Deep CFR with a perfect regressor (ablation) | 0.563 [0.504, 0.628] | 0.180 [0.157, 0.206] | 0.087 [0.074, 0.102] |
+| Deep CFR: policy network (its output) | 0.537 [0.408, 0.707] | 0.230 [0.190, 0.278] | 0.161 [0.134, 0.193] |
+
+Deep CFR (Brown et al., 2019) in PyTorch: advantage networks (3×64 MLP, 11k parameters)
+retrained from scratch every iteration on reservoir-sampled memories, then a policy network
+distilled from the strategy memory. It is compared with tabular external-sampling MCCFR at
+matched traversals over 5 seeds (geometric means, 95% t-intervals on the log scale).
+
+* Deep CFR learns (2.37 → 0.16) but ends **2.2× more exploitable** than the table. Its curve
+  flattens after ~50 iterations while the table keeps improving.
+* A **perfect-regressor ablation** replaces each network with the exact minimizer of its
+  training loss. It splits the gap into a cost of batching and sampled targets (×1.2,
+  0.072 → 0.087) and a cost of function approximation (×1.85, 0.087 → 0.161).
+* Distillation is free: the policy network matches the exact average of the strategies Deep
+  CFR played (0.161 vs 0.160).
+* This is the expected outcome. Leduc has only 288 strategically distinct information sets, so
+  a table is already exact. Deep CFR's case is generalization in games too large for tables,
+  which this experiment does not test. Its training budget was tuned on a separate development
+  seed, never on reporting seeds.
+
+### 3. Exploiting modeled opponents: large gains, mostly from the population prior
+
+**Setup.** Leduc bots from five archetypes (nit, TAG, LAG, calling station, maniac) with five
+interpretable parameters tied to hand-strength buckets. The hero sees a bot's card only at
+showdown, the Leduc analog of the information firewall. The model is fit by exact marginal
+likelihood over the unseen cards, with an empirical-Bayes prior fit on a separate training
+population. The hero then responds with a best response (BR), a restricted Nash response
+(RNR, Johanson et al., 2007), or a data-biased response (DBR, Johanson & Bowling, 2009). The
+last two are solved exactly as sequence-form LPs. 5 seeds × 30 held-out bots. **Gain** is chips
+per hand won above the equilibrium strategy against the same bot. Equilibrium play already wins
++0.277 per hand from these bots, so they are very exploitable.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/exploit/exploit_by_sample_size-dark.png">
+  <img alt="Gain over equilibrium and exploitability of the response vs hands observed, for best response, restricted Nash and data-biased responses, plus a card-blind model" src="experiments/results/phase2/exploit/exploit_by_sample_size.png">
+</picture>
+
+| Hands observed | 0 (population model, *post hoc*) | 10 | 100 | 1,000 | 3,000 | Oracle (true parameters) |
+|---|---|---|---|---|---|---|
+| BR: gain | +0.512 [0.503, 0.522] | +0.591 [0.563, 0.619] | +0.700 | +0.734 | +0.736 | +0.738 |
+| BR: exploitability | 0.97 | 1.48 | 1.61 | 1.59 | 1.60 | 1.58 |
+| RNR, p = 0.9: gain | +0.508 | +0.581 | +0.675 | +0.702 | +0.705 | +0.706 |
+| RNR, p = 0.9: exploitability | 0.45 | 0.70 | 0.71 | 0.69 | 0.69 | 0.69 |
+| DBR: gain | | +0.001 | +0.098 | +0.371 | +0.483 | |
+| DBR: exploitability | | 0.010 | 0.068 | 0.496 | 0.721 | |
+
+* **Most of the gain needs no observation of this opponent.** The first run looked too good,
+  so we added a *post hoc* control. A best response to the population's average bot, with
+  zero hands observed, already gains +0.512. Watching the individual adds +0.079
+  [0.057, 0.101] after 10 hands and +0.224 [0.201, 0.247] after 3,000. The pre-registered
+  numbers did not change on the rerun.
+* **Restricted Nash responses buy most of the gain for a fraction of the risk.** RNR with
+  p = 0.9 keeps 96–98% of the best response's gain at 43–47% of its exploitability. With
+  p = 0.5 it keeps 67–74% of the gain at under 9% of the exploitability.
+* **The data-biased response is cautious by design.** It trusts the model only where the hero
+  has seen the bot act, so after 10 hands it barely leaves equilibrium (+0.001). It catches up
+  only at 3,000 hands (+0.483). Against a correctly specified model that caution is pure cost.
+* **A wrong model makes the best response dangerous** (*post hoc*). A card-blind model (three
+  action frequencies that ignore hand strength) is fit to the same hands. Its best response
+  gains only +0.15 to +0.22 on average, loses to plain equilibrium play against 33–44% of the
+  bots, and is exploitable for ~2 chips per hand. An RNR with p = 0.5 on the same wrong model
+  gains +0.37 (1.7–2.4× as much) at an exploitability of about 0.26.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/exploit/exploit_frontier-dark.png">
+  <img alt="Gain against the true bot vs exploitability for restricted Nash responses from equilibrium to best response, for models built from 30, 300 and 3000 hands, the oracle and the card-blind model" src="experiments/results/phase2/exploit/exploit_frontier.png">
+</picture>
+
+**What Phase 2 does not show.**
+
+* The bots follow the same five-parameter family the model fits, so apart from the card-blind
+  control the model is correctly specified. The gains are an upper bound for opponents who do
+  not play by the model's rules.
+* The bots are very exploitable (1.0 chip per hand on average, against 2.37 for uniform random
+  play) and they do not adapt when exploited.
+* Values are exact expectations. At a real table a strategy is judged from sampled results
+  with large variance. Duplicate dealing (`engine/duplicate.py`) is built and tested for that,
+  and Phase 5 will use it.
+* Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
+  (Phase 3).
+
 ## Quickstart
 
 Requires Python ≥ 3.11 (developed on 3.13, Windows 11).
 
 ```bash
 pip install -e ".[dev]"          # numpy, pandas, scipy, scikit-learn, matplotlib, pyyaml, pokerkit, phevaluator
+pip install -e ".[dev,nn]"       # adds PyTorch (CPU is enough) for Deep CFR
 python -m pytest                 # full test suite
 python -m ruff check .           # lint
 
 # Reproduce every Phase 1 experiment from one master seed
 python -m experiments.run_phase1 --seed 2026          # full run: 5 seeds x 150k hands, ~11 min on 16 cores
 python -m experiments.run_phase1 --seed 2026 --quick  # smoke test, ~1 min (not for reporting)
+
+# Reproduce every Phase 2 experiment (Deep CFR is skipped if PyTorch is missing)
+python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
+python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
+python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
 ```
 
-Outputs go to `experiments/results/phase1/`: `phase1_results.json` (every number, per seed and
-aggregated, plus seed, config, git commit, dirty flag, package versions), `phase1_summary.md`,
-the bot sanity table, and figures (light and `-dark` variants). Simulated data are cached in
-`experiments/cache/` (git-ignored) so analyses can be re-run without re-simulating.
+Outputs go to `experiments/results/phase1/` and `experiments/results/phase2/{cfr,deep_cfr,exploit}/`.
+Each step writes a JSON file with every number (per seed and aggregated, plus seed, config, git
+commit, dirty flag and package versions), a markdown summary, and figures in light and `-dark`
+variants. Phase 1's simulated hands are cached in `experiments/cache/` (git-ignored) so
+analyses can be re-run without re-simulating.
 
 ## How it fits together
 
@@ -184,7 +336,7 @@ flowchart LR
     store -->|SeatView: public state + own cards| agents[Agents / Advisor]
     store -->|completed HandHistory| prof[ProfileStore<br/>stats + EB shrinkage]
     prof -->|ProfileSnapshot| adv[Advisor]
-    adv --> strat[StrategyProvider<br/>GTO, Phase 2] & expl[ExploitEngine<br/>Phase 2/3]
+    adv --> strat[StrategyProvider<br/>hold'em, Phase 3] & expl[ExploitEngine<br/>small games done in Phase 2]
     store -->|completed hands| evalr[Evaluator<br/>win rate + CIs, Phase 5]
 ```
 
@@ -206,8 +358,18 @@ flowchart LR
   fold to c-bet, WTSD, W$SD, plus fold to 3-bet, fold to bet, bet and open sizes),
   empirical-Bayes shrinkage, a calibrated archetype classifier, parameter regression,
   public-information decision points and a next-action model, and `ProfileStore`.
-* **`strategy/`, `exploit/`, `evaluation/`, `advisor/`, `capture/`**: the Phase 2–5 interfaces
-  with docstrings, minimal implementations, and contract tests.
+* **`games/`** (Phase 2): Kuhn and Leduc behind one `Game` interface, compiled to flat
+  breadth-first arrays so that strategy values, reach probabilities and best responses are
+  vectorized NumPy passes over tree levels. Also `TabularPolicy`, exact best response and
+  exploitability, and Leduc archetype bots with exact likelihood fitting.
+* **`solvers/`** (Phase 2): sequence-form LP (exact reference), CFR / CFR+ / linear / discounted
+  CFR, external-sampling MCCFR, Deep CFR (PyTorch), and restricted Nash and data-biased
+  responses as LPs.
+* **`exploit/`**: exploit engines. For small games they are exact and take a `TabularPolicy`
+  model. For hold'em they are interfaces and heuristic stubs (Phase 3).
+* **`strategy/`, `evaluation/`, `advisor/`, `capture/`**: the Phase 3–5 interfaces with
+  docstrings, minimal implementations, and contract tests. `engine/duplicate.py` plays
+  duplicate matches (same cards, seats swapped) for low-variance evaluation.
 
 ## Information firewall
 
@@ -262,16 +424,19 @@ reference for the home-game phase, not a forecast. Specifically:
 ```
 poker_lab/
   schema/      hand-history model, sealed store, firewalled views, JSONL, validation
-  engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker
+  engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker, duplicate matches
   bots/        parameterized bots, archetypes, hand strength, league simulator
   profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore
-  strategy/    StrategyProvider + baselines                     (Phase 2 plugs in here)
-  exploit/     ExploitEngine + stubs                            (Phase 2/3)
+  games/       Kuhn, Leduc, tree compiler, TabularPolicy, best response, Leduc bots + fitting
+  solvers/     LP, CFR family, MCCFR, Deep CFR, restricted Nash / data-biased responses
+  strategy/    StrategyProvider + baselines for hold'em         (Phase 3)
+  exploit/     exact small-game exploit engines; hold'em ExploitEngine + stubs (Phase 3)
   evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
-experiments/   run_phase1.py (one command), bot_sanity.py, configs/, results/
+experiments/   run_phase1.py, run_phase2.py (one command each), configs/, results/
 tests/         unit, contract, firewall, differential and end-to-end tests
+docs/          BUILD_LOG.md: how every step was built, with the math
 PROGRESS.md    living checklist, decisions log, open questions
 ```
 
@@ -280,7 +445,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 | Phase | Goal | What exists now |
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
-| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | `StrategyProvider`, `ExploitEngine`, `ExploitabilityEstimate` interfaces; identity + heuristic stubs |
+| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
 | 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | `ProfileStore` (cross-session, completed hands only), calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
@@ -289,8 +454,9 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (unit, contract, firewall, differential-vs-PokerKit and end-to-end
-  tests). Lint/format: `python -m ruff check .` and `python -m ruff format .`.
+* Tests: `python -m pytest` (215 tests, ~65 s: unit, contract, firewall, differential-vs-PokerKit,
+  solver-vs-reference and end-to-end tests; the Deep CFR tests skip without PyTorch).
+  Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working
   tree was dirty, and package versions. Experiments are reproducible from the master seed:
   simulation seeds are derived with `numpy.random.SeedSequence`, cards are dealt from seeded

@@ -53,6 +53,7 @@ $B(a,b)$ the beta function.
   * [Step 21: Leduc archetypes and modeling them](#step-21-leduc-archetypes-and-modeling-them-from-what-a-player-can-see-p26)
   * [Step 22: Exploiting the models, and how much it risks](#step-22-exploiting-the-models-and-how-much-it-risks-p27)
   * [Step 23: Contracts, exact estimates, duplicate dealing](#step-23-contracts-for-small-game-strategies-exact-exploitability-estimates-duplicate-dealing-p25-p28-p29)
+  * [Step 24: Phase 2 wrap-up](#step-24-phase-2-wrap-up-one-command-and-reproduction-runs)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1718,6 +1719,49 @@ modeling buys. The card-blind control shows the downside when the model family i
 [`tests/test_duplicate.py`](../tests/test_duplicate.py) (3 tests): same cards in the same
 seats at both tables, boards from one run-out, exact cancellation, deck validation.
 
+## Step 24: Phase 2 wrap-up: one command and reproduction runs
+
+**What was built.** [`experiments/run_phase2.py`](../experiments/run_phase2.py) runs the three
+Phase 2 experiments (`cfr`, `deep_cfr`, `exploit`) from one master seed, like `run_phase1.py`
+does for Phase 1. Two details matter on Windows:
+
+* The experiment modules are imported inside `run()`, not at the top of the file. Worker
+  processes are *spawned*: each one re-imports the main module, and a top-level import would
+  make every worker load matplotlib, scikit-learn and PyTorch.
+* Deep CFR is skipped with a message when PyTorch is missing
+  (`importlib.util.find_spec("torch") is None`), so the base install still runs everything
+  else.
+
+**The reproduction protocol.** "Reproducible" is a claim to test, not to assume. After the
+Phase 2 code was committed:
+
+1. Check out a clean commit (here `348c4d5`) and run both phases from seed 2026.
+2. Compare each new JSON file with its committed version, field by field. Skip the provenance
+   block (`meta`) and wall-clock fields (any key mentioning seconds or time). A small script
+   walks both trees and lists every other difference.
+3. Expect zero differences. Any difference is either a bug (hidden global state, an unseeded
+   RNG, an order-dependent reduction) or an undocumented change in behavior.
+
+**Results.**
+
+* Phase 1: zero differences, and identical summary tables and figures. The simulation
+  fingerprint still changed (`7799e1e5ceac` to `dbec7cdce9d0`). It hashes the source files of
+  the simulation packages, and Phase 2 edited two of them (the deck hook in
+  `engine/simulator.py` and the line-ending fix in the bot writers). The fingerprint is
+  conservative by design. It says "the simulation *may* have changed, so do not reuse the
+  cache"; the rerun shows it did not. The rerun's outputs were committed, so the recorded
+  fingerprint matches the current code.
+* Phase 2: zero differences in all three experiments against their original runs at three
+  different commits. The PNG figures were byte-identical too: matplotlib's PNG writer embeds no
+  timestamp, so the same data and library versions give the same bytes.
+
+**A provenance slip.** The Phase 2 rerun recorded `dirty: true`, because README.md was being
+edited while it ran. Each step records the dirty flag when it starts (see Step 14), and the
+README edits came first. The numbers were unaffected (README is not code), but the committed
+originals have clean provenance, so they were kept. The rerun counts only as verification. The
+rule: during a run whose provenance matters, edit only untracked or scratch files. Better
+still, run it from a separate checkout (`git worktree add`).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1808,6 +1852,7 @@ numeric table next to it, so no number depends on reading a color.
 | MAP in theta-space collapsed onto 0 under a diffuse Beta prior | a shrinkage test failed | posterior mode in logit space (with Jacobian) | [21](#step-21-leduc-archetypes-and-modeling-them-from-what-a-player-can-see-p26) |
 | A 10-hand model "captured 80% of the oracle gain" | too good to be true | population-model and misspecified-model controls (post hoc) | [22](#step-22-exploiting-the-models-and-how-much-it-risks-p27) |
 | A scripted doc edit matched a unique but wrong spot (a row of this table starting with "Bluff", not the glossary) | sorting the glossary later showed a missing entry | anchor replacements on surrounding context, then re-read the result | [C.3](#c3-platform-lessons-windows-powershell-onedrive) |
+| Editing README.md during a reproduction run marked its results dirty | reading the rerun's metadata | kept the clean originals; edit only scratch files (or use a worktree) during such runs | [24](#step-24-phase-2-wrap-up-one-command-and-reproduction-runs) |
 
 ---
 
@@ -1953,3 +1998,5 @@ Software design
 * 2026-10-21: Steps 21-23 (Leduc archetypes and likelihood fitting; robust exploitation with
   post-hoc controls; small-game contracts and duplicate dealing). Exploitation results from
   commit `963cee6`, cross-checked against `experiments/results/phase2/exploit/exploit_summary.md`.
+* 2026-10-22: Step 24 (one-command Phase 2 runner; reproduction runs of both phases at commit
+  `348c4d5`, which matched every committed number exactly).
