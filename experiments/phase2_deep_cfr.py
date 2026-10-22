@@ -251,7 +251,9 @@ def run(
         "elapsed_seconds": round(time.perf_counter() - t_start, 1),
     }
     save_json(results, out_dir / "deep_cfr.json")
-    (out_dir / "deep_cfr_summary.md").write_text(markdown_summary(results), encoding="utf-8")
+    (out_dir / "deep_cfr_summary.md").write_text(
+        markdown_summary(results), encoding="utf-8", newline="\n"
+    )
     make_figure(results, out_dir)
     return results
 

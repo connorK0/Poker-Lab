@@ -98,7 +98,9 @@ def run(
         "per_seed": per_seed,
     }
     save_json(results, out_dir / "phase1_results.json")
-    (out_dir / "phase1_summary.md").write_text(markdown_summary(agg), encoding="utf-8")
+    (out_dir / "phase1_summary.md").write_text(
+        markdown_summary(agg), encoding="utf-8", newline="\n"
+    )
     make_figures(per_seed, agg, out_dir, cfg)
     print(f"wrote {out_dir} in {results['elapsed_seconds']:.0f}s", flush=True)
     return results

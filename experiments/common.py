@@ -101,7 +101,7 @@ def _jsonable(obj: Any) -> Any:
 def save_json(obj: Any, path: str | Path) -> Path:
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(_jsonable(obj), indent=1), encoding="utf-8")
+    path.write_text(json.dumps(_jsonable(obj), indent=1), encoding="utf-8", newline="\n")
     return path
 
 

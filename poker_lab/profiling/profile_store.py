@@ -161,7 +161,7 @@ class ProfileStore:
             "priors": self.shrinker.to_dict(),
         }
         Path(path).parent.mkdir(parents=True, exist_ok=True)
-        Path(path).write_text(json.dumps(payload), encoding="utf-8")
+        Path(path).write_text(json.dumps(payload), encoding="utf-8", newline="\n")
 
     @classmethod
     def load(cls, path: str | Path) -> ProfileStore:

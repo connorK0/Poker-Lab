@@ -78,7 +78,7 @@ def write_preflop_table(path: Path = DATA_PATH, n_samples: int = 40_000, seed: i
         "equity": table,
     }
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps(payload, indent=1, sort_keys=True), encoding="utf-8")
+    path.write_text(json.dumps(payload, indent=1, sort_keys=True), encoding="utf-8", newline="\n")
 
 
 @cache

@@ -265,7 +265,9 @@ def run(
         "driver_correlations": drivers,
     }
     save_json(report, out_dir / "bot_sanity.json")
-    (out_dir / "bot_sanity_table.md").write_text(markdown_table(table), encoding="utf-8")
+    (out_dir / "bot_sanity_table.md").write_text(
+        markdown_table(table), encoding="utf-8", newline="\n"
+    )
     truth.to_json(out_dir / "ground_truth.json")
     plot(per_player, labels, table, out_dir)
     return report

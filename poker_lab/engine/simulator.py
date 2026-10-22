@@ -152,9 +152,16 @@ class TableSimulator:
         for _ in range(n_hands):
             yield self.play_hand()
 
-    def play_hand(self) -> HandHistory:
+    def play_hand(self, deck: Sequence[str] | None = None) -> HandHistory:
+        """Play one hand. ``deck`` (a full 52-card order) replaces the table's own shuffle, so
+        the same deal can be replayed at another table (duplicate dealing); the table's RNG
+        then drives only the agents' decisions."""
+        if deck is not None:
+            deck = list(deck)
+            if sorted(deck) != sorted(FULL_DECK):
+                raise ValueError("deck must be an ordering of all 52 cards")
         hand_id = f"{self.prefix}{self.hands_played:06d}"
-        hand = self._play(hand_id, self.button)
+        hand = self._play(hand_id, self.button, deck)
         self.hands_played += 1
         seats = list(self.players)
         self.button = seats[(seats.index(self.button) + 1) % len(seats)]
@@ -163,7 +170,7 @@ class TableSimulator:
         return hand
 
     # ------------------------------------------------------------------ one hand
-    def _play(self, hand_id: str, button: int) -> HandHistory:
+    def _play(self, hand_id: str, button: int, deck: list[str] | None = None) -> HandHistory:
         rng = self.rng
         order = seat_order_from_button(self.players, button)  # PokerKit index -> seat
         positions = dict(zip(order, position_names(len(order)), strict=True))
@@ -183,8 +190,9 @@ class TableSimulator:
                 "hand_number": str(self.hands_played),
             },
         )
-        deck = list(FULL_DECK)
-        rng.shuffle(deck)
+        if deck is None:
+            deck = list(FULL_DECK)
+            rng.shuffle(deck)
         next_card = 0
 
         t = self.table
