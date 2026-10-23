@@ -124,6 +124,9 @@ def main() -> None:
         use_cache=not args.no_cache,
         skip_sanity=args.skip_sanity,
     )
+    from experiments.explorer.build import refresh
+
+    refresh(RESULTS_ROOT / cfg["name"])
 
 
 if __name__ == "__main__":

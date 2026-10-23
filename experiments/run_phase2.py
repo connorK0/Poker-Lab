@@ -74,6 +74,9 @@ def main() -> None:
     elapsed = run(args.seed, cfg, steps=steps, workers=args.workers)
     timing = ", ".join(f"{k} {v:.0f}s" for k, v in elapsed.items())
     print(f"wrote {RESULTS_ROOT / cfg['name']} ({timing})")
+    from experiments.explorer.build import refresh
+
+    refresh(RESULTS_ROOT / cfg["name"])
 
 
 if __name__ == "__main__":
