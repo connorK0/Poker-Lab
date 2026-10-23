@@ -2012,7 +2012,7 @@ Experiment at commit `3aa83c2` (clean): `python -m experiments.run_phase3 --seed
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 222 tests and runs in about 65 seconds (the Deep CFR tests skip
+players). The suite has 242 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 

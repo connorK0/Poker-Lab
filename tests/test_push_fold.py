@@ -121,8 +121,8 @@ def test_lp_nash_is_exact_and_cfr_plus_agrees(m):
     sol = solve_lp(tree)
     assert exploitability(sol.policy) < 1e-7
     solver = CFRSolver(tree, "cfr+")
-    solver.iterate(1500)
-    assert exploitability(solver.average_policy()) < 2e-3
+    solver.iterate(300)  # the experiment's curves reach ~1e-5 by 300 iterations
+    assert exploitability(solver.average_policy()) < 1e-3
     push = aggressive_probabilities(sol.policy, SB)
     call = aggressive_probabilities(sol.policy, BB)
     assert push[CLASS_INDEX["AA"]] == pytest.approx(1.0)
