@@ -54,6 +54,8 @@ $B(a,b)$ the beta function.
   * [Step 22: Exploiting the models, and how much it risks](#step-22-exploiting-the-models-and-how-much-it-risks-p27)
   * [Step 23: Contracts, exact estimates, duplicate dealing](#step-23-contracts-for-small-game-strategies-exact-exploitability-estimates-duplicate-dealing-p25-p28-p29)
   * [Step 24: Phase 2 wrap-up](#step-24-phase-2-wrap-up-one-command-and-reproduction-runs)
+  * Results explorer (all phases)
+  * [Step 25: The results explorer](#step-25-the-results-explorer-one-interactive-page-for-every-phase)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1762,6 +1764,124 @@ originals have clean provenance, so they were kept. The rerun counts only as ver
 rule: during a run whose provenance matters, edit only untracked or scratch files. Better
 still, run it from a separate checkout (`git worktree add`).
 
+## Step 25: The results explorer: one interactive page for every phase
+
+**Why.** Static figures answer the questions the author thought to ask. An explorer lets
+the reader ask their own. For example: how much does a restricted Nash response gain against
+TAGs alone, after 30 hands, with a misspecified model? The user asked for it as a standing part
+of the project: every phase adds sections as it produces numbers.
+
+**What was built.** [`experiments/explorer/`](../experiments/explorer/) turns the committed
+results JSON into one self-contained page, `experiments/results/explorer.html`, which opens
+offline with a double-click.
+
+```
+results JSON --phase1.py / phase2.py--> section specs --build.py--> explorer.html
+                                        (controls, views, charts)   (data + app.js + app.css)
+```
+
+* `spec.py` has constructors for four chart types (line, dot plot, heatmap, scatter), plus
+  controls, sections and stat tiles.
+* `phase1.py` and `phase2.py` each turn one phase's results into sections: 8 + 8 today.
+  `build.py` assembles them. Planned phases appear in the navigation as empty pages.
+* `static/app.js` is a dependency-free renderer of about 1,000 lines. It handles routing,
+  controls, SVG charts, legends, tooltips and table views.
+
+**Concepts.**
+
+1. **Precompute views; keep the browser dumb.** A section has controls (say metric × model
+   × archetype = 4 × 2 × 6). Every combination of control values is a *view* keyed by the
+   values joined with `|`, built in Python. That is 48 small chart specs. The alternative,
+   shipping raw data and aggregating in JavaScript, would duplicate the statistics code in a
+   second language, where it would be untested. Precomputing keeps every number on the
+   Python side, where the tests are. The cost is page size (825 KB here). Scatter plots of
+   individual bots reference columns of a shared per-section table instead of repeating
+   points in every view.
+2. **Aggregate at the level of the independent unit.** Bots within one seed share a training
+   population and a fitted prior, so they are not independent. Every curve is therefore a
+   mean over bots *within* each seed, followed by a t-interval across the 5 seeds (the
+   independent replicates). A ratio metric such as the share of the oracle's gain is a ratio
+   of means within each seed, $\bar g_s / \bar g^{\text{oracle}}_s$, never a mean of
+   per-bot ratios (those explode when a bot's oracle gain is near 0).
+3. **Charts from first principles.** A scale maps data to pixels.
+   * Linear: $p = r_0 + (v - d_0)/(d_1 - d_0)\,(r_1 - r_0)$.
+   * Log: the same formula with $\log_{10} v$ in place of $v$.
+   * *Nice ticks.* Divide the span by the desired tick count. Write the result as
+     $e \cdot 10^k$ with $1 \le e < 10$, round $e$ to 1, 2, 5 or 10, and step from the first
+     multiple of that size. Log axes tick at powers of ten (adding 2× and 5× when the range
+     covers few decades).
+   * One notation per axis. As soon as a log axis goes below 0.001, every tick is written
+     $10^{k}$ or $m\times10^{k}$, so the reader never mixes "0.001" with "10⁻⁴".
+4. **Interaction.**
+   * When all series share x positions, a crosshair snaps to the nearest one and the tooltip
+     lists every series there. Otherwise the tooltip shows the nearest point by squared
+     pixel distance, as in sampled curves with different x grids.
+   * Hit areas are larger than the marks: dots get a 12 px transparent circle, and scatter
+     points answer within 30 px.
+   * Arrow keys move the crosshair, and every chart has a table view, so no value depends on
+     a mouse or on color.
+   * Text from the data is inserted with `textContent`, never `innerHTML`.
+5. **Render at true size.** An SVG drawn with `viewBox = 0 0 W H` is scaled to its box. If $W$
+   is measured before the layout settles, all text shrinks with it. That happened here: the
+   first charts were measured at full width, then placed in a half-width grid column, and
+   their 11 px labels rendered at about 5 px. A `ResizeObserver` per figure redraws whenever
+   its width really changes. That one mechanism also handles window resizes and scrollbars.
+6. **Color.**
+   * The palette is the validated one from the PNG figures (C.4), as CSS custom properties
+     with separate light and dark values.
+   * The validator passes both modes. It warns that three light-mode slots are below 3:1
+     contrast against the background, and the required relief is the legends and table
+     views.
+   * Heatmaps use a single-hue ramp quantized to 8 steps, and the cell text switches between
+     dark and light ink by step.
+   * A color follows its entity everywhere. Archetypes always use the same slots, and also
+     get distinct marker shapes in scatter plots, since only three categorical slots survive
+     an all-pairs colorblindness check.
+7. **Labels that stay out of the data.** A reference-line label goes at whichever end of
+   the line covers fewer data points (points and segment midpoints counted inside the label's
+   box). It also gets a halo, a stroke in the background color painted under the text with
+   `paint-order: stroke`.
+8. **Embedding data in HTML safely.** The JSON goes inside `<script type="application/json">`,
+   with every `</` written as `<\/`. Otherwise a string containing `</script>` would end the
+   element early. The three placeholders (CSS, JS, data) are substituted in *one* regex pass,
+   so text inserted for one placeholder is never scanned for another.
+9. **Staying current is enforced, not remembered.**
+   [`tests/test_explorer.py`](../tests/test_explorer.py) fails in four cases:
+   * a results file has no section reading it;
+   * a control combination has no view;
+   * a chart is malformed (non-finite values, non-positive values on a log axis, an interval
+     that excludes its mean);
+   * the committed page differs from a fresh build.
+
+   The build is deterministic (no timestamps, no current commit) for that last check. The
+   phase runners rebuild the page after full runs.
+10. **Testing a UI without a UI.**
+    [`browser_check.py`](../experiments/explorer/browser_check.py) runs headless Chrome or
+    Edge on a copy of the page with a test script ([`smoke.js`](../experiments/explorer/static/smoke.js))
+    injected.
+    * The script visits all 321 views. On every chart it hovers, toggles a legend entry and
+      opens the table.
+    * It then appends a JSON report to the DOM, which `--dump-dom` prints.
+    * `--virtual-time-budget` lets the page finish without real waiting.
+    * Screenshots came from `--screenshot`, with `--blink-settings=preferredColorScheme=0|1`
+      forcing the color scheme.
+    * Chrome on Windows will not lay out narrower than about 500 px. Phone widths were
+      therefore checked inside a 390 px `<iframe>`.
+11. **Narrative numbers come from the data.** Each section's "What it shows" bullets are
+    formatted from the results in the builder, not typed. Two claims first written as
+    guesses were checked this way.
+    * With the card-blind model, best-response losses do concentrate: 93% of TAGs and 83-87%
+      of LAGs, but no calling stations.
+    * Fold parameters are the slowest to learn.
+
+    The check also surfaced a new fact: restricted Nash with p = 0.5 still loses against
+    27-33% of nits.
+
+**Verification.** Seven tests in `tests/test_explorer.py`. The browser check ran 321 views
+and 555 charts with no errors: tooltips appeared on every hover except 22 scatter views with
+no point near the chart's center, which is correct. Screenshots were reviewed in light, dark
+and phone layouts.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1782,8 +1902,9 @@ still, run it from a separate checkout (`git worktree add`).
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 215 tests and runs in about 65 seconds (the Deep CFR tests skip
-without PyTorch).
+players). The suite has 222 tests and runs in about 65 seconds (the Deep CFR tests skip
+without PyTorch). The explorer's browser behavior has its own check
+(`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
 ## C.2 Reproducibility and provenance
 
@@ -1853,6 +1974,10 @@ numeric table next to it, so no number depends on reading a color.
 | A 10-hand model "captured 80% of the oracle gain" | too good to be true | population-model and misspecified-model controls (post hoc) | [22](#step-22-exploiting-the-models-and-how-much-it-risks-p27) |
 | A scripted doc edit matched a unique but wrong spot (a row of this table starting with "Bluff", not the glossary) | sorting the glossary later showed a missing entry | anchor replacements on surrounding context, then re-read the result | [C.3](#c3-platform-lessons-windows-powershell-onedrive) |
 | Editing README.md during a reproduction run marked its results dirty | reading the rerun's metadata | kept the clean originals; edit only scratch files (or use a worktree) during such runs | [24](#step-24-phase-2-wrap-up-one-command-and-reproduction-runs) |
+| Template placeholders split in the wrong order | `ValueError` on the first build | one regex pass over all placeholders | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
+| Charts measured before the grid settled, so their text rendered at half size | reviewing the first screenshot | a `ResizeObserver` redraws each figure when its width changes | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
+| Smoke-test report parser matched the injected script's own comment | a JSON decode error | reworded the comment; take the last match | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
+| A "390 px" screenshot was laid out about 500 px wide (Chrome's minimum window width on Windows) | text cut off at the right edge | check phone widths inside a 390 px iframe | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
 
 ---
 
@@ -1880,6 +2005,7 @@ numeric table next to it, so no number depends on reading a color.
 | Equity | probability of winning (ties count half) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
+| Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
 | Information set | the histories a player cannot tell apart when acting |
 | Log-loss | mean negative log-probability of the true class |
@@ -2000,3 +2126,5 @@ Software design
   commit `963cee6`, cross-checked against `experiments/results/phase2/exploit/exploit_summary.md`.
 * 2026-10-22: Step 24 (one-command Phase 2 runner; reproduction runs of both phases at commit
   `348c4d5`, which matched every committed number exactly).
+* 2026-10-23: Step 25 (the results explorer). Its takeaways are computed from the committed
+  results; the card-blind per-archetype loss shares were computed for this step and are new.

@@ -22,6 +22,30 @@ framework, home-game capture, live evaluation) plug into.
 **New here?** [`docs/BUILD_LOG.md`](docs/BUILD_LOG.md) explains how every step was built (the
 poker, the statistics, the ML and the engineering) in enough detail to rebuild the project.
 
+## Results explorer
+
+[`experiments/results/explorer.html`](experiments/results/explorer.html) is an interactive page
+covering every result below and more. Pick a phase, then a section. The buttons above the charts
+switch the model, game, sample size, opponent model, response type and bot archetype. It is one
+self-contained file: download it and open it in any browser, offline.
+
+* Every chart has a hover readout and a legend that hides or shows series.
+* Every chart has a table view with the exact numbers.
+* Light and dark themes are supported.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/explorer-dark.png">
+  <img alt="The results explorer: Phase 2 exploitation page, with controls for metric, opponent model and bot archetype above two line charts of gain and losses vs hands observed" src="docs/img/explorer.png">
+</picture>
+
+```bash
+python -m experiments.explorer                 # rebuild it (the phase runners do this after full runs)
+python -m experiments.explorer.browser_check   # optional: click through all 321 views in headless Chrome/Edge
+```
+
+Each phase adds sections as its experiments produce numbers. `tests/test_explorer.py` fails if
+a results file has no section or if the committed page is out of date.
+
 ## Phase 1 results
 
 **Setup.** Five independent replicates (seeds). Each draws 300 training and 150 held-out bots
@@ -435,6 +459,7 @@ poker_lab/
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
 experiments/   run_phase1.py, run_phase2.py (one command each), configs/, results/
+  explorer/    builds results/explorer.html (one section per quantified result, all phases)
 tests/         unit, contract, firewall, differential and end-to-end tests
 docs/          BUILD_LOG.md: how every step was built, with the math
 PROGRESS.md    living checklist, decisions log, open questions
@@ -454,8 +479,8 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (215 tests, ~65 s: unit, contract, firewall, differential-vs-PokerKit,
-  solver-vs-reference and end-to-end tests; the Deep CFR tests skip without PyTorch).
+* Tests: `python -m pytest` (222 tests, ~50 s: unit, contract, firewall, differential-vs-PokerKit,
+  solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working
   tree was dirty, and package versions. Experiments are reproducible from the master seed:
