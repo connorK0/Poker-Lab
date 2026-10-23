@@ -52,12 +52,13 @@ def test_every_results_file_feeds_a_section(built):
     assert not missing, f"results without an explorer section: {missing}"
 
 
-def test_done_phases_have_sections_and_planned_phases_do_not(built):
+def test_phases_with_results_have_sections_and_planned_phases_do_not(built):
     data, _ = built
     ids = [p["id"] for p in data["phases"]]
     assert len(ids) == len(set(ids))
     for phase in data["phases"]:
-        if phase["status"] == "done":
+        assert phase["status"] in ("done", "active", "planned")
+        if phase["status"] != "planned":
             assert phase["sections"]
             assert phase["tiles"]
             assert phase["provenance"]

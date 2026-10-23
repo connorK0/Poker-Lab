@@ -66,9 +66,9 @@ class Loader:
 
 def phase_builders() -> list[Callable[[Loader], dict[str, Any]]]:
     # Imported here so that importing this module stays cheap.
-    from experiments.explorer import phase1, phase2
+    from experiments.explorer import phase1, phase2, phase3
 
-    return [phase1.build, phase2.build]
+    return [phase1.build, phase2.build, phase3.build]
 
 
 def payload(load: Loader | None = None) -> dict[str, Any]:

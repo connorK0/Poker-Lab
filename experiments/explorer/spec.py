@@ -186,7 +186,10 @@ def heatmap(
     fmt: str = "pct",
     vmax: float | None = None,
     counts: Sequence[Sequence[float]] | None = None,
+    labels: Sequence[Sequence[str]] | None = None,
 ) -> dict[str, Any]:
+    """``labels``: text drawn in each cell instead of its value (the value moves to the
+    tooltip), e.g. hand names on a 13 x 13 chart."""
     out = {
         "type": "heatmap",
         "title": title,
@@ -201,6 +204,8 @@ def heatmap(
     }
     if counts is not None:
         out["counts"] = [[int(c) for c in row] for row in counts]
+    if labels is not None:
+        out["labels"] = [list(row) for row in labels]
     return out
 
 

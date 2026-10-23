@@ -589,8 +589,8 @@
     var vmax = isNum(spec.max) ? spec.max : Math.max.apply(null, spec.values.map(function (r) { return Math.max.apply(null, r); }));
     var svg = frame(box, W, H);
     svg.setAttribute("aria-label", spec.title);
-    stext(svg, left, 12, (spec.colLabel || "") + " →", "axis-title", "start");
-    stext(svg, 0, 12, (spec.rowLabel || "") + " ↓", "axis-title", "start");
+    if (spec.colLabel) stext(svg, left, 12, spec.colLabel + " →", "axis-title", "start");
+    if (spec.rowLabel) stext(svg, 0, 12, spec.rowLabel + " ↓", "axis-title", "start");
     spec.cols.forEach(function (c, j) {
       stext(svg, left + (j + 0.5) * cw, top - 8, truncate(c, 11.5, cw - 4), "tick", "middle");
     });
@@ -601,13 +601,15 @@
         var x = left + j * cw, y = top + i * ch;
         var cell = s("rect", { x: x + 1, y: y + 1, width: cw - 2, height: ch - 2, rx: 3, style: "fill:var(--seq" + step + ")" }, svg);
         var str = fmt(v, spec.format);
-        if (textWidth(str, 11.5) < cw - 8) {
-          s("text", { x: x + cw / 2, y: y + ch / 2 + 4, "text-anchor": "middle", class: "cell-label", style: "fill:var(" + (step >= 5 ? "--seq-ink-hi" : "--seq-ink-lo") + ")" }, svg).textContent = str;
+        var cellText = spec.labels ? spec.labels[i][j] : str;
+        if (textWidth(cellText, 11.5) < cw - 6) {
+          s("text", { x: x + cw / 2, y: y + ch / 2 + 4, "text-anchor": "middle", class: "cell-label", style: "fill:var(" + (step >= 5 ? "--seq-ink-hi" : "--seq-ink-lo") + ")" }, svg).textContent = cellText;
         }
         cell.addEventListener("pointermove", function (e) {
           cell.style.stroke = "var(--ink)"; cell.style.strokeWidth = "1.5";
           showTip(e, function (tip) {
-            tip.appendChild(h("div", { className: "tt-head", text: (spec.rowLabel || "Row") + ": " + r + " → " + (spec.colLabel || "Column") + ": " + spec.cols[j] }));
+            var head = spec.labels ? spec.labels[i][j] : (spec.rowLabel || "Row") + ": " + r + " → " + (spec.colLabel || "Column") + ": " + spec.cols[j];
+            tip.appendChild(h("div", { className: "tt-head", text: head }));
             tip.appendChild(h("div", { className: "tt-val", text: str }));
             if (spec.counts) tip.appendChild(h("div", { className: "tt-ci", text: spec.counts[i][j].toLocaleString("en-US") + " of " + spec.counts[i].reduce(function (a, b) { return a + b; }, 0).toLocaleString("en-US") }));
           });
@@ -732,7 +734,7 @@
     } else if (spec.type === "heatmap") {
       row([(spec.rowLabel || "") + " \\ " + (spec.colLabel || "")].concat(spec.cols), true);
       spec.rows.forEach(function (r, i) {
-        row([r].concat(spec.values[i].map(function (v, j) { return fmt(v, spec.format) + (spec.counts ? " (" + spec.counts[i][j] + ")" : ""); })));
+        row([r].concat(spec.values[i].map(function (v, j) { return (spec.labels ? spec.labels[i][j] + " " : "") + fmt(v, spec.format) + (spec.counts ? " (" + spec.counts[i][j] + ")" : ""); })));
       });
     } else if (spec.type === "scatter") {
       row(["Group", "Point", spec.x.label, spec.y.label], true);
@@ -847,6 +849,8 @@
 
   // ---------------------------------------------------------------- navigation
 
+  var STATUS_BADGE = { active: "in progress", planned: "planned" };  // done: no nav badge
+
   function navLink(label, cls, current, onclick, badge) {
     return h("button", { type: "button", className: "nav-link " + cls, "aria-current": current ? "page" : null, onclick: onclick },
       h("span", { text: label }), badge ? h("span", { className: "nav-badge", text: badge }) : null);
@@ -861,10 +865,10 @@
     select.appendChild(h("option", { value: "#/", text: "Home" }));
     DATA.phases.forEach(function (p) {
       var wrap = h("div", { className: "nav-phase" });
-      var planned = p.status !== "done";
+      var planned = p.status === "planned";
       wrap.appendChild(navLink(p.label + ": " + p.title, "phase" + (planned ? " planned" : ""),
-        state.route.phase === p.id && !state.route.section, function () { go(p.id); }, planned ? "planned" : null));
-      select.appendChild(h("option", { value: hashFor(p.id), text: p.label + ": " + p.title + (planned ? " (planned)" : "") }));
+        state.route.phase === p.id && !state.route.section, function () { go(p.id); }, STATUS_BADGE[p.status]));
+      select.appendChild(h("option", { value: hashFor(p.id), text: p.label + ": " + p.title + (STATUS_BADGE[p.status] ? " (" + STATUS_BADGE[p.status] + ")" : "") }));
       p.sections.forEach(function (sec) {
         wrap.appendChild(navLink(sec.title, "section", state.route.section === sec.id && state.route.phase === p.id, function () { go(p.id, sec.id); }));
         select.appendChild(h("option", { value: hashFor(p.id, sec.id), text: " " + sec.title }));
@@ -916,9 +920,9 @@
     MAIN.appendChild(h("h1", { text: DATA.title }));
     MAIN.appendChild(h("p", { className: "lead", text: DATA.intro }));
     MAIN.appendChild(h("div", { className: "cards" }, DATA.phases.map(function (p) {
-      var planned = p.status !== "done";
+      var meta = p.status === "planned" ? "planned" : p.sections.length + " sections" + (p.status === "active" ? ", in progress" : "");
       return h("button", { type: "button", className: "card", onclick: function () { go(p.id); } },
-        h("div", { className: "card-meta", text: p.label + (planned ? " · planned" : " · " + p.sections.length + " sections") }),
+        h("div", { className: "card-meta", text: p.label + " · " + meta }),
         h("div", { className: "card-title", text: p.title }),
         h("div", { className: "card-text", text: p.summary }));
     })));
@@ -940,9 +944,9 @@
   function renderPhase(p) {
     document.title = p.label + " · Poker Results Explorer";
     MAIN.appendChild(h("p", { className: "crumb" }, h("button", { type: "button", onclick: function () { go(); }, text: "Home" }), " / " + p.label));
-    MAIN.appendChild(h("h1", {}, p.title, h("span", { className: "badge", text: p.status === "done" ? "complete" : "planned" })));
+    MAIN.appendChild(h("h1", {}, p.title, h("span", { className: "badge", text: STATUS_BADGE[p.status] || "complete" })));
     MAIN.appendChild(h("p", { className: "lead", text: p.summary }));
-    if (p.status !== "done") {
+    if (p.status === "planned") {
       MAIN.appendChild(h("div", { className: "empty", text: "No results yet. Sections appear here as this phase's experiments produce numbers; every quantified result gets its own page." }));
       return;
     }
