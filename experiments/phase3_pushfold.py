@@ -13,7 +13,9 @@ Analyses, fixed before the first run:
 3. **Per-hand charts vs HoldemResources.** For each hand, the stacks at which Nash pushes
    (calls) with probability >= 0.5, compared with the published no-ante charts
    (``experiments/references/hune_no_ante.json``): the length of the stack range on which the
-   two disagree, in bb.
+   two disagree, in bb. *Post hoc*: each disagreement priced in EV (what the hand gains by
+   playing at that stack against our Nash opponent), and the bb/hand a player would lose by
+   following the reference wherever the two differ.
 4. **CFR+ vs LP** at ``cfr_stacks``: exploitability of CFR+'s average strategy by iteration.
 5. **Heuristics.** Exploitability of simple range rules: push/call the top x% of hands by
    equity against a random hand, with (a) Nash's own range sizes at each stack ("ranked") and
@@ -41,6 +43,7 @@ from poker_lab.games.push_fold import (
     BB,
     SB,
     aggressive_probabilities,
+    hand_gains,
     push_fold_tree,
     range_share,
     threshold_policy,
@@ -65,12 +68,17 @@ def grid_hand(r: int, c: int) -> str:
 def solve_task(stack: float) -> dict[str, Any]:
     tree = push_fold_tree(stack)
     sol = solve_lp(tree)
+    push = aggressive_probabilities(sol.policy, SB)
+    call = aggressive_probabilities(sol.policy, BB)
+    sb_gain, bb_gain = hand_gains(stack, push, call)
     return {
         "stack": stack,
         "value": sol.value,
         "exploitability": exploitability(sol.policy),
-        "push": aggressive_probabilities(sol.policy, SB),
-        "call": aggressive_probabilities(sol.policy, BB),
+        "push": push,
+        "call": call,
+        "sb_gain": sb_gain,
+        "bb_gain": bb_gain,
     }
 
 
@@ -137,19 +145,37 @@ def intervals(stacks: np.ndarray, on: np.ndarray) -> list[list[float]]:
     return runs
 
 
-def compare(stacks: np.ndarray, probs: np.ndarray, reference: dict[str, str], step: float):
+def compare(
+    stacks: np.ndarray,
+    probs: np.ndarray,
+    reference: dict[str, str],
+    step: float,
+    gains: np.ndarray,
+    weights: np.ndarray,
+):
+    """Per-hand stack ranges vs the reference chart. ``gains[t, k]``: what hand k gains by
+    playing at stack t against our Nash opponent (bb); ``weights[t, k]``: probability per hand
+    that the decision for k arises (post hoc: prices each disagreement in EV)."""
     top = float(stacks[-1])
     per_hand = {}
+    cost = np.zeros(len(stacks))  # bb/hand lost by following the reference where it differs
+    worst_gap = 0.0
     for k, cls in enumerate(CLASSES):
         ours = probs[:, k] >= 0.5
         ref_iv = parse_reference(reference[cls], top)
         ref = np.array([any(lo - 1e-9 <= s <= hi + 1e-9 for lo, hi in ref_iv) for s in stacks])
         # Stack ranges are compared on the grid; a hand pushed up to 7.0 bb by one chart and
         # 7.1 bb by the other disagrees on ~0.1 bb of stacks.
+        differ = ours != ref
+        gap = np.abs(np.nan_to_num(gains[:, k]))
+        cost += np.where(differ, gap * weights[:, k], 0.0)
+        max_gap = float(gap[differ].max()) if differ.any() else 0.0
+        worst_gap = max(worst_gap, max_gap)
         per_hand[cls] = {
             "ours": intervals(stacks, ours),
             "reference": reference[cls],
-            "disagreement_bb": round(float(np.sum(ours != ref) * step), 4),
+            "disagreement_bb": round(float(np.sum(differ) * step), 4),
+            "max_ev_gap_bb": max_gap,
         }
     d = np.array([v["disagreement_bb"] for v in per_hand.values()])
     summary = {
@@ -161,6 +187,10 @@ def compare(stacks: np.ndarray, probs: np.ndarray, reference: dict[str, str], st
         "mean_bb": float(d.mean()),
         "max_bb": float(d.max()),
         "worst": sorted(per_hand, key=lambda c: -per_hand[c]["disagreement_bb"])[:12],
+        # Post hoc: what the disagreements are worth.
+        "max_ev_gap_bb": worst_gap,
+        "max_cost_mbb_per_hand": float(cost.max() * 1000),
+        "stack_of_max_cost": float(stacks[int(cost.argmax())]),
     }
     return {"per_hand": per_hand, "summary": summary}
 
@@ -214,6 +244,13 @@ def run(
 
     push = np.array([r["push"] for r in sweep])
     call = np.array([r["call"] for r in sweep])
+    sb_gain = np.array([r["sb_gain"] for r in sweep])
+    bb_gain = np.array([r["bb_gain"] for r in sweep])
+    # How often each decision arises per hand: the small blind's class is dealt; the big
+    # blind's class is dealt *and* faces a push.
+    step = cfg["stack_step"]
+    w_sb = np.tile(m.deal_prob.sum(axis=1), (len(stacks), 1))
+    w_bb = push @ m.deal_prob
     nash = {
         "stacks": stacks.tolist(),
         "value": [r["value"] for r in sweep],
@@ -234,8 +271,8 @@ def run(
     comparison = {
         "source": reference["source"],
         "retrieved": reference["retrieved"],
-        "pusher": compare(stacks, push, reference["pusher"], cfg["stack_step"]),
-        "caller": compare(stacks, call, reference["caller"], cfg["stack_step"]),
+        "pusher": compare(stacks, push, reference["pusher"], step, sb_gain, w_sb),
+        "caller": compare(stacks, call, reference["caller"], step, bb_gain, w_bb),
     }
 
     # 4. CFR+ vs LP.
@@ -496,7 +533,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         ax.set_yscale("log")
         ax.set_xlabel("Effective stack (bb)")
         ax.set_ylabel("Exploitability (bb/hand)")
-        legend(ax, theme, loc="lower right", fontsize=7.5)
+        legend(ax, theme, loc="lower right")
         title(
             fig, theme, "How exploitable are simple range rules?", "Nash is 0; exact best responses"
         )

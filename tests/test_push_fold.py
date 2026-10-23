@@ -23,6 +23,7 @@ from poker_lab.games.push_fold import (
     SB,
     PushFoldGame,
     aggressive_probabilities,
+    hand_gains,
     push_fold_tree,
     range_share,
 )
@@ -127,6 +128,21 @@ def test_lp_nash_is_exact_and_cfr_plus_agrees(m):
     assert push[CLASS_INDEX["AA"]] == pytest.approx(1.0)
     assert call[CLASS_INDEX["AA"]] == pytest.approx(1.0)
     assert push[CLASS_INDEX["72o"]] == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize("stack", [2.5, 10.0, 18.0])
+def test_lp_solution_satisfies_the_per_hand_equilibrium_conditions(m, stack):
+    """Every hand that plays gains by playing, every hand that folds would lose (computed
+    from the matchup table directly, independently of the tree and the LP)."""
+    sol = solve_lp(push_fold_tree(stack, m))
+    push = aggressive_probabilities(sol.policy, SB)
+    call = aggressive_probabilities(sol.policy, BB)
+    sb, bb = hand_gains(stack, push, call, m)
+    assert (sb[push > 1e-6] >= -1e-7).all()
+    assert (sb[push < 1 - 1e-6] <= 1e-7).all()
+    faced = ~np.isnan(bb)
+    assert (bb[faced & (call > 1e-6)] >= -1e-7).all()
+    assert (bb[faced & (call < 1 - 1e-6)] <= 1e-7).all()
 
 
 def test_ranges_tighten_as_stacks_grow(m):

@@ -138,6 +138,29 @@ def range_share(probs: np.ndarray) -> float:
     return float(np.dot(probs, combo_counts()) / N_COMBOS)
 
 
+def hand_gains(
+    stack: float, push: np.ndarray, call: np.ndarray, matchups: Matchups | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """What each hand gains by playing instead of folding, in bb per time it is dealt.
+
+    ``sb[i]``: EV(push) - EV(fold) for the small blind holding class ``i`` against the big
+    blind's per-class call probabilities ``call``. ``bb[j]``: EV(call) - EV(fold) for the big
+    blind holding ``j`` facing a push from the per-class push probabilities ``push`` (``nan``
+    if ``j`` never faces a push). At a Nash equilibrium every hand that plays has gain >= 0 and
+    every hand that folds has gain <= 0.
+    """
+    m = matchups or load_matchups()
+    counts = m.counts.astype(float)
+    called = stack * (2.0 * m.equity - 1.0)  # small blind's payoff when called, per (i, j)
+    p_opp = counts / counts.sum(axis=1, keepdims=True)  # P(big blind holds j | small blind i)
+    sb = (p_opp * (call[None, :] * called + (1.0 - call[None, :]))).sum(axis=1) + 0.5
+    w = counts * push[:, None]  # small blind classes that push, weighted by card removal
+    total = w.sum(axis=0)
+    ev_call = -(w * called).sum(axis=0) / np.where(total > 0, total, 1.0)
+    bb = np.where(total > 0, ev_call + 1.0, np.nan)
+    return sb, bb
+
+
 def threshold_policy(
     tree: GameTree, push: np.ndarray | None = None, call: np.ndarray | None = None
 ) -> TabularPolicy:
