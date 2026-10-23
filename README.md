@@ -40,7 +40,7 @@ self-contained file: download it and open it in any browser, offline.
 
 ```bash
 python -m experiments.explorer                 # rebuild it (the phase runners do this after full runs)
-python -m experiments.explorer.browser_check   # optional: click through all 321 views in headless Chrome/Edge
+python -m experiments.explorer.browser_check   # optional: click through every view in headless Chrome/Edge
 ```
 
 Each phase adds sections as its experiments produce numbers. `tests/test_explorer.py` fails if
@@ -322,6 +322,50 @@ per hand won above the equilibrium strategy against the same bot. Equilibrium pl
 * Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
   (Phase 3).
 
+## Phase 3 (in progress): a bridge to hold'em
+
+Phase 3 turns hand histories into ranked exploit recommendations. Its first step carries the
+Phase 2 solvers to real hold'em with heads-up push/fold. The small blind goes all-in or
+folds, and the big blind calls or folds; blinds are 0.5/1 with no ante and stacks of 1–20 bb.
+The game is built over the 169 starting-hand classes:
+
+* card-removal deal probabilities are exact;
+* the 169×169 matchup equities are Monte Carlo, with 50,000 boards per pair and standard
+  error ≤ 0.002.
+
+It has 143k nodes and 338 information sets, and the Phase 2 LP and CFR solve it unchanged.
+Reproduce with `python -m experiments.run_phase3 --seed 2026` (1 min). Results come from
+commit `3aa83c2`; see
+[`pushfold_summary.md`](experiments/results/phase3/pushfold/pushfold_summary.md).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/pushfold/pushfold_chart-dark.png">
+  <img alt="Two 13 by 13 charts of the largest stack at which each starting hand pushes (small blind) or calls (big blind) at Nash equilibrium" src="experiments/results/phase3/pushfold/pushfold_chart.png">
+</picture>
+
+* **It matches a published Nash solution.**
+  * For calls, all 169 per-hand thresholds are within 0.1 bb of HoldemResources' no-ante
+    chart, which is the chart's own resolution.
+  * For pushes, 151/169 are within 0.1 bb and 158/169 within 0.25 bb. The rest are hands
+    that are nearly indifferent between pushing and folding (EV difference ≤ 0.014 bb).
+    Following the published chart wherever the two differ would cost at most 0.21 mbb per
+    hand.
+* **Independent checks agree.**
+  * An exact best response finds every LP solution unexploitable, to 10⁻¹⁵.
+  * CFR+ makes the same decision for all 169 hands at 5, 10 and 20 bb.
+  * Every hand satisfies the per-hand equilibrium condition, computed from the matchup table
+    alone.
+* **A first finding:** ranking hands by equity against a random hand is nearly right. Played
+  with Nash's range *sizes*, it is exploitable for at most 0.013 bb/hand. Fixed sizes such
+  as "push 20%, call 10%" are exploitable for up to 0.56 bb/hand. The size of the range
+  matters far more than which hands are in it.
+* **A correction to the reference:** the first automated read of the published chart had five
+  wrong cells. A second read fixed them, and the corrections are logged in
+  `experiments/references/hune_no_ante.json`.
+
+Next: opponent models and exploitation in push/fold (P3.2), then advice for real hands behind
+the firewall and ranked recommendations (see [PROGRESS.md](PROGRESS.md)).
+
 ## Quickstart
 
 Requires Python ≥ 3.11 (developed on 3.13, Windows 11).
@@ -340,6 +384,10 @@ python -m experiments.run_phase1 --seed 2026 --quick  # smoke test, ~1 min (not 
 python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
 python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
+
+# Phase 3 so far: heads-up push/fold solved exactly and checked against a published chart
+python -m experiments.run_phase3 --seed 2026          # ~1 min
+python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
 Outputs go to `experiments/results/phase1/` and `experiments/results/phase2/{cfr,deep_cfr,exploit}/`.
@@ -451,14 +499,15 @@ poker_lab/
   engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker, duplicate matches
   bots/        parameterized bots, archetypes, hand strength, league simulator
   profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore
-  games/       Kuhn, Leduc, tree compiler, TabularPolicy, best response, Leduc bots + fitting
+  games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
+               TabularPolicy, best response, Leduc bots + fitting
   solvers/     LP, CFR family, MCCFR, Deep CFR, restricted Nash / data-biased responses
   strategy/    StrategyProvider + baselines for hold'em         (Phase 3)
   exploit/     exact small-game exploit engines; hold'em ExploitEngine + stubs (Phase 3)
   evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
-experiments/   run_phase1.py, run_phase2.py (one command each), configs/, results/
+experiments/   run_phase1/2/3.py (one command each), configs/, results/, references/
   explorer/    builds results/explorer.html (one section per quantified result, all phases)
 tests/         unit, contract, firewall, differential and end-to-end tests
 docs/          BUILD_LOG.md: how every step was built, with the math
@@ -471,7 +520,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | `ProfileStore` (cross-session, completed hands only), calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: heads-up push/fold solved exactly (P3.1). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 

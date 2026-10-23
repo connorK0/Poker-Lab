@@ -56,6 +56,8 @@ $B(a,b)$ the beta function.
   * [Step 24: Phase 2 wrap-up](#step-24-phase-2-wrap-up-one-command-and-reproduction-runs)
   * Results explorer (all phases)
   * [Step 25: The results explorer](#step-25-the-results-explorer-one-interactive-page-for-every-phase)
+  * Phase 3
+  * [Step 26: Heads-up push/fold solved exactly](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1882,6 +1884,114 @@ and 555 charts with no errors: tooltips appeared on every hover except 22 scatte
 no point near the chart's center, which is correct. Screenshots were reviewed in light, dark
 and phone layouts.
 
+## Step 26: A bridge to hold'em: heads-up push/fold solved exactly (P3.1)
+
+**Why this game.** Phase 3 has to move the Phase 2 machinery (LP, CFR, best responses,
+exploit engines) from toy games to hold'em. Heads-up push/fold is the smallest hold'em game
+that is still real poker: it is played whenever stacks are short, and its solution
+appears in published charts. That gives an independent check, the same role the
+published Leduc game value played in Phase 2.
+
+**The game.** Blinds are 0.5 and 1 bb, there is no ante, and the effective stack is $S$ bb
+before posting.
+
+* The small blind folds (losing 0.5) or goes all-in.
+* Facing the all-in, the big blind folds (losing 1) or calls.
+* After a call, the board is dealt and the better hand wins $2S$.
+
+Two ideas make it tractable.
+
+1. **Hand classes with exact card removal.** Suits only matter for flushes and for which
+   cards are gone, so the 1,326 starting hands collapse into 169 classes (13 pairs with 6
+   combos each, 78 suited with 4, 78 offsuit with 12). Dealing two hands picks a *pair of
+   classes* $(i, j)$ with probability $n_{ij}/(1326 \cdot 1225)$. Here $n_{ij}$ counts the
+   combo pairs that share no card, which is how card removal enters. AA vs AA has
+   $n = 6$, while AA vs 72o has $6 \times 12 = 72$. The test recounts several $n_{ij}$ by
+   brute force over all hands.
+2. **No board in the tree.** Once both players are all-in, nobody acts again. The called
+   all-in can therefore be replaced by its expectation $S(2e_{ij} - 1)$ for the small blind,
+   where $e_{ij}$ is the class matchup equity (ties count half). The tree is one chance node
+   with 28,561 class pairs, then two decisions. That makes 142,806 nodes and 338 information
+   sets (169 per player), compiled by the Phase 2 `compile_tree` unchanged.
+
+**The matchup table.** $e_{ij}$ is the average over compatible combo pairs (equally
+likely given the classes) of the probability of winning over all boards. Exact enumeration
+would take about $10^{10}$ hand evaluations. Instead, Monte Carlo runs 50,000 boards per class
+pair, *stratified*: every compatible combo pair gets the same number of boards.
+
+* Stratification removes the variance from which combos were dealt. The standard error is
+  $\sqrt{\sum_p \hat\sigma_p^2/m}\,/\,k$ for $k$ strata of $m$ boards each, at most 0.0022 here.
+* Every class pair gets its own child of one `SeedSequence`, so the table does not depend on
+  how many worker processes ran (5 minutes on 16 cores).
+* Symmetry gives the rest for free: $e_{ji} = 1 - e_{ij}$, and the diagonal is exactly 0.5.
+* Cross-check: each class's equity against a random hand, $\sum_j n_{ij}e_{ij}/\sum_j n_{ij}$,
+  agrees with Phase 1's independently computed table (different code, different seed) to
+  0.0067 at worst.
+
+**Solve once, rescale.** Only the called-all-in payoffs depend on $S$, and they are linear in
+it. The tree is compiled once at $S = 1$, and every other stack multiplies those leaves by
+$S$ (`dataclasses.replace` on the frozen tree). A test checks the result equals a direct
+compile at $S = 7.3$. That makes an exact LP at 381 stacks (every 0.05 bb from 1 to 20 bb)
+take under a minute.
+
+**An equilibrium check that shares no code with the solver.** In a Nash equilibrium of this
+game, every hand that pushes must gain by pushing rather than folding, given the opponent's
+calls, and every hand that folds must not. Written out:
+
+$$\Delta_{SB}(i) = \sum_j P(j \mid i)\,[c_j\,S(2e_{ij}-1) + (1 - c_j)] + 0.5,$$
+
+$$\Delta_{BB}(j) = \frac{\sum_i n_{ij}\,p_i\,S(1 - 2e_{ij})}{\sum_i n_{ij}\,p_i} + 1,$$
+
+where $p$ and $c$ are the push and call probabilities.
+[`hand_gains`](../poker_lab/games/push_fold.py) computes both from the matchup table alone.
+The test confirms that the LP's solution satisfies every one of these 338 conditions at three
+stacks. CFR+ reaches the same push and call decision for all 169 hands at 5, 10 and 20 bb.
+
+**Checking against a published chart.** HoldemResources publishes, for each hand, the
+largest stack at which Nash pushes (or calls). The values were read from the page
+automatically and stored with source and date in
+[`experiments/references/hune_no_ante.json`](../experiments/references/hune_no_ante.json).
+Our sweep gives the same quantity: the stacks at which a hand plays with probability at
+least 0.5.
+
+* Calls: all 169 hands agree to within 0.1 bb, the chart's own resolution.
+* Pushes: 151 hands agree within 0.1 bb and 158 within 0.25 bb.
+* The remaining disagreements were priced in expected value (*post hoc*). At every stack
+  where the charts differ, the hand gains at most 0.014 bb by pushing rather than folding,
+  or the reverse. Following the published chart everywhere it differs costs at most 0.21
+  mbb per hand.
+
+These are hands that are nearly indifferent, and Monte Carlo noise of 0.002 in $e_{ij}$ is
+enough to flip them. Non-monotonic hands such as 63s and 43s appear in both solutions. They
+push at very short stacks and again at medium stacks, but not in between.
+
+**Transcription errors are data errors.** The first automated read of the chart was wrong in
+five cells. Pusher K9o and Q9o were not 20+ in that read. The read had also attached the
+10%-ante footnotes to the no-ante caller chart, which made three small suited hands
+"call up to 15 bb". The tell was that the solver disagreed by 2 to 12 bb exactly there, on
+hands whose neighbors agreed to 0.1 bb. A second read, focused on those cells, fixed them.
+The corrections are logged in the file. The rule: before treating a disagreement with a
+reference as a finding, re-check the reference value itself.
+
+**Simple rules, priced.** Exploitability (a best response's gain) of push-the-top-x%
+rules, ranking hands by equity against a random hand:
+
+* With Nash's own range *sizes* at each stack, the ranking costs at most 0.013 bb per hand.
+  Hand order is nearly right; what matters is how many hands.
+* Fixed sizes, such as "push 20%, call 10%" at every stack, cost up to 0.56 bb per hand.
+  Each fixed rule is least bad at the stack its sizes happen to fit.
+
+**Verification.** `tests/test_push_fold.py` has 20 tests:
+* card-removal counts against brute force;
+* published equities (AA vs KK 0.819, KK vs AKs 0.661, AKo vs QQ 0.432, AA vs 72o 0.88);
+* agreement with the Phase 1 equity table;
+* rescaled tree equals a direct compile;
+* exact LP, CFR+, the per-hand equilibrium conditions;
+* ranges tighten from 2 to 16 bb;
+* four published thresholds bracketed within ±0.3 bb.
+
+Experiment at commit `3aa83c2` (clean): `python -m experiments.run_phase3 --seed 2026`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -1978,6 +2088,10 @@ numeric table next to it, so no number depends on reading a color.
 | Charts measured before the grid settled, so their text rendered at half size | reviewing the first screenshot | a `ResizeObserver` redraws each figure when its width changes | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
 | Smoke-test report parser matched the injected script's own comment | a JSON decode error | reworded the comment; take the last match | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
 | A "390 px" screenshot was laid out about 500 px wide (Chrome's minimum window width on Windows) | text cut off at the right edge | check phone widths inside a 390 px iframe | [25](#step-25-the-results-explorer-one-interactive-page-for-every-phase) |
+| Five cells of the published reference chart were misread by the automated page reader | the solver disagreed by 2-12 bb on exactly those hands, while their neighbors agreed to 0.1 bb | a second, focused read; corrections logged in the reference file | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
+| A global `*.npz` ignore rule silently excluded shipped package data | `git add` refused the file | a targeted `!poker_lab/games/data/*.npz` exception | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
+| A log axis for a quantity that can be exactly 0 (a rule that equals Nash) | the explorer's well-formed-chart test | linear axis; exact values in the table view | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
+| An f-string reused its outer quotes (valid only from Python 3.12; the project supports 3.11) | ruff's syntax check for the target version | build the inner string first | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
 
 ---
 
@@ -2005,6 +2119,7 @@ numeric table next to it, so no number depends on reading a color.
 | Equity | probability of winning (ties count half) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
+| Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
 | Information set | the histories a player cannot tell apart when acting |
@@ -2017,6 +2132,7 @@ numeric table next to it, so no number depends on reading a color.
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Perfect recall | players never forget their own actions or observations |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
+| Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
 | Regret matching | play actions in proportion to their positive cumulative regret |
@@ -2025,6 +2141,7 @@ numeric table next to it, so no number depends on reading a color.
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Side pot | pot that an all-in player for less is not eligible for |
+| Stratified sampling | splitting a Monte Carlo estimate into strata (here: combo pairs) sampled equally, removing the variance between strata |
 | Street | betting round: preflop, flop, turn, river |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
@@ -2128,3 +2245,5 @@ Software design
   `348c4d5`, which matched every committed number exactly).
 * 2026-10-23: Step 25 (the results explorer). Its takeaways are computed from the committed
   results; the card-blind per-archetype loss shares were computed for this step and are new.
+* 2026-10-23: Phase 3 begun. Step 26 (heads-up push/fold). Results from commit `3aa83c2`,
+  cross-checked against `experiments/results/phase3/pushfold/pushfold_summary.md`.
