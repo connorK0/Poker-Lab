@@ -1,0 +1,21 @@
+# Phase 3 experiments. Run everything with: python -m experiments.run_phase3 --seed 2026
+name: phase3
+
+pushfold:
+  # Exact Nash (sequence-form LP) on a grid of effective stacks, in big blinds.
+  stack_min: 1.0
+  stack_max: 20.0
+  stack_step: 0.05
+  # Stacks whose full per-hand strategies are stored (explorer heatmaps, figures).
+  display_stacks: [1.5, 2, 3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16, 18, 20]
+  # CFR+ vs LP.
+  cfr_stacks: [5, 10, 20]
+  cfr_iterations: 3000
+  cfr_per_decade: 8
+  # Heuristic range rules scored by exploitability (fixed before the first run).
+  heuristics:
+    tight: {push: 0.20, call: 0.10}
+    medium: {push: 0.45, call: 0.25}
+    loose: {push: 0.75, call: 0.45}
+  heuristic_stacks: [2, 3, 4, 5, 6, 8, 10, 12, 15, 20]
+  workers: 12

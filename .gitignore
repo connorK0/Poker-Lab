@@ -14,6 +14,8 @@ experiments/results/**/raw/
 experiments/results/*_quick/
 experiments/*.log
 *.npz
+# ...except data shipped with the package (small, slow to regenerate, needed by the tests)
+!poker_lab/games/data/*.npz
 
 # OS / editor
 .DS_Store

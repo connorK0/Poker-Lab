@@ -27,7 +27,7 @@ nn = ["torch>=2.14,<3"]  # tested with 2.14.1 (CPU); the version is recorded in 
 include = ["poker_lab*"]
 
 [tool.setuptools.package-data]
-poker_lab = ["bots/data/*.json"]
+poker_lab = ["bots/data/*.json", "games/data/*.npz"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
