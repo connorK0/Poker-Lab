@@ -101,8 +101,11 @@ def payload(load: Loader | None = None) -> dict[str, Any]:
     }
 
 
-def render(data: dict[str, Any]) -> str:
-    template = (STATIC / "template.html").read_text(encoding="utf-8")
+def render(data: dict[str, Any], *, embedded: bool = False) -> str:
+    """The page as a full document, or ``embedded`` for a host that supplies the document
+    skeleton and owns the theme and the URL (a published artifact)."""
+    name = "template_artifact.html" if embedded else "template.html"
+    template = (STATIC / name).read_text(encoding="utf-8")
     for marker in MARKERS:
         if template.count(marker) != 1:
             raise ValueError(f"template must contain {marker!r} exactly once")
@@ -115,8 +118,8 @@ def render(data: dict[str, Any]) -> str:
     return re.sub("|".join(map(re.escape, MARKERS)), lambda m: parts[m.group(0)], template)
 
 
-def build(out: Path = DEFAULT_OUT) -> Path:
-    html = render(payload())
+def build(out: Path = DEFAULT_OUT, *, embedded: bool = False) -> Path:
+    html = render(payload(), embedded=embedded)
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(html, encoding="utf-8", newline="\n")
     return out
@@ -142,9 +145,16 @@ def refresh(out_dir: Path) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser(description="Build the interactive results explorer.")
-    ap.add_argument("--out", type=Path, default=DEFAULT_OUT, help="output HTML file")
+    ap.add_argument("--out", type=Path, default=None, help="output HTML file")
+    ap.add_argument(
+        "--artifact",
+        action="store_true",
+        help="embedded variant for publishing (no document skeleton; host owns theme and URL)",
+    )
     args = ap.parse_args()
-    out = build(args.out)
+    if args.artifact and args.out is None:
+        ap.error("--artifact needs --out (the committed page is the full-document variant)")
+    out = build(args.out or DEFAULT_OUT, embedded=args.artifact)
     size = out.stat().st_size / 1024
     print(f"wrote {out} ({size:,.0f} KB); open it in a browser")
 

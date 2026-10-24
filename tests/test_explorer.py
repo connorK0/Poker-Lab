@@ -162,6 +162,20 @@ def test_refresh_rebuilds_only_after_canonical_runs(monkeypatch):
     assert calls == [1]
 
 
+def test_embedded_variant_follows_the_host_page_contract(built):
+    """The published artifact gets its document skeleton from the host: no doctype, html, head
+    or body tags of its own, a <title> near the top, and the embedded flag that leaves the
+    host's theme and URL alone."""
+    data, _ = built
+    html = render(data, embedded=True)
+    lowered = html.lower()
+    for tag in ("<!doctype", "<html", "<head", "<body"):
+        assert tag not in lowered
+    assert "<title>Poker Results Explorer</title>" in html[:8192]
+    assert 'data-embedded="1"' in html
+    assert "cdn" not in lowered.split("<script", 1)[0]  # no external resources in the head part
+
+
 def test_render_never_closes_the_data_script_early():
     data = {"phases": [], "title": "</script><script>alert(1)</script>", "intro": ""}
     html = render(data)

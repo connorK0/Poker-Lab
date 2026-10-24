@@ -12,6 +12,8 @@
   var DATA = JSON.parse(document.getElementById("explorer-data").textContent);
   var NAV = document.getElementById("nav");
   var MAIN = document.getElementById("main");
+  // Embedded in a host page (a published artifact): the host owns the theme and the URL.
+  var EMBEDDED = document.querySelector(".app").getAttribute("data-embedded") === "1";
   var TIP = document.getElementById("tooltip");
   var SVGNS = "http://www.w3.org/2000/svg";
   var MINUS = "−";
@@ -799,8 +801,15 @@
   function findPhase(id) { return DATA.phases.find(function (p) { return p.id === id; }); }
   function findSection(phase, id) { return phase && phase.sections.find(function (sec) { return sec.id === id; }); }
 
+  /* Two link forms: a plain token, #phase2 or #phase2.exploit (the only form a host page
+     passes through), and #/phase2/exploit?metric=gain (local file; sets controls too). */
   function parseHash() {
-    var raw = (location.hash || "").replace(/^#\/?/, "");
+    var raw = (location.hash || "").replace(/^#/, "");
+    if (raw.charAt(0) !== "/") {
+      var tok = raw.split(".");
+      return { phase: tok[0] || null, section: tok[1] || null, params: {} };
+    }
+    raw = raw.slice(1);
     var q = raw.split("?");
     var parts = q[0].split("/").filter(Boolean);
     var params = {};
@@ -812,19 +821,20 @@
     return { phase: parts[0] || null, section: parts[1] || null, params: params };
   }
 
-  function hashFor(phase, section, params) {
-    var hsh = "#/" + (phase || "") + (section ? "/" + section : "");
-    var keys = Object.keys(params || {});
-    if (keys.length) hsh += "?" + keys.map(function (k) { return encodeURIComponent(k) + "=" + encodeURIComponent(params[k]); }).join("&");
-    return hsh;
+  function tokenFor(phase, section) {
+    return phase ? phase + (section ? "." + section : "") : "";
   }
 
+  /* Navigation never depends on the URL: render first, then record the page in the
+     history where the browser allows it (local file: back button and bookmarks). */
   function go(phase, section) {
-    location.hash = hashFor(phase, section);
+    show({ phase: phase || null, section: section || null, params: {} });
+    try { history.pushState(null, "", "#" + tokenFor(phase, section)); } catch (e) { /* host refuses */ }
   }
 
-  function route() {
-    var r = parseHash();
+  function route() { show(parseHash()); }
+
+  function show(r) {
     var phase = findPhase(r.phase);
     var section = findSection(phase, r.section);
     state.route = { phase: phase ? phase.id : null, section: section ? section.id : null };
@@ -858,28 +868,27 @@
 
   function renderNav() {
     NAV.textContent = "";
-    NAV.appendChild(h("a", { className: "nav-title", href: "#/", text: "Results explorer" }));
+    NAV.appendChild(h("button", { type: "button", className: "nav-title", onclick: function () { go(); }, text: "Results explorer" }));
     NAV.appendChild(h("p", { className: "nav-sub", text: "Poker opponent modeling & exploitation" }));
     var tree = h("div", { className: "nav-tree" });
-    var select = h("select", { className: "select nav-select", "aria-label": "Go to page", onchange: function (e) { location.hash = e.target.value; } });
-    select.appendChild(h("option", { value: "#/", text: "Home" }));
+    var select = h("select", { className: "select nav-select", "aria-label": "Go to page", onchange: function (e) { var t = e.target.value.split("."); go(t[0] || null, t[1] || null); } });
+    select.appendChild(h("option", { value: "", text: "Home" }));
     DATA.phases.forEach(function (p) {
       var wrap = h("div", { className: "nav-phase" });
       var planned = p.status === "planned";
       wrap.appendChild(navLink(p.label + ": " + p.title, "phase" + (planned ? " planned" : ""),
         state.route.phase === p.id && !state.route.section, function () { go(p.id); }, STATUS_BADGE[p.status]));
-      select.appendChild(h("option", { value: hashFor(p.id), text: p.label + ": " + p.title + (STATUS_BADGE[p.status] ? " (" + STATUS_BADGE[p.status] + ")" : "") }));
+      select.appendChild(h("option", { value: tokenFor(p.id), text: p.label + ": " + p.title + (STATUS_BADGE[p.status] ? " (" + STATUS_BADGE[p.status] + ")" : "") }));
       p.sections.forEach(function (sec) {
         wrap.appendChild(navLink(sec.title, "section", state.route.section === sec.id && state.route.phase === p.id, function () { go(p.id, sec.id); }));
-        select.appendChild(h("option", { value: hashFor(p.id, sec.id), text: " " + sec.title }));
+        select.appendChild(h("option", { value: tokenFor(p.id, sec.id), text: " " + sec.title }));
       });
       tree.appendChild(wrap);
     });
-    select.value = hashFor(state.route.phase, state.route.section);
-    if (!state.route.phase) select.value = "#/";
+    select.value = tokenFor(state.route.phase, state.route.section);
     NAV.appendChild(tree);
     NAV.appendChild(select);
-    NAV.appendChild(h("div", { className: "nav-footer" }, themeButton()));
+    if (!EMBEDDED) NAV.appendChild(h("div", { className: "nav-footer" }, themeButton()));
   }
 
   // ---------------------------------------------------------------- theme
@@ -1018,7 +1027,6 @@
         if (!c) return;
         seg.querySelectorAll("button").forEach(function (b) { b.setAttribute("aria-pressed", String(vals[c.id] === b.getAttribute("data-value"))); });
       });
-      history.replaceState(null, "", hashFor(p.id, sec.id, vals));
       drawView();
     }
 
@@ -1042,7 +1050,8 @@
   });
 
   window.addEventListener("hashchange", route);
+  window.addEventListener("popstate", route);
   window.addEventListener("scroll", hideTip, { passive: true });
-  applyTheme(getTheme());
+  if (!EMBEDDED && getTheme() !== "auto") applyTheme(getTheme());  // never clear a host's choice
   route();
 })();
