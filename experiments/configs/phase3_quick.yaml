@@ -24,3 +24,12 @@ exploit:
   dbr_pseudocount: 10
   freq_pseudocount: 10
   workers: 4
+
+bridge:
+  stacks: [10]
+  heroes: [nash, best_response]
+  opponents: [maniac, nash]
+  n_deals: 2000
+  chunk_deals: 1000
+  half_width: 0.05
+  workers: 4

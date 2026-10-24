@@ -31,3 +31,14 @@ exploit:
   dbr_pseudocount: 10
   freq_pseudocount: 10
   workers: 12
+
+bridge:
+  # P3.3: the push/fold provider in real hands (PokerKit) vs the exact abstract game
+  # (pre-registered; see phase3_bridge.py).
+  stacks: [5, 10, 20]
+  heroes: [nash, best_response]
+  opponents: [nit, tag, lag, calling_station, maniac, nash]
+  n_deals: 100000  # per matchup; each deal is played twice (duplicate)
+  chunk_deals: 5000
+  half_width: 0.05  # bb/hand, for the hands-needed comparison
+  workers: 12

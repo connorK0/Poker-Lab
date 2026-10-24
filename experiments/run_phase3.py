@@ -11,6 +11,9 @@ is rebuilt):
 2. ``exploit``: push/fold bots modeled from what a player sees (likelihood vs frequency
    models), exploited with best, restricted Nash and data-biased responses, with a
    misspecified population as a control (P3.2).
+3. ``bridge``: the push/fold provider played through the real engine (PokerKit) behind the
+   advisor firewall, checked against the exact abstract-game values, with four win-rate
+   estimators (naive, duplicate, all-in EV, both) (P3.3).
 """
 
 from __future__ import annotations
@@ -22,7 +25,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold", "exploit")
+STEPS = ("pushfold", "exploit", "bridge")
 
 
 def run(
@@ -34,10 +37,10 @@ def run(
     out_dir: Path | None = None,
 ) -> dict[str, float]:
     # Imported here: worker processes re-import this module (Windows spawn).
-    from experiments import phase3_exploit, phase3_pushfold
+    from experiments import phase3_bridge, phase3_exploit, phase3_pushfold
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
-    modules = {"pushfold": phase3_pushfold, "exploit": phase3_exploit}
+    modules = {"pushfold": phase3_pushfold, "exploit": phase3_exploit, "bridge": phase3_bridge}
     elapsed = {}
     for k, step in enumerate(steps, start=1):
         print(f"[{k}/{len(steps)}] {step}", flush=True)
