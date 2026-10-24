@@ -19,3 +19,15 @@ pushfold:
     loose: {push: 0.75, call: 0.45}
   heuristic_stacks: [2, 3, 4, 5, 6, 8, 10, 12, 15, 20]
   workers: 12
+
+exploit:
+  # P3.2: modeling and exploiting push/fold bots (pre-registered; see phase3_exploit.py).
+  stack: 10
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  sizes: [10, 30, 100, 300, 1000, 3000]
+  ps: [0.5, 0.9]
+  dbr_pseudocount: 10
+  freq_pseudocount: 10
+  workers: 12

@@ -1,0 +1,26 @@
+# Smoke test of every Phase 3 step (not for reporting): python -m experiments.run_phase3 --quick
+name: phase3_quick
+
+pushfold:
+  stack_min: 1.0
+  stack_max: 6.0
+  stack_step: 0.5
+  display_stacks: [2, 5]
+  cfr_stacks: [5]
+  cfr_iterations: 100
+  cfr_per_decade: 4
+  heuristics:
+    tight: {push: 0.20, call: 0.10}
+  heuristic_stacks: [2, 5]
+  workers: 4
+
+exploit:
+  stack: 10
+  seeds: 2
+  train_per_archetype: 5
+  test_per_archetype: 1
+  sizes: [10, 100]
+  ps: [0.5]
+  dbr_pseudocount: 10
+  freq_pseudocount: 10
+  workers: 4

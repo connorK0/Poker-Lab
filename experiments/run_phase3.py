@@ -8,6 +8,9 @@ is rebuilt):
 
 1. ``pushfold``: heads-up push/fold hold'em solved exactly on a stack grid, compared with
    published Nash charts, CFR+ vs LP, and the exploitability of simple range rules (P3.1).
+2. ``exploit``: push/fold bots modeled from what a player sees (likelihood vs frequency
+   models), exploited with best, restricted Nash and data-biased responses, with a
+   misspecified population as a control (P3.2).
 """
 
 from __future__ import annotations
@@ -19,7 +22,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold",)
+STEPS = ("pushfold", "exploit")
 
 
 def run(
@@ -31,10 +34,10 @@ def run(
     out_dir: Path | None = None,
 ) -> dict[str, float]:
     # Imported here: worker processes re-import this module (Windows spawn).
-    from experiments import phase3_pushfold
+    from experiments import phase3_exploit, phase3_pushfold
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
-    modules = {"pushfold": phase3_pushfold}
+    modules = {"pushfold": phase3_pushfold, "exploit": phase3_exploit}
     elapsed = {}
     for k, step in enumerate(steps, start=1):
         print(f"[{k}/{len(steps)}] {step}", flush=True)
@@ -55,10 +58,12 @@ def main() -> None:
     ap = argparse.ArgumentParser(description="Reproduce all Phase 3 experiments from a seed.")
     ap.add_argument("--seed", type=int, default=2026, help="master seed")
     ap.add_argument("--config", type=Path, default=None, help="YAML config (default: phase3.yaml)")
+    ap.add_argument("--quick", action="store_true", help="use configs/phase3_quick.yaml")
     ap.add_argument("--workers", type=int, default=None, help="worker processes")
     ap.add_argument("--only", choices=STEPS, nargs="+", default=None, help="run some steps only")
     args = ap.parse_args()
-    cfg = load_config(args.config or CONFIG_DIR / "phase3.yaml")
+    path = args.config or CONFIG_DIR / ("phase3_quick.yaml" if args.quick else "phase3.yaml")
+    cfg = load_config(path)
     steps = tuple(args.only) if args.only else STEPS
     elapsed = run(args.seed, cfg, steps=steps, workers=args.workers)
     timing = ", ".join(f"{k} {v:.0f}s" for k, v in elapsed.items())
