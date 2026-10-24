@@ -55,3 +55,20 @@ recommend:
   level: 0.9  # central credible interval; candidates are ranked by its lower end
   draws: 2000  # importance-sampling draws per posterior
   workers: 12
+
+fitcheck:
+  # P3.5: model-fit checks before exploiting (pre-registered; see phase3_fitcheck.py).
+  # Standard and pairs-first bots and hands are P3.2's; connectors-first and gear-change bots
+  # are new. The recommender settings are P3.4's.
+  stack: 10
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  sizes: [10, 30, 100, 300, 1000, 3000]
+  calibration_bots: 300  # per seed, drawn from the fitted prior (never test bots)
+  fit_level: 0.05  # false-alarm level for a bot the model describes (half per check)
+  check_draws: 400  # posterior predictive replicates per check
+  ps: [0.1, 0.25, 0.5, 0.75, 0.9]
+  level: 0.9
+  draws: 2000
+  workers: 12
