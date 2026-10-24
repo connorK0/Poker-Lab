@@ -8,9 +8,12 @@ import numpy as np
 
 from experiments.explorer.phase2 import ARCH_OPTIONS, RESPONSE_COLOR, RESPONSE_LABEL
 from experiments.explorer.spec import (
+    ARCHETYPE_LABELS,
     axis,
     ci,
     control,
+    dot_series,
+    dots_chart,
     heatmap,
     line_chart,
     provenance,
@@ -25,7 +28,8 @@ from experiments.explorer.spec import (
 
 PUSHFOLD = "experiments/results/phase3/pushfold/pushfold.json"
 EXPLOIT = "experiments/results/phase3/exploit/exploit.json"
-SOURCES = (PUSHFOLD, EXPLOIT)
+BRIDGE = "experiments/results/phase3/bridge/bridge.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -50,7 +54,7 @@ def _grid(values: dict[str, float]) -> list[list[float]]:
     return [[values[h] for h in row] for row in GRID]
 
 
-def overview(r: dict[str, Any], ex: dict[str, Any]) -> dict[str, Any]:
+def overview(r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any]) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
     nash = r["nash"]
@@ -59,6 +63,13 @@ def overview(r: dict[str, Any], ex: dict[str, Any]) -> dict[str, Any]:
     std = ex["aggregate"]["standard"]
     oracle = std["oracle"]["br"]["gain"]["mean"]
     br30 = std["by_size"]["30"]["likelihood"]["br"]["gain"]["mean"]
+    checks = br["checks"]
+    max_z = max(checks[k]["max_abs_z"] for k in ESTIMATORS)
+    ten = [m for m in _at_stack(br, "10") if m["opponent"] != "nash"]
+    naive, best = (
+        float(np.median([m["estimates"][k]["hands_needed"] for m in ten]))
+        for k in ("naive", "duplicate_allin_ev")
+    )
     return {
         "tiles": [
             tile(
@@ -91,13 +102,27 @@ def overview(r: dict[str, Any], ex: dict[str, Any]) -> dict[str, Any]:
                 f"{std['population_model']['br']['gain']['mean']:+.3f} bb/hand",
                 "a best response to the population model loses to equilibrium play",
             ),
+            tile(
+                "Real hands vs the exact game",
+                f"largest |z| {max_z:.1f}",
+                f"{sum(checks[k]['n'] for k in ESTIMATORS)} checks of the push/fold provider "
+                "played through PokerKit"
+                + ("" if checks["pass"] else "; the pre-registered check FAILED"),
+            ),
+            tile(
+                "Hands for a ±0.05 bb/hand interval at 10 bb",
+                f"{naive:,.0f} → {best:,.0f}",
+                "naive vs duplicate dealing + all-in EV (median over bots)",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
             "bridge to hold'em: heads-up push/fold no-limit hold'em (blinds 0.5/1, no ante), "
             "solved exactly with the Phase 2 tools on the 169 starting-hand classes with exact "
             "card-removal weights and checked against a published Nash solution (P3.1). Then "
-            "push/fold bots are modeled from what a player sees and exploited (P3.2)."
+            "push/fold bots are modeled from what a player sees and exploited (P3.2), and the "
+            "solved strategy plays real hands through the game engine behind the advisor "
+            "firewall, checked against the exact values (P3.3)."
         ),
     }
 
@@ -606,10 +631,225 @@ def model_fit(ex: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# ------------------------------------------------------------------- P3.3: the bridge check
+
+ESTIMATOR_OPTIONS = [
+    ("duplicate_allin_ev", "Duplicate + all-in EV"),
+    ("duplicate", "Duplicate"),
+    ("allin_ev", "All-in EV"),
+    ("naive", "Naive"),
+]
+ESTIMATOR_LABEL = dict(ESTIMATOR_OPTIONS)
+ESTIMATOR_COLOR = {"naive": "c1", "duplicate": "c2", "allin_ev": "c3", "duplicate_allin_ev": "c4"}
+ESTIMATORS = ("naive", "duplicate", "allin_ev", "duplicate_allin_ev")
+
+
+def _archetype_in_text(arch: str) -> str:
+    """Archetype name inside a sentence: "calling station", but acronyms stay "TAG"."""
+    label = ARCHETYPE_LABELS[arch]
+    return label if label.isupper() else label.lower()
+
+
+def _matchup_label(m: dict[str, Any]) -> str:
+    hero = {"nash": "Nash", "best_response": "Best response"}[m["hero"]]
+    opp = "Nash" if m["opponent"] == "nash" else _archetype_in_text(m["opponent"])
+    return f"{hero} vs {opp}"
+
+
+def _stack_options(br: dict[str, Any]) -> list[tuple[str, str]]:
+    return [(f"{s:g}", f"{s:g} bb") for s in sorted({m["stack"] for m in br["matchups"]})]
+
+
+def _at_stack(br: dict[str, Any], st: str) -> list[dict[str, Any]]:
+    return [m for m in br["matchups"] if f"{m['stack']:g}" == st]
+
+
+def bridge_check(br: dict[str, Any]) -> dict[str, Any]:
+    cfg = br["meta"]["config"]
+    checks = br["checks"]
+    views = {}
+    for st, _ in _stack_options(br):
+        sub = _at_stack(br, st)
+        labels = [_matchup_label(m) for m in sub]
+        z = dots_chart(
+            "z-scores: (simulated - exact) / standard error",
+            labels,
+            axis("z-score", fmt="num"),
+            [
+                dot_series(
+                    ESTIMATOR_LABEL[k], ESTIMATOR_COLOR[k], [(m["estimates"][k]["z"],) for m in sub]
+                )
+                for k in ESTIMATORS
+            ],
+            subtitle="If the bridge is right, z behaves like a standard normal draw: about 1 in 20 "
+            "beyond ±1.96 and none beyond ±4. No dot: the estimate has no variance (see notes).",
+            refs=[ref(-1.96, "-1.96", axis_name="x"), ref(1.96, "+1.96", axis_name="x")],
+        )
+        for est, elabel in ESTIMATOR_OPTIONS:
+            win = dots_chart(
+                f"Hero's win rate at {st} bb: real hands vs the exact game",
+                labels,
+                axis("Win rate (bb/hand)", fmt="signed"),
+                [
+                    dot_series("Exact (abstract game)", "c5", [(m["exact"],) for m in sub]),
+                    dot_series(
+                        f"Simulated ({elabel}), 95% CI",
+                        ESTIMATOR_COLOR[est],
+                        [
+                            (e["mean"], e["lower"], e["upper"])
+                            for e in (m["estimates"][est] for m in sub)
+                        ],
+                    ),
+                ],
+                subtitle=f"{cfg['n_deals']:,} deals per matchup, each played twice with seats "
+                "swapped; both seats averaged.",
+            )
+            zero = [
+                f"{_matchup_label(m)}, {ESTIMATOR_LABEL[k].lower()}: no variance (every deal "
+                "pair cancels exactly), estimate "
+                + ("equal to" if abs(m["estimates"][k]["diff"]) < 1e-9 else "NOT equal to")
+                + " the exact value."
+                for m in sub
+                for k in ESTIMATORS
+                if m["estimates"][k]["zero_variance"]
+            ]
+            views[f"{st}|{est}"] = view(win, z, notes=zero)
+    n_checks = sum(checks[k]["n"] for k in ESTIMATORS)
+    n_zero = sum(checks[k]["zero_variance"] for k in ESTIMATORS)
+    above = sum(checks[k]["share_above_1_96"] * checks[k]["n"] for k in ESTIMATORS)
+    max_z = max(checks[k]["max_abs_z"] for k in ESTIMATORS)
+    hands = sum(2 * m["deals"] for m in br["matchups"])
+    verdict = "passes" if checks["pass"] else "FAILS"
+    mde = [
+        m["estimates"]["duplicate_allin_ev"]["mde"]
+        for m in br["matchups"]
+        if m["opponent"] != "nash"
+    ]
+    return section(
+        "pushfold-bridge",
+        "The bridge check: push/fold in real hands vs the exact game",
+        "The push/fold provider plays real heads-up hands through PokerKit, behind the advisor "
+        "firewall. If the mapping from real hands to the abstract game is right, its win rate "
+        "matches the abstract game's exact value.",
+        sources=[BRIDGE],
+        controls=[
+            control("stack", "Stack", _stack_options(br)),
+            control("est", "Estimator", ESTIMATOR_OPTIONS),
+        ],
+        defaults={"stack": "10"},
+        views=views,
+        takeaways=[
+            f"All {hands:,} hands ended preflop, with a fold or a called all-in: the provider "
+            "never left the tree."
+            if checks["off_tree_hands"] == 0
+            else f"{checks['off_tree_hands']} hands left the tree (a postflop decision).",
+            f"Across {len(br['matchups'])} matchups and 4 estimators ({n_checks} z-scores), the "
+            f"largest |z| is {max_z:.1f} and {above / n_checks:.0%} exceed 1.96 (about 5% "
+            f"expected). The pre-registered check {verdict}."
+            + (
+                f" Estimates with no variance at all (Nash against Nash under duplicate dealing "
+                f"where the equilibrium is pure): {n_zero}. Each must equal the exact value: "
+                + (
+                    "they do."
+                    if all(checks[k]["zero_variance_exact"] for k in ESTIMATORS)
+                    else "they DO NOT."
+                )
+                if n_zero
+                else ""
+            ),
+            f"Sensitivity: with duplicate + all-in EV, each matchup against a bot would detect a "
+            f"discrepancy of {min(mde):.3f} to {max(mde):.3f} bb/hand (80% power, 5% level).",
+            "The all-in EV estimators score called all-ins with the same matchup-equity table "
+            "that defines the exact game, so they test the mapping and the chip accounting. The "
+            "naive and duplicate estimators use the boards that actually came, so they also test "
+            "the table against real dealing, with wider intervals.",
+        ],
+        method="Hero: PushFoldStrategy through AdvisorAgent (equilibrium, or the exact best "
+        "response to the opponent's true ranges). Opponents: the P3.2 archetypes at their mean "
+        "parameters, and the equilibrium. Exact value: head-to-head in the abstract game. "
+        "All-in EV replaces a called all-in's result by c(2e - 1), with e the class matchup "
+        "equity and c the chips each player put in; it is unbiased because e averages the class "
+        "pair's combos, which are equally likely given the classes.",
+    )
+
+
+def bridge_variance(br: dict[str, Any]) -> dict[str, Any]:
+    hw = br["meta"]["config"]["half_width"]
+    views = {}
+    for st, _ in _stack_options(br):
+        sub = _at_stack(br, st)
+        views[st] = view(
+            dots_chart(
+                f"Hands for a ±{hw:g} bb/hand 95% interval at {st} bb",
+                [_matchup_label(m) for m in sub],
+                axis("Hands needed (log scale)", scale="log", fmt="int"),
+                [
+                    dot_series(
+                        ESTIMATOR_LABEL[k],
+                        ESTIMATOR_COLOR[k],
+                        # 0 hands: the two plays of every deal cancel exactly (no log-scale dot)
+                        [(m["estimates"][k]["hands_needed"] or None,) for m in sub],
+                    )
+                    for k in ESTIMATORS
+                ],
+                subtitle="From each estimator's standard deviation; a duplicate pair counts as "
+                "two hands.",
+            ),
+            notes=[
+                "No dot: the estimator has no variance here (the two plays of every deal cancel "
+                "exactly), so any number of hands gives the exact value."
+            ]
+            if any(m["estimates"][k]["hands_needed"] == 0 for m in sub for k in ESTIMATORS)
+            else [],
+        )
+
+    def median(st: str, k: str) -> float:
+        bots = [m for m in _at_stack(br, st) if m["opponent"] != "nash"]
+        return float(np.median([m["estimates"][k]["hands_needed"] for m in bots]))
+
+    stacks = [s for s, _ in _stack_options(br)]
+    mid = "10" if "10" in stacks else stacks[len(stacks) // 2]
+    n, b = median(mid, "naive"), median(mid, "duplicate_allin_ev")
+    factor = {
+        m["opponent"]: m["estimates"]["naive"]["hands_needed"]
+        / m["estimates"]["duplicate"]["hands_needed"]
+        for m in _at_stack(br, mid)
+        if m["hero"] == "nash" and m["opponent"] != "nash"
+    }
+    hi, lo = max(factor, key=factor.get), min(factor, key=factor.get)
+    return section(
+        "pushfold-variance",
+        "How many hands a win rate needs",
+        "Card luck hides skill. Duplicate dealing and all-in EV remove two kinds of luck; here "
+        "is how many hands each estimator needs for the same precision.",
+        sources=[BRIDGE],
+        controls=[control("stack", "Stack", _stack_options(br))],
+        defaults={"stack": "10"},
+        views=views,
+        takeaways=[
+            f"At {mid} bb against the archetype bots (median over matchups): naive "
+            f"{n:,.0f} hands, duplicate {median(mid, 'duplicate'):,.0f}, all-in EV "
+            f"{median(mid, 'allin_ev'):,.0f}, both together {b:,.0f}: {n / b:.0f}× fewer than "
+            "naive.",
+            "Needs grow with the stack, since a called all-in risks more: naive "
+            + ", ".join(f"{median(s, 'naive'):,.0f} at {s} bb" for s in stacks)
+            + ".",
+            f"Duplicate dealing's help depends on the opponent: at {mid} bb Nash needs "
+            f"{factor[hi]:.1f}× fewer hands against the {_archetype_in_text(hi)} but only "
+            f"{factor[lo]:.1f}× fewer against the {_archetype_in_text(lo)}. The closer the "
+            "opponent's play to the hero's, the more the two plays of a deal mirror each other; "
+            "Nash against Nash is the limit, where the luck of the deal cancels almost exactly.",
+            "All-in EV works here because a called preflop all-in has a known equity. Deeper "
+            "play needs a value function for every chance node (AIVAT), planned for Phase 5.",
+        ],
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
-    head = overview(r, ex)
+    br = load(BRIDGE)
+    head = overview(r, ex, br)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -617,7 +857,7 @@ def build(load) -> dict[str, Any]:
         "status": "active",
         "summary": head["summary"],
         "tiles": head["tiles"],
-        "provenance": [provenance(PUSHFOLD, r), provenance(EXPLOIT, ex)],
+        "provenance": [provenance(PUSHFOLD, r), provenance(EXPLOIT, ex), provenance(BRIDGE, br)],
         "sections": [
             charts(r),
             ranges(r),
@@ -625,5 +865,7 @@ def build(load) -> dict[str, Any]:
             solvers(r),
             exploit_hands(ex),
             model_fit(ex),
+            bridge_check(br),
+            bridge_variance(br),
         ],
     }

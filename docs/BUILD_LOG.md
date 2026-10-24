@@ -59,6 +59,7 @@ $B(a,b)$ the beta function.
   * Phase 3
   * [Step 26: Heads-up push/fold solved exactly](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31)
   * [Step 27: Modeling and exploiting push/fold opponents](#step-27-modeling-and-exploiting-pushfold-opponents-p32)
+  * [Step 28: Playing the solved game in real hands](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2100,6 +2101,164 @@ Experiment: `python -m experiments.run_phase3 --seed 2026 --only exploit` (4 min
 
 ---
 
+## Step 28: Playing the solved game in real hands, behind the firewall (P3.3)
+
+**The question.** Steps 26 and 27 work inside the abstract game: 169 hand classes, two
+actions per player, payoffs from a matchup table. A real hand is a `SeatView`: seats, stacks,
+blinds, an action log and two specific cards. Can the solved strategy play real hands, and how
+would we know it plays them *correctly*?
+
+**From a view to an information set.** `PushFoldStrategy` (`poker_lab/strategy/push_fold.py`)
+reads only the view. It accepts a spot when all of these hold:
+
+* the street is preflop, the blinds are in the game's 1 : 2 ratio and there is no ante or
+  straddle;
+* every seat other than the two blinds has folded (heads-up there are none);
+* the hero is the small blind making its first decision, or the big blind facing a
+  small-blind raise that puts it all-in, with nothing in between;
+* the effective stack is in (1, 20] bb.
+
+The *effective stack* is the smaller of the two blinds' stacks at the start of the hand,
+$S = \min(s_{SB}, s_{BB}) / \text{bb}$: chips beyond the shorter stack can be neither won nor
+lost, so a 6 bb player against a 20 bb player plays the 6 bb game. The information set is then
+(role, class of the two cards), and the provider returns the policy's probabilities for it. A
+push is a raise to the most the hero can bet; any excess over the opponent's stack comes back
+as an uncalled bet. The equilibrium for each stack comes from the LP of Step 26 (about 0.1 s,
+cached per stack). LP round-off such as $10^{-12}$ is snapped to 0 or 1, so pure choices stay
+pure.
+
+**Off the tree.** A limp, a min-raise, a 25 bb stack, a table with antes: the abstract game has
+no information set for these. The provider hands such views to a `fallback` provider, or
+raises `OffTree` when it has none. It does not *translate* off-tree actions onto the tree. In
+large games, an opponent's bet size that is not in the abstraction is mapped onto the
+neighboring sizes that are (the pseudo-harmonic mapping of Ganzfried and Sandholm, 2013). Here
+the abstraction has a single bet size, all-in, so there is nothing to interpolate between: a
+min-raise read as a push would just be a different, unchecked game.
+
+Blind against blind after the other seats fold is accepted as an approximation. The abstract
+game deals the two hands from a full deck, but at a real table the folded players hold cards
+too, and their folds make those cards weaker on average. Heads-up tables are exact.
+
+**The firewall, restated as a property.** The provider is a function of the view alone:
+$a = f(\text{view})$. The hand-history store builds a view from public state and the hero's own
+cards. So two live hands that differ only in the opponent's sealed cards produce *equal*
+views, and any $f$ must give them the same advice. The new test builds three such hands
+(opponent AA, 72o, T9o), checks that the views are equal and the advice identical, and walks
+the advisor's object graph: no card string is reachable from it, since the cached policies are
+arrays of probabilities. An end-to-end test plays 80 heads-up hands with the hero behind
+`AdvisorAgent`.
+
+**The bridge check.** The strongest test of a mapping is to use it. If the provider maps real
+hands correctly, then playing real hands must win, on average, exactly what the abstract game
+says: the head-to-head value of the two policies. Anything wrong makes the two disagree:
+
+* a wrong class (suits swapped, ranks transposed);
+* a wrong role, or the wrong blinds;
+* card removal handled differently from the real deck;
+* chip accounting for all-ins and uncalled bets.
+
+The experiment (`experiments/phase3_bridge.py`) plays heads-up hands through the real engine:
+PokerKit's rules, phevaluator showdowns and the sealed store. Blinds are 50/100, both stacks
+reset to $S$ bb every hand, and the hero plays behind `AdvisorAgent`. It covers:
+
+* stacks of 5, 10 and 20 bb;
+* the hero playing the equilibrium, or the exact best response to the opponent's true ranges;
+* opponents: the five archetypes of Step 27 at their mean parameters, and the equilibrium;
+* 100,000 duplicate deals per matchup (200,000 hands), 6.6 million hands in all.
+
+**Four estimators of one win rate.** Card luck dominates poker results: at 10 bb the result
+of a single hand has a standard deviation of 2.6 to 6.1 bb (more against opponents whose
+all-ins get called more often), while the effects being measured are hundredths of a big
+blind. The experiment compares four estimators on the same hands.
+
+1. *Naive*: the plain mean over hands at one table.
+2. *Duplicate* (Step 23): each deal is played twice with seats swapped, and the unit is the
+   mean of the two plays. If $X_1, X_2$ have variance $\sigma^2$ and correlation $\rho$,
+   $$\operatorname{Var}\!\left(\tfrac{X_1 + X_2}{2}\right) = \frac{\sigma^2 (1 + \rho)}{2}.$$
+   A pair costs two hands, so per hand the variance is $\sigma^2 (1 + \rho)$ against
+   $\sigma^2$ for naive. The more the two plays mirror each other ($\rho \to -1$), the more
+   luck cancels.
+3. *All-in EV*: a called all-in for $c$ chips each is scored by its expected value
+   $c\,(2e_{ij} - 1)$ instead of the realized $c\,(2W - 1)$, where $W \in \{0, \tfrac12, 1\}$
+   is the showdown result and $e_{ij}$ the class matchup equity. This is a *control variate*:
+   the estimator subtracts $X - Y$, whose expectation is zero. Given the two specific combos,
+   $E[W] = e_{\text{combo}}$. Given the classes, the compatible combo pairs are equally likely,
+   and $e_{ij}$ is exactly their average, so $E[Y] = E[X]$: no bias, and the luck of the board
+   (and of the combo within the class) is gone. Poker tracking software reports the same
+   quantity as "all-in adjusted winnings".
+4. *Both together*.
+
+Each estimate is compared with the exact value by
+$z = (\hat\theta - \theta) / \widehat{SE}$. The pre-registered rule: if the bridge is right,
+the $z$ behave like standard normal draws, so about 5% exceed 1.96 and none exceeds 4, and a
+t-test finds the mean $z$ consistent with zero ($p \ge 0.01$). Every hand must also end
+preflop: a postflop decision would mean a spot left the tree. Each comparison's *minimum
+detectable effect* is $2.8\,\widehat{SE}$, the discrepancy it would catch with 80% power at a
+two-sided 5% level ($1.96 + 0.84 = 2.8$).
+
+Two of the estimators score all-ins with the same matchup table that defines the exact game,
+so they test the mapping and the accounting but not the table. The naive and duplicate
+estimators use the boards that actually came, so they test the table against real dealing as
+well, with wider intervals.
+
+**An amendment, made before any result was seen.** The first full run crashed after 20
+minutes, in aggregation, dividing by a standard error of exactly zero. At 20 bb the
+equilibrium has no mixed hands. When both players use it, the second play of every deal
+mirrors the first: the hero holds the opponent's cards in the opponent's seat and makes the
+opponent's choices, so every pair sums to zero. The estimate is exact, and $z$ is $0/0$. The
+rule was amended: an estimate whose standard deviation is below $10^{-9}$ bb has no $z$; it
+passes only if it equals the exact value, and it is left out of the $z$ statistics. The
+quick configuration now includes 20 bb, so the smoke test covers the case.
+
+**Engineering: a profile, then a one-line fix.** The first pilot ran at 94 hands/s per
+process, against about 1,000 for the bare engine. `cProfile` put 72% of the time in
+`ProfileStore.snapshot`: before every decision the advisor's profile store recomputed each
+profile's 95% credible intervals through `scipy.stats.beta.ppf`, whose argument checking
+costs about 86 µs per call. `scipy.special.betaincinv` evaluates the same function (the
+inverse regularized incomplete beta) in 3.4 µs, and gave bit-identical results on 400,000
+random $(a, b)$ pairs. Measure before optimizing: the push/fold code itself was never the
+bottleneck.
+
+**Results** (commit `9bdab59`, 6.6 million hands, 20 minutes on 12 processes):
+
+* *The bridge holds.* All 6.6 million hands ended preflop. Of the 130 z-scores, 6 exceed 1.96
+  (4.6%, against about 5% expected) and the largest is 2.57. Per estimator the mean $z$ lies
+  between −0.10 and +0.14 (t-test $p \ge 0.38$). The two zero-variance estimates (Nash against
+  Nash at 20 bb, duplicate with and without all-in EV) equal the exact value exactly.
+* *The check is sensitive.* The smallest discrepancy each matchup against a bot would detect
+  (80% power) is 0.013–0.099 bb/hand for the naive estimator and 0.003–0.015 bb/hand for
+  duplicate + all-in EV. For scale: the gains measured in Step 27 are 0.05–0.09 bb/hand.
+* *Variance reduction, measured.* For a ±0.05 bb/hand 95% interval at 10 bb against the bots,
+  the median number of hands needed is 32,073 naive, 10,733 with duplicate dealing, 4,339 with
+  all-in EV and 1,572 with both: 20× fewer. Needs grow with the stack (naive: 11,627 at 5 bb,
+  91,551 at 20 bb), since a called all-in risks more.
+* *Duplicate dealing helps most against opponents who play like the hero.* At 10 bb Nash needs
+  5.2× fewer hands against the LAG (ranges close to Nash's) but only 1.4× fewer against the
+  nit. The closer the strategies, the closer $\rho$ gets to −1. Nash against Nash is the
+  limit: 91 hands with duplicate dealing against 32,302 naive at 10 bb, and exactly zero at
+  20 bb.
+
+These numbers plan Phase 5: a live home game will not reach tens of thousands of hands, so a
+live win-rate claim needs variance reduction. Duplicate dealing is impossible at a real table,
+and all-in EV covers only all-ins, which leaves AIVAT-style control variates over every chance
+node.
+
+**Verification.**
+
+* `tests/test_push_fold_strategy.py` (11 tests): the equilibrium is exact (exploitability
+  < $10^{-7}$) and solved once per stack; in engine-played hands every view maps to the right
+  role, class and stack, with the right probabilities and all-in sizes; uneven stacks use the
+  effective stack; fixed ranges; off-tree cases (limp, min-raise, 25 bb and 1 bb stacks,
+  antes, odd blinds, postflop) fall back or raise; blind against blind after folds.
+* The strategy contract suite now includes the provider (100 bb deep, so always the
+  fallback).
+* `tests/test_advisor_firewall.py`: identical views and advice whatever the opponent's sealed
+  cards; no card reachable from the advisor; an end-to-end `AdvisorAgent` match.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only bridge` (20 minutes);
+  smoke test with `--quick` (20 s).
+
+---
+
 # Part C: cross-cutting engineering
 
 ## C.1 Testing strategy
@@ -2118,7 +2277,7 @@ Experiment: `python -m experiments.run_phase3 --seed 2026 --only exploit` (4 min
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 252 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 267 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2198,6 +2357,9 @@ numeric table next to it, so no number depends on reading a color.
 | A global `*.npz` ignore rule silently excluded shipped package data | `git add` refused the file | a targeted `!poker_lab/games/data/*.npz` exception | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
 | A log axis for a quantity that can be exactly 0 (a rule that equals Nash) | the explorer's well-formed-chart test | linear axis; exact values in the table view | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
 | An f-string reused its outer quotes (valid only from Python 3.12; the project supports 3.11) | ruff's syntax check for the target version | build the inner string first | [26](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31) |
+| Profile credible intervals through `scipy.stats.beta.ppf` took 72% of an advisor-driven simulation | `cProfile`, after a pilot ran 10x slower than the bare engine | `scipy.special.betaincinv` (bit-identical, ~25x faster) | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
+| Aggregation divided by a standard error that was exactly zero (Nash vs Nash, duplicate dealing, pure equilibrium at 20 bb) | a crash after 20 minutes of simulation, before any output | zero-variance estimates have no z and must equal the exact value (amendment committed before the rerun); the quick config covers the case | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
+| A scratch script's output path was a literal `%s` (a shell substitution had failed) | a stray folder in the repository root | moved the files out; scratch outputs go to the scratch directory | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
 
 ---
 
@@ -2206,6 +2368,7 @@ numeric table next to it, so no number depends on reading a color.
 | Term | Meaning |
 |---|---|
 | All-in | betting every remaining chip |
+| All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
 | Best response | a strategy that maximizes payoff against a fixed opponent |
 | Button (BTN) | dealer position; acts last after the flop |
@@ -2215,12 +2378,14 @@ numeric table next to it, so no number depends on reading a color.
 | CFR | counterfactual regret minimization: one regret matcher per information set |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
+| Control variate | a term with known zero mean subtracted from an estimator to cut its variance |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | Data-biased response | robust response that trusts the model per information set by data count |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
+| Effective stack | the smaller of two players' stacks: the most either can win or lose against the other |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
@@ -2232,9 +2397,11 @@ numeric table next to it, so no number depends on reading a color.
 | Log-loss | mean negative log-probability of the true class |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
+| Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
+| Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Perfect recall | players never forget their own actions or observations |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
@@ -2252,6 +2419,7 @@ numeric table next to it, so no number depends on reading a color.
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
+| z-score | (estimate - true value) / standard error; about standard normal when the estimator is unbiased |
 
 ---
 
@@ -2269,6 +2437,9 @@ Poker, games and engines
   Leduc hold'em.
 * Ganzfried, S., Sandholm, T. (2011). *Game theory-based opponent modeling in large
   imperfect-information games.* AAMAS.
+* Ganzfried, S., Sandholm, T. (2013). *Action Translation in Extensive-Form Games with Large
+  Action Spaces: Axioms, Paradoxes, and the Pseudo-Harmonic Mapping.* IJCAI. (Mapping
+  off-tree bet sizes onto an abstraction; Step 28)
 * Kuhn, H. W. (1950). *A simplified two-person poker.* Contributions to the Theory of Games 1.
 * Lanctot, M. et al. (2019). *OpenSpiel: A Framework for Reinforcement Learning in Games.*
   arXiv:1908.09453. Source of the uniform-policy NashConv used as a check.
@@ -2356,3 +2527,6 @@ Software design
 * 2026-10-23: Step 27 (push/fold opponent models). Results from commit `a8ea075`,
   cross-checked against `experiments/results/phase3/exploit/exploit_summary.md`; the
   hand-order overlap figures were computed for this step.
+* 2026-10-24: Step 28 (the push/fold provider in real hands). Results from commit `9bdab59`,
+  cross-checked against `experiments/results/phase3/bridge/bridge_summary.md`; per-hand
+  standard deviations and detectable effects were computed from `bridge.json` for this step.

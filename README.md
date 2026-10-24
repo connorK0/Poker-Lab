@@ -334,8 +334,8 @@ The game is built over the 169 starting-hand classes:
   error ≤ 0.002.
 
 It has 143k nodes and 338 information sets, and the Phase 2 LP and CFR solve it unchanged.
-Reproduce with `python -m experiments.run_phase3 --seed 2026` (1 min). Results come from
-commit `3aa83c2`; see
+Reproduce with `python -m experiments.run_phase3 --seed 2026 --only pushfold` (1 min).
+Results come from commit `3aa83c2`; see
 [`pushfold_summary.md`](experiments/results/phase3/pushfold/pushfold_summary.md).
 
 <picture>
@@ -393,8 +393,38 @@ exact values (commit `a8ea075`; [`exploit_summary.md`](experiments/results/phase
   the two hand orders are close (rank correlation 0.95), so this shows that range size
   dominates, not that misspecification is harmless.
 
-Next: advice for real hold'em hands behind the firewall (P3.3), then ranked recommendations
-with confidence (see [PROGRESS.md](PROGRESS.md)).
+**Playing the solved game in real hands (P3.3).** `PushFoldStrategy` takes a real hand as
+one seat sees it (public state and its own two cards) and finds the matching spot in the
+solved game: the small blind's first decision, or the big blind facing an all-in, at an
+effective stack of 1–20 bb, with blinds 1:2, no ante and everyone else folded. Anything else
+(a limp, a min-raise, a deeper stack) goes to a fallback strategy. Firewall tests show that
+hands which differ only in the opponent's sealed cards give identical views and identical
+advice.
+
+To check the mapping, the strategy played 6.6 million real heads-up hands through PokerKit
+behind the advisor: Nash and an exact best response, against the five bot types and Nash, at
+5, 10 and 20 bb. Each simulated win rate was compared with the exact value from the abstract
+game (commit `9bdab59`;
+[`bridge_summary.md`](experiments/results/phase3/bridge/bridge_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/bridge/bridge_check-dark.png">
+  <img alt="For each stack and matchup, the difference between the simulated win rate and the exact value with 95% intervals, for the naive estimator and for duplicate dealing plus all-in EV; all intervals straddle zero" src="experiments/results/phase3/bridge/bridge_check.png">
+</picture>
+
+* **Real hands match the exact game.** Of 130 z-scores (33 matchups × 4 estimators), 6
+  exceed 1.96 (about 5% expected) and the largest is 2.6. Every hand ended preflop. With the
+  best estimator the check would catch a discrepancy of 0.003–0.015 bb/hand.
+* **Variance reduction, measured.** For a ±0.05 bb/hand interval at 10 bb, the median matchup
+  needs 32,073 hands naively, 10,733 with duplicate dealing, 4,339 when called all-ins are
+  scored by their equity (all-in EV), and 1,572 with both. Duplicate dealing helps most
+  against opponents who play like the hero (5.2× for the LAG, 1.4× for the nit).
+* **What this means for Phase 5.** A live home game will not reach tens of thousands of
+  hands, and duplicate dealing is impossible at a real table. Win-rate claims there will need
+  control variates for every chance node (AIVAT).
+
+Next: ranked exploit recommendations with confidence (P3.4), then model-fit checks before
+exploiting (P3.5); see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -415,8 +445,10 @@ python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
 python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
 
-# Phase 3 so far: heads-up push/fold solved exactly and checked against a published chart
-python -m experiments.run_phase3 --seed 2026          # ~1 min
+# Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
+# the solved strategy played through the real engine (20 min)
+python -m experiments.run_phase3 --seed 2026          # ~25 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only bridge   # one step: pushfold, exploit or bridge
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
@@ -532,7 +564,7 @@ poker_lab/
   games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
                TabularPolicy, best response, Leduc bots + fitting
   solvers/     LP, CFR family, MCCFR, Deep CFR, restricted Nash / data-biased responses
-  strategy/    StrategyProvider + baselines for hold'em         (Phase 3)
+  strategy/    StrategyProvider, baselines, push/fold provider over the solved game (Phase 3)
   exploit/     exact small-game exploit engines; hold'em ExploitEngine + stubs (Phase 3)
   evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
@@ -550,7 +582,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -558,7 +590,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (252 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (267 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working
