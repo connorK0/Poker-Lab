@@ -29,7 +29,8 @@ from experiments.explorer.spec import (
 PUSHFOLD = "experiments/results/phase3/pushfold/pushfold.json"
 EXPLOIT = "experiments/results/phase3/exploit/exploit.json"
 BRIDGE = "experiments/results/phase3/bridge/bridge.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE)
+RECOMMEND = "experiments/results/phase3/recommend/recommend.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -54,7 +55,9 @@ def _grid(values: dict[str, float]) -> list[list[float]]:
     return [[values[h] for h in row] for row in GRID]
 
 
-def overview(r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any]) -> dict[str, Any]:
+def overview(
+    r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any], rc: dict[str, Any]
+) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
     nash = r["nash"]
@@ -70,6 +73,10 @@ def overview(r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any]) -> dict[
         float(np.median([m["estimates"][k]["hands_needed"] for m in ten]))
         for k in ("naive", "duplicate_allin_ev")
     )
+    rstd = rc["aggregate"]["standard"]
+    rsizes = _rec_sizes(rc)
+    rec_loss = max(rstd[n]["rules"]["lower_bound"]["loses"]["share"] for n in rsizes)
+    rec_cov = [rstd[n]["coverage"]["share"] for n in rsizes]
     return {
         "tiles": [
             tile(
@@ -114,15 +121,27 @@ def overview(r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any]) -> dict[
                 f"{naive:,.0f} → {best:,.0f}",
                 "naive vs duplicate dealing + all-in EV (median over bots)",
             ),
+            tile(
+                "Recommendations that lose to equilibrium play",
+                f"{rec_loss:.1%} of bots",
+                "at worst over sample sizes; ranked by a 90% posterior lower bound",
+            ),
+            tile(
+                "90% intervals that contain the true gain",
+                f"{min(rec_cov):.0%}-{max(rec_cov):.0%}",
+                "of candidates, by sample size (standard bots)",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
             "bridge to hold'em: heads-up push/fold no-limit hold'em (blinds 0.5/1, no ante), "
             "solved exactly with the Phase 2 tools on the 169 starting-hand classes with exact "
             "card-removal weights and checked against a published Nash solution (P3.1). Then "
-            "push/fold bots are modeled from what a player sees and exploited (P3.2), and the "
+            "push/fold bots are modeled from what a player sees and exploited (P3.2), the "
             "solved strategy plays real hands through the game engine behind the advisor "
-            "firewall, checked against the exact values (P3.3)."
+            "firewall, checked against the exact values (P3.3), and exploit recommendations "
+            "are ranked by how confidently they beat equilibrium play, with posterior intervals "
+            "checked against the truth (P3.4)."
         ),
     }
 
@@ -845,11 +864,409 @@ def bridge_variance(br: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# ------------------------------------------------------------------------ recommendations (P3.4)
+
+RULE_OPTIONS = [
+    ("lower_bound", "Lower-bound pick (the recommendation)"),
+    ("bayes_br", "Bayes best response"),
+    ("mode_br", "Mode best response (P3.2)"),
+    ("rnr_0.5", "Restricted Nash, p = 0.5"),
+    ("hindsight", "Best candidate in hindsight"),
+]
+RULE_LABEL = dict(RULE_OPTIONS)
+RULE_COLOR = {
+    "lower_bound": "c1",
+    "bayes_br": "c2",
+    "mode_br": "c3",
+    "rnr_0.5": "c5",
+    "hindsight": "muted",
+}
+HANDS_SEEN = axis("Hands observed (cards seen only when a push is called)", scale="log", fmt="int")
+
+
+def _rec_sizes(rc: dict[str, Any], *, zero: bool = False) -> list[str]:
+    return [str(n) for n in rc["meta"]["config"]["sizes"] if zero or n > 0]
+
+
+def _rule_metric(b: dict[str, Any], n: str, rule: str, metric: str) -> float:
+    from experiments.phase3_recommend import TOL, rule_score
+
+    score = rule_score(b, n, rule)
+    if metric == "loses":
+        return float(score["true_gain"] < -TOL)
+    return score["exploitability" if metric == "exploitability" else "true_gain"]
+
+
+def recommend_rules(rc: dict[str, Any]) -> dict[str, Any]:
+    sizes = _rec_sizes(rc)
+    metrics = {
+        "gain": (
+            "True gain over equilibrium play",
+            axis("bb/hand above equilibrium", fmt="signed"),
+        ),
+        "loses": (
+            "Bots against which the choice does worse than equilibrium",
+            axis("Share of bots", fmt="pct", lo=0),
+        ),
+        "exploitability": (
+            "Risk: exploitability of the choice",
+            axis("Exploitability (bb/hand)", lo=0),
+        ),
+    }
+    views = {}
+    for metric, (title, yax) in metrics.items():
+        for pop, plabel in POP_OPTIONS:
+            for arch, alabel in ARCH_OPTIONS:
+                groups = _bots(rc, pop, arch)
+                lines = []
+                for rule, rlabel in RULE_OPTIONS:
+                    pts = []
+                    for n in sizes:
+                        mean, lo, hi = _seed_ci(
+                            groups, lambda b, n=n, r=rule, m=metric: _rule_metric(b, n, r, m)
+                        )
+                        if metric == "loses" and lo is not None:
+                            lo, hi = max(lo, 0.0), min(hi, 1.0)
+                        pts.append((int(n), mean, lo, hi))
+                    lines.append(series(rlabel, RULE_COLOR[rule], pts, dash=rule == "hindsight"))
+                refs = []
+                if metric == "gain":
+                    refs = [
+                        ref(
+                            _seed_ci(groups, lambda b: b["oracle"]["true_gain"])[0],
+                            "Oracle best response (true strategy)",
+                        ),
+                        ref(
+                            _seed_ci(groups, lambda b: b["population_true_gain"])[0],
+                            "Population recommendation (0 hands)",
+                        ),
+                        ref(0.0, "Equilibrium play"),
+                    ]
+                elif metric == "loses":
+                    refs = [ref(0.05, "5%: what a 95% lower bound allows")]
+                who = alabel.lower() if arch == "all" else f"{alabel} bots"
+                views[f"{metric}|{pop}|{arch}"] = view(
+                    line_chart(
+                        f"{title} ({who})",
+                        HANDS_SEEN,
+                        yax,
+                        lines,
+                        refs=refs,
+                        subtitle=f"{plabel}. 5 seeds x 30 held-out bots at 10 bb (the P3.2 bots "
+                        "and hands); exact values; bands are 95% t-intervals across seeds.",
+                    )
+                )
+    agg = rc["aggregate"]
+    std = agg["standard"]
+    first, last = sizes[0], sizes[-1]
+    oracle = std[last]["rules"]["oracle"]["gain"]["mean"]
+
+    def loss(pop: str, n: str, rule: str = "lower_bound") -> dict[str, Any]:
+        return agg[pop][n]["rules"][rule]["loses"]
+
+    def share_of_oracle(n: str, rule: str) -> str:
+        return f"{std[n]['rules'][rule]['gain']['mean'] / oracle:.0%}"
+
+    worst_n = max(sizes, key=lambda n: loss("standard", n)["share"])
+    worst = loss("standard", worst_n)
+    bots = [b for seed in rc["per_seed"] for b in seed if b["population"] == "standard"]
+    deepest = min(
+        rule_metric
+        for b in bots
+        for n in sizes
+        if (rule_metric := _rule_metric(b, n, "lower_bound", "gain")) < 0
+    )
+    gain_gap = max(sizes, key=lambda n: std[n]["rules"]["bayes_br"]["gain"]["mean"])
+    diff = {n: std[n]["bayes_minus_mode"] for n in _rec_sizes(rc, zero=True)}
+    tiny = next(
+        n for k, n in enumerate(sizes) if all(abs(diff[m]["mean"]) < 1e-3 for m in sizes[k:])
+    )
+    mis_worst = max(loss("misspecified", n)["share"] for n in sizes)
+    takeaways = [
+        f"Ranked by the lower end of a 90% posterior interval, the recommendation does worse than "
+        f"equilibrium play against at most {worst['share']:.1%} of standard bots ({worst['k']} of "
+        f"{worst['n']} after {int(worst_n):,} hands; the largest such loss is "
+        f"{-deepest:.3f} bb/hand). The pre-registered prediction was at most 5%. The Bayes best "
+        f"response, which maximizes expected gain, loses to "
+        f"{loss('standard', first, 'bayes_br')['share']:.0%} after {int(first):,} hands, and "
+        f"P3.2's best response to the posterior mode to "
+        f"{loss('standard', first, 'mode_br')['share']:.0%}.",
+        f"The price of that safety is gain while evidence is thin: after {int(first):,} hands the "
+        f"recommendation earns {share_of_oracle(first, 'lower_bound')} of the oracle's gain vs "
+        f"{share_of_oracle(first, 'bayes_br')} for the Bayes best response; after 30 hands "
+        f"{share_of_oracle('30', 'lower_bound')} vs {share_of_oracle('30', 'bayes_br')}; after "
+        f"100 hands {share_of_oracle('100', 'lower_bound')} vs "
+        f"{share_of_oracle('100', 'bayes_br')}. Neither rule is better in general: the "
+        "recommendation fits a player who cannot afford a losing adjustment, the Bayes best "
+        "response one who only cares about the average.",
+        f"Responding to the posterior mean beats responding to the mode while evidence is thin: "
+        f"{diff['0']['mean']:+.3f} bb/hand with no hands (the best response to the population "
+        f"mode loses to equilibrium play, as in P3.2) and {diff[first]['mean']:+.3f} "
+        f"[{diff[first]['lower']:+.3f}, {diff[first]['upper']:+.3f}] after {int(first):,}; "
+        f"after {int(sizes[1]):,} the interval includes zero "
+        f"({diff[sizes[1]]['mean']:+.3f} [{diff[sizes[1]]['lower']:+.3f}, "
+        f"{diff[sizes[1]]['upper']:+.3f}]), and from {int(tiny):,} hands on the difference is "
+        "below 0.001 bb/hand.",
+        f"Pairs-first bots, whose hand order the model gets wrong: the recommendation loses to "
+        f"equilibrium against at most {mis_worst:.1%} of them after any number of hands "
+        f"({loss('misspecified', '0')['share']:.1%} for the population recommendation at 0 "
+        "hands).",
+    ]
+    if gain_gap != last:  # keep the claim honest if the Bayes curve ever turns down
+        takeaways.append(
+            f"The Bayes best response's gain peaks at {int(gain_gap):,} hands in this run."
+        )
+    return section(
+        "recommend-rules",
+        "Ranked recommendations: do they win?",
+        "After watching a bot for n hands, the recommender ranks the equilibrium, restricted Nash "
+        "responses and the best response by the lower end of a 90% posterior interval for their "
+        "gain over equilibrium, and recommends the top one. Here is what each way of choosing "
+        "really earns against the bot.",
+        sources=[RECOMMEND],
+        controls=[
+            control(
+                "metric",
+                "Metric",
+                [("gain", "Gain"), ("loses", "Bots lost to"), ("exploitability", "Risk")],
+            ),
+            control("pop", "Bots", POP_OPTIONS),
+            control("arch", "Archetype", ARCH_OPTIONS),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method=(
+            "Pre-registered in experiments/phase3_recommend.py. Posterior over (push width, call "
+            "width, temperature) by importance sampling from a Laplace-fitted Student-t; every "
+            "candidate responds to the posterior mean strategy and is scored on every draw "
+            "exactly, so its gain has a posterior distribution. The equilibrium's gain is 0, so "
+            "the recommendation deviates only when some response gains with posterior "
+            "probability of at least 95%. The best candidate in hindsight uses the bot's true "
+            "strategy and is not achievable."
+        ),
+    )
+
+
+def recommend_calibration(rc: dict[str, Any]) -> dict[str, Any]:
+    from experiments.phase3_recommend import candidate_label, candidate_names
+
+    cfg = rc["meta"]["config"]
+    sizes = _rec_sizes(rc)
+    all_sizes = _rec_sizes(rc, zero=True)
+    names = candidate_names(cfg)
+    views = {}
+    for pop, plabel in POP_OPTIONS:
+        agg = rc["aggregate"][pop]
+
+        def pts(key, agg=agg):
+            return [
+                (int(n), agg[n][key]["share"], agg[n][key]["lower"], agg[n][key]["upper"])
+                for n in sizes
+                if agg[n][key]["n"]
+            ]
+
+        cover = line_chart(
+            "Do the intervals contain the true gain?",
+            HANDS_SEEN,
+            axis("Coverage", fmt="pct", hi=1),
+            [
+                series("90% interval, every candidate", "c1", pts("coverage")),
+                series("Lower end (one-sided 95%), every candidate", "c2", pts("one_sided")),
+                series("90% interval, the top pick when it deviates", "c3", pts("pick_coverage")),
+            ],
+            refs=[ref(0.9, "Nominal 90%"), ref(0.95, "Nominal 95%")],
+            subtitle=f"{plabel}. Pooled over bots and seeds (Wilson 95% intervals; candidates of "
+            "the same bot are correlated, so these are optimistic).",
+        )
+        picks = heatmap(
+            "Which response the evidence picks",
+            [candidate_label(k) for k in names],
+            [f"{int(n):,}" for n in all_sizes],
+            [[agg[n]["picks"][k]["share"] for n in all_sizes] for k in names],
+            subtitle="Share of bots for which each candidate is the top recommendation.",
+            row_label="Top pick",
+            col_label="Hands observed",
+            fmt="pct",
+            vmax=1.0,
+        )
+        views[pop] = view(cover, picks)
+    std = rc["aggregate"]["standard"]
+    mis = rc["aggregate"]["misspecified"]
+
+    def span(block: dict[str, Any], key: str, ns: list[str]) -> str:
+        vals = [block[n][key]["share"] for n in ns]
+        return f"{min(vals):.0%} to {max(vals):.0%}"
+
+    eq_share = [std[n]["picks"]["equilibrium"]["share"] for n in all_sizes]
+    br_share = [std[n]["picks"]["best_response"]["share"] for n in all_sizes]
+    first = sizes[0]
+    low_ess = [
+        (b["population"], n, b["sizes"][n]["ess"])
+        for seed in rc["per_seed"]
+        for b in seed
+        for n in all_sizes
+        if b["sizes"][n]["ess"] < 100
+    ]
+    fits = sum(len(seed) for seed in rc["per_seed"]) * len(all_sizes)
+    draws = rc["meta"]["config"]["draws"]
+    takeaways = [
+        f"Standard bots: from {int(first):,} hands on, the 90% intervals contain the true gain "
+        f"{span(std, 'coverage', sizes)} of the time, inside the pre-registered 85-95% band; with "
+        f"no hands (prior only) {std['0']['coverage']['share']:.0%}, slightly conservative, "
+        f"which misses the band. The true gain is above the interval's lower end "
+        f"{span(std, 'one_sided', sizes)} of the time (nominal 95%).",
+        f"The top pick alone is less well covered: after {int(first):,} hands its 90% interval "
+        f"holds the true gain {std[first]['pick_coverage']['share']:.0%} of the time and its "
+        f"lower end {std[first]['pick_one_sided']['share']:.0%} (nominal 95%). Choosing the "
+        "largest lower bound favors candidates whose bound came out too high, a winner's curse "
+        "that an exactly right prior would remove (a posterior statement is conditional on the "
+        "data, and the choice is a function of the data). The prior here is only approximately "
+        "right: independent Betas fitted to a mixture of five archetypes. The deviations still "
+        f"beat equilibrium play {std[first]['deviation_wins']['share']:.0%} of the time.",
+        f"Pairs-first bots: 90% coverage falls as evidence grows, from "
+        f"{mis['0']['coverage']['share']:.0%} with no hands to "
+        f"{mis[sizes[-1]]['coverage']['share']:.0%} after {int(sizes[-1]):,}. The model ranks "
+        "hands by equity, the bots pairs first, so the posterior concentrates on a slightly "
+        "wrong answer. Decisions stay safe because the errors are small next to the gains: the "
+        f"top pick still beats equilibrium {mis[sizes[-1]]['deviation_wins']['share']:.0%} of "
+        "the time. Checking the model's fit before trusting its intervals is the next step "
+        "(P3.5).",
+        f"The evidence sets p: the equilibrium is the top pick for {eq_share[1]:.0%} of bots "
+        f"after {int(all_sizes[1]):,} hands and {eq_share[-1]:.0%} after "
+        f"{int(all_sizes[-1]):,}; the full best response for {br_share[1]:.0%} and "
+        f"{br_share[-1]:.0%}.",
+        f"Importance sampling: {len(low_ess)} of {fits:,} posterior fits had an effective sample "
+        f"size below 100 of {draws:,} draws"
+        + (
+            f" (the lowest {min(e for *_, e in low_ess):.0f}), all against "
+            + (
+                "pairs-first bots"
+                if all(pop == "misspecified" for pop, *_ in low_ess)
+                else "standard and pairs-first bots"
+            )
+            + "."
+            if low_ess
+            else "."
+        ),
+    ]
+    return section(
+        "recommend-calibration",
+        "Are the confidence statements honest?",
+        "A recommendation is only as good as its interval. Since the bots are simulated, the "
+        "true gain of every candidate is known and can be checked against the posterior "
+        "interval the recommender reported.",
+        sources=[RECOMMEND],
+        controls=[control("pop", "Bots", POP_OPTIONS)],
+        views=views,
+        takeaways=takeaways,
+    )
+
+
+def recommend_examples(rc: dict[str, Any]) -> dict[str, Any]:
+    from experiments.phase3_recommend import candidate_label
+
+    sizes = _rec_sizes(rc, zero=True)
+    examples = {
+        b["archetype"]: b for b in rc["per_seed"][0] if "explanation" in b["sizes"][sizes[0]]
+    }
+    archs = [a for a in ARCHETYPE_LABELS if a in examples]
+    views = {}
+    for arch in archs:
+        b = examples[arch]
+        for n in sizes:
+            s = b["sizes"][n]
+            ranked = s["ranked"]
+            cands = [s["candidates"][k] for k in ranked]
+            rows = [f"{i}. {candidate_label(k)}" for i, k in enumerate(ranked, start=1)]
+            chart = dots_chart(
+                f"{ARCHETYPE_LABELS[arch]} bot after {int(n):,} hands: the ranked candidates",
+                rows,
+                axis("Gain over equilibrium (bb/hand)", fmt="signed"),
+                [
+                    dot_series(
+                        "Posterior mean, 90% interval",
+                        "c1",
+                        [(c["mean"], c["lower"], c["upper"]) for c in cands],
+                    ),
+                    dot_series(
+                        "True gain (known only in simulation)",
+                        "c2",
+                        [(c["true_gain"],) for c in cands],
+                    ),
+                ],
+                subtitle="Ranked by the interval's lower end; ties go to the smaller p.",
+                refs=[ref(0.0, "Equilibrium", axis_name="x")],
+            )
+            risk = dots_chart(
+                "Risk: exploitability of each candidate",
+                rows,
+                axis("Exploitability (bb/hand)", lo=0),
+                [dot_series("Exploitability", "c7", [(c["exploitability"],) for c in cands])],
+            )
+            top = cands[0]
+            views[f"{arch}|{n}"] = view(
+                chart,
+                risk,
+                notes=[
+                    s["explanation"],
+                    f"True gain of the top pick: {top['true_gain']:+.3f} bb/hand (the oracle "
+                    f"best response gains {b['oracle']['true_gain']:+.3f}).",
+                ],
+            )
+
+    def top(arch: str, n: str) -> dict[str, Any]:
+        sz = examples[arch]["sizes"][n]
+        return {"name": sz["ranked"][0], **sz["candidates"][sz["ranked"][0]]}
+
+    early, late = sizes[1], sizes[-1]
+    cautious = [
+        a for a in archs if top(a, early)["name"] in ("equilibrium", "restricted_nash_p0.1")
+    ]
+    inside = [
+        a
+        for a in archs
+        if top(a, late)["lower"] <= top(a, late)["true_gain"] <= top(a, late)["upper"]
+    ]
+    risk_early = max(top(a, early)["exploitability"] for a in archs)
+    takeaways = [
+        f"After {int(early):,} hands {len(cautious)} of the {len(archs)} example bots get the "
+        "equilibrium or the mildest restricted Nash response (p = 0.1): a handful of hands is "
+        "too little to be 95% sure of more. "
+        + (
+            f"These picks are practically unexploitable (at most {risk_early:.0e} bb/hand)."
+            if risk_early < 1e-3
+            else f"These picks are exploitable for at most {risk_early:.3f} bb/hand."
+        ),
+        f"After {int(late):,} hands the top pick's 90% interval contains its true gain for "
+        f"{len(inside)} of the {len(archs)} bots.",
+        "The explanation names the hands that change: a response is a list of hands to start "
+        "or stop pushing and calling, which is what a player can act on.",
+    ]
+    return section(
+        "recommend-examples",
+        "What a recommendation looks like",
+        "The recommender's report for one held-out bot of each archetype (first seed): the "
+        "ranked candidates with their posterior intervals and the explanation it writes. The "
+        "true gain is shown because these are simulated bots.",
+        sources=[RECOMMEND],
+        controls=[
+            control("arch", "Bot", [(a, ARCHETYPE_LABELS[a]) for a in archs]),
+            control("n", "Hands observed", [(n, f"{int(n):,}") for n in sizes]),
+        ],
+        defaults={"arch": "lag" if "lag" in archs else archs[0], "n": "100"},
+        views=views,
+        takeaways=takeaways,
+        method="The explanation text is generated by RecommendationReport.explanation() from the "
+        "observations, the posterior and the top recommendation.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
     br = load(BRIDGE)
-    head = overview(r, ex, br)
+    rc = load(RECOMMEND)
+    head = overview(r, ex, br, rc)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -857,7 +1274,12 @@ def build(load) -> dict[str, Any]:
         "status": "active",
         "summary": head["summary"],
         "tiles": head["tiles"],
-        "provenance": [provenance(PUSHFOLD, r), provenance(EXPLOIT, ex), provenance(BRIDGE, br)],
+        "provenance": [
+            provenance(PUSHFOLD, r),
+            provenance(EXPLOIT, ex),
+            provenance(BRIDGE, br),
+            provenance(RECOMMEND, rc),
+        ],
         "sections": [
             charts(r),
             ranges(r),
@@ -867,5 +1289,8 @@ def build(load) -> dict[str, Any]:
             model_fit(ex),
             bridge_check(br),
             bridge_variance(br),
+            recommend_rules(rc),
+            recommend_calibration(rc),
+            recommend_examples(rc),
         ],
     }

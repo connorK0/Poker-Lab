@@ -423,8 +423,40 @@ game (commit `9bdab59`;
   hands, and duplicate dealing is impossible at a real table. Win-rate claims there will need
   control variates for every chance node (AIVAT).
 
-Next: ranked exploit recommendations with confidence (P3.4), then model-fit checks before
-exploiting (P3.5); see [PROGRESS.md](PROGRESS.md).
+**Ranked recommendations with confidence (P3.4).** The recommender takes what the hero has
+seen of one opponent, built from completed hand histories only, and ranks the possible
+responses: the equilibrium, restricted Nash responses and the best response. Each comes with
+a 90% posterior interval for its gain over equilibrium play, its exact exploitability, and a
+plain-language explanation that names the hands to start or stop playing. The posterior over
+the opponent's ranges comes from importance sampling around a Laplace approximation, and every
+candidate is scored exactly against every posterior draw in closed form. Candidates are ranked
+by the interval's lower end, so the advice leaves equilibrium only when the deviation gains
+with posterior probability above 95%.
+
+The recommender was evaluated on P3.2's 300 held-out bots against their true strategies
+(pre-registered; commit `a433bc5`;
+[`recommend_summary.md`](experiments/results/phase3/recommend/recommend_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/recommend/recommend_safety-dark.png">
+  <img alt="Left: share of bots against which each rule loses to equilibrium play vs hands observed; the lower-bound recommendation stays under 5% while best responses lose to a quarter of bots early. Right: coverage of 90% and one-sided 95% posterior intervals vs hands observed, near nominal for standard bots and falling for misspecified bots" src="experiments/results/phase3/recommend/recommend_safety.png">
+</picture>
+
+* **The ranking keeps its promise.** The recommendation loses to equilibrium play against at
+  most 2.7% of bots, never by more than 0.031 bb/hand (the prediction was at most 5%). The
+  Bayes best response, which maximizes expected gain, loses to 25% of bots after 10 hands.
+* **Safety costs gain only while evidence is thin.** After 10 hands the recommendation earns
+  16% of the oracle's gain, against 65% for the Bayes best response. After 100 hands it earns
+  94% against 97%.
+* **The intervals are about right until the model is wrong.** From 10 hands on, the 90%
+  intervals contain the true gain 88–94% of the time. With no hands it is 96%: slightly too
+  wide, and outside the pre-registered 85–95% band. Against pairs-first bots, coverage falls
+  to 55% by 3,000 hands as the posterior concentrates on a slightly wrong answer. Even so, the
+  recommendation loses to equilibrium play against at most 5.3% of those bots. Detecting such
+  a misfit is the next step.
+
+Next: model-fit checks before exploiting (P3.5), then batch import of hand histories (P3.6);
+see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -446,9 +478,9 @@ python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
 
 # Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
-# the solved strategy played through the real engine (20 min)
-python -m experiments.run_phase3 --seed 2026          # ~25 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only bridge   # one step: pushfold, exploit or bridge
+# the solved strategy played through the real engine (20 min), recommendations evaluated (3 min)
+python -m experiments.run_phase3 --seed 2026          # ~28 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only recommend   # one step: pushfold, exploit, bridge or recommend
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
@@ -491,7 +523,8 @@ flowchart LR
 * **`profiling/`**: stats with explicit opportunity counting (VPIP, PFR, 3-bet, AF, c-bet,
   fold to c-bet, WTSD, W$SD, plus fold to 3-bet, fold to bet, bet and open sizes),
   empirical-Bayes shrinkage, a calibrated archetype classifier, parameter regression,
-  public-information decision points and a next-action model, and `ProfileStore`.
+  public-information decision points and a next-action model, `ProfileStore`, and one
+  opponent's push/fold observations from completed hands.
 * **`games/`** (Phase 2): Kuhn and Leduc behind one `Game` interface, compiled to flat
   breadth-first arrays so that strategy values, reach probabilities and best responses are
   vectorized NumPy passes over tree levels. Also `TabularPolicy`, exact best response and
@@ -500,7 +533,8 @@ flowchart LR
   CFR, external-sampling MCCFR, Deep CFR (PyTorch), and restricted Nash and data-biased
   responses as LPs.
 * **`exploit/`**: exploit engines. For small games they are exact and take a `TabularPolicy`
-  model. For hold'em they are interfaces and heuristic stubs (Phase 3).
+  model. For push/fold hold'em, `PushFoldRecommender` ranks responses by a posterior lower
+  bound on their gain (P3.4). Per-decision hold'em engines are interfaces and heuristic stubs.
 * **`strategy/`, `evaluation/`, `advisor/`, `capture/`**: the Phase 3–5 interfaces with
   docstrings, minimal implementations, and contract tests. `engine/duplicate.py` plays
   duplicate matches (same cards, seats swapped) for low-variance evaluation.
@@ -560,12 +594,14 @@ poker_lab/
   schema/      hand-history model, sealed store, firewalled views, JSONL, validation
   engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker, duplicate matches
   bots/        parameterized bots, archetypes, hand strength, league simulator
-  profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore
+  profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore,
+               push/fold observations from completed hands
   games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
                TabularPolicy, best response, Leduc bots + fitting
   solvers/     LP, CFR family, MCCFR, Deep CFR, restricted Nash / data-biased responses
   strategy/    StrategyProvider, baselines, push/fold provider over the solved game (Phase 3)
-  exploit/     exact small-game exploit engines; hold'em ExploitEngine + stubs (Phase 3)
+  exploit/     exact small-game exploit engines; ranked push/fold recommendations;
+               hold'em ExploitEngine + stubs (Phase 3)
   evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
@@ -582,7 +618,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -590,7 +626,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (267 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (288 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working

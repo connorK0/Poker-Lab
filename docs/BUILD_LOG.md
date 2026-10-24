@@ -60,6 +60,7 @@ $B(a,b)$ the beta function.
   * [Step 26: Heads-up push/fold solved exactly](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31)
   * [Step 27: Modeling and exploiting push/fold opponents](#step-27-modeling-and-exploiting-pushfold-opponents-p32)
   * [Step 28: Playing the solved game in real hands](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33)
+  * [Step 29: Ranked exploit recommendations with confidence](#step-29-ranked-exploit-recommendations-with-confidence-p34)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2257,6 +2258,204 @@ node.
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only bridge` (20 minutes);
   smoke test with `--quick` (20 s).
 
+## Step 29: Ranked exploit recommendations with confidence (P3.4)
+
+**The question.** Step 27 measured how much a best response to a fitted model gains, on
+average, over many bots. A player facing one opponent needs something else: a recommendation
+for *this* opponent, with an honest statement of how sure it is. After 10 hands a best
+response might gain 0.1 bb/hand or lose 0.03; after 1,000 hands the same advice is nearly
+certain. The recommender should say which, choose accordingly, and be checked against the
+truth.
+
+**From hand histories to a profile.** `push_fold_observations`
+(`poker_lab/profiling/push_fold.py`) turns completed hand histories into the sufficient
+statistics of Step 27's likelihood: the opponent's push or fold as small blind, its call or fold
+facing the hero's push as big blind, its class when its cards were shown, and otherwise the
+hero's own class (which sets the card-removal term). Two firewall rules: an in-progress hand
+raises `IncompleteHandError`, and every hand is first redacted to the hero's view, so an
+opponent's unshown cards cannot reach the model even if the caller passes full simulator
+records. A test forges every unshown opponent card and gets identical observations. Hands
+the push/fold game does not describe (a limp, a different stack, a pot the opponent and the
+hero are not the blinds of, a duplicate hand id) are skipped and counted by reason. The table
+rules are shared with Step 28's live mapping (`blind_pot`), so "a push/fold hand" means the
+same thing to the advisor and to the profiler.
+
+**A full posterior, not just a mode.** Step 27 fitted the mode of the posterior over a bot's
+parameters $\theta$ = (push width, call width, temperature). A statement like "this response
+gains with 95% probability" needs the whole posterior
+$p(\theta \mid D) \propto p(D \mid \theta)\,p(\theta)$. With three parameters, two cheap tools
+are enough.
+
+1. *Laplace approximation.* Work in $z = (\operatorname{logit} w_p, \operatorname{logit} w_c,
+   \log T)$, where the posterior is smooth and unbounded. Near its mode $\hat z$, the negative
+   log posterior is about quadratic, $-\log p(z \mid D) \approx c + \tfrac12 (z - \hat z)^\top
+   H (z - \hat z)$, so the posterior is about normal with covariance $H^{-1}$. $H$ is the
+   Hessian at the mode, here by central differences (19 evaluations, step $5 \times
+   10^{-3}$).
+2. *Importance sampling* corrects the approximation. Draw $z_k$ from a proposal $q$ (a
+   Student-t with 4 degrees of freedom, centered at $\hat z$ with scale $H^{-1}$) and weight
+   each draw by $w_k \propto p(D \mid z_k)\,p(z_k) / q(z_k)$, normalized to sum to one.
+   Weighted averages $\sum_k w_k f(z_k)$ converge to posterior expectations whatever the
+   proposal, as long as it covers the posterior. Its tails must be at least as heavy as the
+   posterior's, or a few draws get huge weights; that is why a t is used rather than a normal.
+   Normalizing the weights cancels the unknown constant in $p(D)$.
+
+How good is the weighted sample? The Kish *effective sample size*
+$\text{ESS} = 1 / \sum_k w_k^2$ equals the number of draws when all weights are equal and 1
+when one draw has all the weight. Over this step's 2,100 fits it ranged from 5 to 1,795 of
+2,000 draws (median 1,602). A brute-force check integrates the posterior on a
+$41^3$ grid: the importance-sampling means agree within five Monte Carlo standard errors.
+Weighted quantiles (the smallest value whose cumulative weight reaches $q$) give the credible
+intervals.
+
+**Scoring a strategy against every draw, exactly.** The recommender needs the gain of each
+candidate against each of 2,000 draws: 14,000 head-to-head values per recommendation. On the
+143,000-node tree that would take minutes. In closed form it takes milliseconds. Let
+$P_{ij}$ be the probability of dealing class $i$ to the small blind and $j$ to the big
+blind, $r_i = \sum_j P_{ij}$, and $C_{ij} = S(2e_{ij} - 1)$ the small blind's payoff when
+called. Write $s$ for a small blind's per-class push probabilities and $c$ for a big blind's
+call probabilities. Then the small blind's expected value is
+
+$$u(s, c) = \sum_{ij} P_{ij}\big[(1 - s_i)(-\tfrac12) + s_i(1 - c_j) + s_i c_j C_{ij}\big]
+= r \cdot (1.5\,s - 0.5) + s^\top D\, c, \qquad D = P \circ (C - 1),$$
+
+and the hero's value against an opponent, both seats averaged, is
+$\tfrac12[u(s_h, c_o) - u(s_o, c_h)]$: a bilinear form, so a batch of hero strategies against a
+batch of draws is two matrix products. Exploitability has a closed form too. A best-responding
+opponent calls the hero's pushes with class $j$ exactly when $(s^\top D)_j < 0$, and pushes
+class $i$ against the hero's calls when $1.5 r_i + (D c)_i > 0$, so
+
+$$\text{expl}(s, c) = \tfrac12\Big[-r \cdot (1.5 s - 0.5) - \sum_j \min\big(0, (s^\top D)_j\big)
++ \sum_i \big(\max(0, 1.5 r_i + (Dc)_i) - 0.5\,r_i\big)\Big].$$
+
+Both equal the tree computations of Step 18 to $10^{-14}$ in the tests.
+
+**The candidates, and the Bayes action.** The opponent acts at most once per hand, so the
+hero's value is *linear* in the opponent's per-class probabilities ($c$ appears once in
+$s^\top D c$). The posterior expected value of any hero strategy is therefore its value
+against the posterior *mean* strategy $\bar s = \sum_k w_k s(\theta_k)$, $\bar c$. It
+follows that the best response to $(\bar s, \bar c)$ maximizes the posterior expected gain
+over *all* strategies: it is the Bayes action. (Step 27's best response to the posterior
+*mode* is not; the mode of $\theta$ does not give the mean of $s(\theta)$, since $s$ is
+nonlinear.) The candidates are the equilibrium, restricted Nash responses (Step 22) for
+$p \in \{0.1, 0.25, 0.5, 0.75, 0.9\}$ against $(\bar s, \bar c)$, and that best response
+($p = 1$). For each candidate $m$ and draw $k$ the gain is
+$G_{mk} = v(m, \theta_k) - v(\text{eq}, \theta_k)$, which gives a posterior mean, a 90%
+credible interval and $P(G > 0)$. Exploitability is exact, and so is the gain over the
+*population recommendation* (the top pick with no hands seen): what watching this opponent
+is worth.
+
+**Ranking by a lower confidence bound.** Candidates are ranked by the lower end of their 90%
+interval, the 5% posterior quantile $L_m$, with ties going to the smaller $p$. The
+equilibrium's gain is exactly zero, so $L_{\text{eq}} = 0$. A deviation tops the list only if
+$L_m > 0$, which means less than 5% of the posterior weight sits at or below zero: the
+recommendation deviates only when it gains with posterior probability above 95%. This is how
+$p$ is "set by evidence": with ten hands only small, safe deviations clear the bar; with
+hundreds, the best response does. A maximin-flavored rule like this suits a player who
+cannot afford a losing adjustment. A player who only cares about the long-run average should
+take the Bayes best response, and the experiment prices the difference.
+
+Does choosing the best of seven by their intervals spoil the chosen interval (a *winner's
+curse*)? Not if the prior is right. A posterior probability is conditional on the data, and
+the choice is a function of the data, so $P(G_m < L_m \mid D) \le 5\%$ holds for whichever
+$m$ the data selected. With a misspecified prior the argument fails, and the experiment
+measures by how much.
+
+**The report.** `RecommendationReport.explanation()` writes what a player would read:
+
+> Seen 100 hands. As small blind it pushed 34 of 50; facing a push it called 14 of 26; its
+> cards were shown 24 times. Estimated ranges: pushes 66% of hands (90% interval 58% to 74%)
+> and calls 50% (37% to 64%); the equilibrium at 10 bb pushes 58% and calls 37%. Recommended:
+> the restricted Nash response (p = 0.5). As small blind, push 53% of hands (equilibrium 58%):
+> adds Q6o; drops J4s, J3s, T5s, T4s and 10 more. As big blind, call 40% of hands
+> (equilibrium 37%): adds Q8o, Q6s, K4o. Expected gain over the equilibrium +0.012 bb/hand
+> (90% interval +0.002 to +0.024; probability of gaining 97%), +0.011 over the population
+> recommendation. Exploitability 0.004 bb/hand.
+
+(A LAG bot from the experiment; its true gain was +0.016.)
+
+**The experiment** (`experiments/phase3_recommend.py`, pre-registered at commit `a433bc5`
+before the first run) reuses Step 27's game, seeds and held-out bots: 5 seeds × 30 bots, 10 bb,
+the standard population and the pairs-first (misspecified) one, the same hands. Step 27's
+sampling and observation code was factored into shared functions, and its quick
+configuration's output stayed byte-identical. The best response to the posterior mode also
+reproduces Step 27's per-bot gains: 2,100 values, largest difference $1.5 \times 10^{-13}$.
+For every bot, sample size (0 to 3,000 hands) and candidate it records the posterior summary
+and the exact true gain against the bot's real strategy. Five ways of choosing are compared:
+the lower-bound pick, the Bayes best response, the mode best response, a fixed $p = 0.5$
+response, and the best candidate in hindsight (not achievable).
+
+**Results** (standard bots; gains in bb/hand; the oracle best response gains +0.088):
+
+| Hands | Lower-bound pick | Bayes BR | Mode BR | Pick loses to eq. | Bayes BR loses | 90% coverage |
+|---|---|---|---|---|---|---|
+| 0 | +0.000 | +0.005 | −0.007 | 0.0% | 40.0% | 96.1% |
+| 10 | +0.014 | +0.058 | +0.051 | 2.7% | 24.7% | 88.7% |
+| 30 | +0.048 | +0.073 | +0.070 | 2.0% | 18.7% | 87.9% |
+| 100 | +0.082 | +0.086 | +0.085 | 0.0% | 4.7% | 91.7% |
+| 1,000 | +0.087 | +0.088 | +0.088 | 0.7% | 0.7% | 93.7% |
+| 3,000 | +0.088 | +0.088 | +0.088 | 0.0% | 0.0% | 92.3% |
+
+* *The ranking keeps its promise.* The pre-registered prediction was that the top pick loses
+  to the equilibrium against at most 5% of standard bots at every sample size. The worst is
+  2.7% (4 of 150 after 10 hands), and no loss exceeds 0.031 bb/hand. When the pick deviates,
+  the deviation really wins 94-100% of the time. The Bayes best response loses to a quarter
+  of the bots after 10 hands, and the mode best response to 26%.
+* *Safety costs gain while evidence is thin.* After 10 hands the pick earns 16% of the
+  oracle's gain against 65% for the Bayes best response. After 30 hands it is 55% against 83%,
+  after 100 94% against 97%, and from 300 hands they are within about 0.001 bb/hand. The evidence moves $p$: the
+  equilibrium is the top pick for 52% of bots after 10 hands, 23% after 30 and none after
+  1,000, and the full best response for 1%, 15% and 59%.
+* *The intervals are about right.* The prediction was 85-95% coverage of the 90% intervals
+  at every sample size. It holds from 10 hands on (88-94%) and misses at 0 hands: 96%,
+  slightly too wide, because the prior is a product of independent Betas fitted by moments to
+  a mixture of five archetypes and is broader than the real population. The true gain is
+  above the interval's lower end 93-96% of the time (nominal 95%).
+* *A small winner's curse.* For the top pick alone the lower end holds only 88% of the time
+  after 10 hands (nominal 95%): choosing the largest bound favors bounds that came out too
+  high, which the approximate prior does not fully prevent. It washes out by 30 hands
+  (94-96% from then on).
+* *Bayes beats mode while evidence is thin.* The best response to the posterior mean gains
+  +0.013 bb/hand more than the best response to the mode with no hands, and +0.006 [+0.001,
+  +0.011] after 10. From 100 hands the difference is below 0.001.
+* *Misspecified bots: right decisions, wrong intervals.* Against pairs-first bots, 90%
+  coverage *falls* as evidence grows, from 92% with no hands to 55% after 3,000. The model
+  ranks hands by equity, so with more data the posterior concentrates more tightly on a
+  slightly wrong answer. The decisions survive because the error is small next to the gains:
+  the pick loses to equilibrium against at most 5.3% of these bots (the population
+  recommendation at 0 hands), at most 1.3% from 100 hands on, and earns 98% of the oracle's
+  gain by 3,000 hands. Intervals that shrink around the wrong value are the signature of
+  misspecification, and the reason P3.5 checks a model's fit before trusting it.
+* *Diagnostics.* Only 3 of 2,100 posterior fits had an ESS below 100, all against pairs-first
+  bots. In the worst (ESS 5, a pairs-first nit after 30 hands) the recommender chose the
+  equilibrium. With no hands, the $p = 0.1$ response's lower bound lies within 0.0002 bb/hand of
+  zero, so Monte Carlo noise decides between it and the equilibrium. That is why the
+  population recommendation differs between bots of the same seed (each bot has its own
+  random stream).
+
+**Engineering.** A recommendation takes about 0.55 s, almost all of it in the ten restricted
+Nash LPs (five values of $p$, two seats). Posterior draws and closed-form scoring take about
+60 ms. The full experiment (2,100 recommendations) ran in 164 s on 12 processes.
+
+**Verification.**
+
+* `tests/test_recommend.py` (15 tests): closed-form values and exploitability equal the tree
+  (two stacks); the vectorized log posterior equals the scalar likelihood plus prior; weighted
+  quantiles equal NumPy's inverted-CDF quantiles with equal weights; with no hands the
+  posterior is the prior; importance sampling matches grid integration; the report is ranked by
+  the lower bound, with the equilibrium at exactly zero, and a deviating pick has
+  $P(G > 0) > 95\%$; the best response to the posterior mean has the highest posterior mean
+  gain, and along the restricted Nash family both gain and exploitability grow with $p$; the
+  closed-form best response matches the tree's; reproducibility per seed; strong evidence
+  recovers over 95% of the oracle's gain; settings are validated.
+* `tests/test_push_fold_profile.py` (6 tests): observations match an independent count from
+  the full records; forged unshown cards change nothing; in-progress hands are refused;
+  skipped hands are counted by reason (duplicate, off the tree, stack, not the blinds,
+  including three-handed tables); end to end, from completed hands to observations, a ranked
+  recommendation and advised play through `AdvisorAgent`.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only recommend` (3 minutes; it
+  reads Step 27's results for the cross-check); smoke test with `--quick`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -2277,7 +2476,7 @@ node.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 267 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 288 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2360,6 +2559,8 @@ numeric table next to it, so no number depends on reading a color.
 | Profile credible intervals through `scipy.stats.beta.ppf` took 72% of an advisor-driven simulation | `cProfile`, after a pilot ran 10x slower than the bare engine | `scipy.special.betaincinv` (bit-identical, ~25x faster) | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
 | Aggregation divided by a standard error that was exactly zero (Nash vs Nash, duplicate dealing, pure equilibrium at 20 bb) | a crash after 20 minutes of simulation, before any output | zero-variance estimates have no z and must equal the exact value (amendment committed before the rerun); the quick config covers the case | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
 | A scratch script's output path was a literal `%s` (a shell substitution had failed) | a stray folder in the repository root | moved the files out; scratch outputs go to the scratch directory | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
+| Test tables reused the default hand-id prefix, so the profiler counted their hands as duplicates | a failing skip-count test (the code was right, the test wrong) | a distinct `hand_id_prefix` per table | [29](#step-29-ranked-exploit-recommendations-with-confidence-p34) |
+| A takeaway said Bayes and mode best responses differ "until 100 hands", though the interval already included zero at 30 | re-reading the sentence against the table | the sentence is now computed from the intervals | [29](#step-29-ranked-exploit-recommendations-with-confidence-p34) |
 
 ---
 
@@ -2369,6 +2570,7 @@ numeric table next to it, so no number depends on reading a color.
 |---|---|
 | All-in | betting every remaining chip |
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
+| Bayes action | the decision with the highest posterior expected payoff |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
 | Best response | a strategy that maximizes payoff against a fixed opponent |
 | Button (BTN) | dealer position; acts last after the flop |
@@ -2380,11 +2582,13 @@ numeric table next to it, so no number depends on reading a color.
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Control variate | a term with known zero mean subtracted from an estimator to cut its variance |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
+| Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | Data-biased response | robust response that trusts the model per information set by data count |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
+| Effective sample size (ESS) | for weighted draws, $1 / \sum_k w_k^2$: how many equally weighted draws the sample is worth |
 | Effective stack | the smaller of two players' stacks: the most either can win or lose against the other |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
@@ -2393,8 +2597,11 @@ numeric table next to it, so no number depends on reading a color.
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
+| Importance sampling | estimating averages under a target distribution from draws of an easier proposal, each weighted by target / proposal |
 | Information set | the histories a player cannot tell apart when acting |
+| Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
 | Log-loss | mean negative log-probability of the true class |
+| Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
@@ -2419,6 +2626,7 @@ numeric table next to it, so no number depends on reading a color.
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
+| Winner's curse | the best-looking of several noisy estimates tends to be an overestimate |
 | z-score | (estimate - true value) / standard error; about standard normal when the estimator is unbiased |
 
 ---
@@ -2495,6 +2703,12 @@ Statistics and machine learning
   JMLR.
 * Kaufman, S., Rosset, S., Perlich, C. (2012). *Leakage in Data Mining: Formulation,
   Detection, and Avoidance.* ACM TKDD.
+* Gelman, A., Carlin, J., Stern, H., Dunson, D., Vehtari, A., Rubin, D. (2013). *Bayesian Data
+  Analysis*, 3rd ed. CRC Press. Chapters 4 (normal approximation at the mode) and 10
+  (importance sampling). (Step 29)
+* Kish, L. (1965). *Survey Sampling.* Wiley. (The effective sample size of weighted samples)
+* Owen, A. B. (2013). *Monte Carlo theory, methods and examples*, chapter 9 (importance
+  sampling). statweb.stanford.edu/~owen/mc.
 
 Software design
 
@@ -2530,3 +2744,7 @@ Software design
 * 2026-10-24: Step 28 (the push/fold provider in real hands). Results from commit `9bdab59`,
   cross-checked against `experiments/results/phase3/bridge/bridge_summary.md`; per-hand
   standard deviations and detectable effects were computed from `bridge.json` for this step.
+* 2026-10-24: Step 29 (ranked exploit recommendations with confidence). Results from commit
+  `a433bc5`, cross-checked against `experiments/results/phase3/recommend/recommend_summary.md`;
+  the ESS range, the 0-hand lower bounds and the timing were computed from `recommend.json` and
+  a scratch benchmark for this step.
