@@ -14,6 +14,9 @@ is rebuilt):
 3. ``bridge``: the push/fold provider played through the real engine (PokerKit) behind the
    advisor firewall, checked against the exact abstract-game values, with four win-rate
    estimators (naive, duplicate, all-in EV, both) (P3.3).
+4. ``recommend``: ranked exploit recommendations with posterior intervals for the same bots as
+   ``exploit``, checked against each bot's true strategy: do responses ranked by a lower
+   confidence bound really win, and are the intervals honest? (P3.4).
 """
 
 from __future__ import annotations
@@ -25,7 +28,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold", "exploit", "bridge")
+STEPS = ("pushfold", "exploit", "bridge", "recommend")
 
 
 def run(
@@ -37,10 +40,15 @@ def run(
     out_dir: Path | None = None,
 ) -> dict[str, float]:
     # Imported here: worker processes re-import this module (Windows spawn).
-    from experiments import phase3_bridge, phase3_exploit, phase3_pushfold
+    from experiments import phase3_bridge, phase3_exploit, phase3_pushfold, phase3_recommend
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
-    modules = {"pushfold": phase3_pushfold, "exploit": phase3_exploit, "bridge": phase3_bridge}
+    modules = {
+        "pushfold": phase3_pushfold,
+        "exploit": phase3_exploit,
+        "bridge": phase3_bridge,
+        "recommend": phase3_recommend,
+    }
     elapsed = {}
     for k, step in enumerate(steps, start=1):
         print(f"[{k}/{len(steps)}] {step}", flush=True)

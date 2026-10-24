@@ -42,3 +42,16 @@ bridge:
   chunk_deals: 5000
   half_width: 0.05  # bb/hand, for the hands-needed comparison
   workers: 12
+
+recommend:
+  # P3.4: ranked exploit recommendations with confidence (pre-registered; see
+  # phase3_recommend.py). Same game, seeds and held-out bots as `exploit` (P3.2).
+  stack: 10
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  sizes: [0, 10, 30, 100, 300, 1000, 3000]
+  ps: [0.1, 0.25, 0.5, 0.75, 0.9]
+  level: 0.9  # central credible interval; candidates are ranked by its lower end
+  draws: 2000  # importance-sampling draws per posterior
+  workers: 12

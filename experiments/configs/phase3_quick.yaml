@@ -33,3 +33,14 @@ bridge:
   chunk_deals: 1000
   half_width: 0.05
   workers: 4
+
+recommend:
+  stack: 10
+  seeds: 2
+  train_per_archetype: 5
+  test_per_archetype: 1
+  sizes: [0, 10, 100]
+  ps: [0.25, 0.5]
+  level: 0.9
+  draws: 500
+  workers: 4
