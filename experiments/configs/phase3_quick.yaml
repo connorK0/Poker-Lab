@@ -26,7 +26,7 @@ exploit:
   workers: 4
 
 bridge:
-  stacks: [10]
+  stacks: [10, 20]  # 20 bb: pure equilibrium, so Nash vs Nash duplicate has zero variance
   heroes: [nash, best_response]
   opponents: [maniac, nash]
   n_deals: 2000

@@ -32,6 +32,12 @@ Pre-registered plan (written before the first run):
 * Secondary: hands needed for a 95% interval of half-width ``half_width`` bb/hand under each
   estimator (variance reduction, for planning Phase 5's live evaluation), and the smallest
   discrepancy each matchup would detect (``2.8 SE``: 80% power, two-sided 5% test).
+
+Amendment (after the first run crashed in aggregation, before any result was seen): an estimate
+can have no sampling variance at all. Nash against Nash under duplicate dealing at a stack where
+the equilibrium is pure (20 bb) mirrors every deal exactly, so each pair sums to zero (up to float
+rounding, ~1e-16). Its ``z`` is undefined; an estimate whose SD is below ``ZERO_SD`` passes only
+if it equals the exact value, and it is left out of the ``z`` statistics.
 """
 
 from __future__ import annotations
@@ -80,6 +86,7 @@ ESTIMATOR_LABELS = {
     "duplicate_allin_ev": "Duplicate + all-in EV",
 }
 HANDS_PER_UNIT = {"naive": 1, "duplicate": 2, "allin_ev": 1, "duplicate_allin_ev": 2}
+ZERO_SD = 1e-9  # bb per unit: below this an estimator has no sampling variance
 
 
 def opponent_ranges(name: str):
@@ -161,6 +168,7 @@ def summarize(units: np.ndarray, exact: float, per_unit: int, half_width: float)
     mean, sd = float(units.mean()), float(units.std(ddof=1))
     se = sd / math.sqrt(n)
     t = stats.t.ppf(0.975, n - 1)
+    zero_variance = sd < ZERO_SD  # every pair cancels; only float rounding is left
     return {
         "mean": mean,
         "lower": mean - t * se,
@@ -170,9 +178,10 @@ def summarize(units: np.ndarray, exact: float, per_unit: int, half_width: float)
         "units": n,
         "hands": n * per_unit,
         "diff": mean - exact,
-        "z": (mean - exact) / se,
+        "z": None if zero_variance else (mean - exact) / se,
+        "zero_variance": zero_variance,
         "mde": 2.8 * se,
-        "hands_needed": math.ceil(per_unit * (1.96 * sd / half_width) ** 2),
+        "hands_needed": 0 if zero_variance else math.ceil(per_unit * (1.96 * sd / half_width) ** 2),
     }
 
 
@@ -247,16 +256,20 @@ def checks(rows: list[dict[str, Any]]) -> dict[str, Any]:
     """The pre-registered pass/fail criteria, per estimator."""
     out: dict[str, Any] = {"off_tree_hands": sum(r["off_tree_hands"] for r in rows)}
     for k in ESTIMATORS:
-        z = np.array([r["estimates"][k]["z"] for r in rows])
+        est = [r["estimates"][k] for r in rows]
+        z = np.array([e["z"] for e in est if not e["zero_variance"]])
+        exact_ok = all(abs(e["diff"]) < 1e-9 for e in est if e["zero_variance"])
         test = stats.ttest_1samp(z, 0.0)
         out[k] = {
             "n": len(z),
+            "zero_variance": len(est) - len(z),
+            "zero_variance_exact": exact_ok,
             "mean_z": float(z.mean()),
             "sd_z": float(z.std(ddof=1)),
             "max_abs_z": float(np.abs(z).max()),
             "share_above_1_96": float((np.abs(z) > 1.96).mean()),
             "mean_z_p": float(test.pvalue),
-            "pass": bool(np.abs(z).max() <= 4 and test.pvalue >= 0.01),
+            "pass": bool(np.abs(z).max() <= 4 and test.pvalue >= 0.01 and exact_ok),
         }
     out["pass"] = out["off_tree_hands"] == 0 and all(out[k]["pass"] for k in ESTIMATORS)
     return out
@@ -279,14 +292,16 @@ def markdown_summary(r: dict[str, Any]) -> str:
         f"Hands that left the tree: {c['off_tree_hands']}. Overall: "
         f"{'PASS' if c['pass'] else 'FAIL'}.",
         "",
-        "| Estimator | mean z | sd z | max abs z | share abs z > 1.96 | t-test p | pass |",
-        "|---|---|---|---|---|---|---|",
+        "| Estimator | z-scores | mean z | sd z | max abs z | share abs z > 1.96 | t-test p "
+        "| zero-variance (exact?) | pass |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for k in ESTIMATORS:
         e = c[k]
         lines.append(
-            f"| {ESTIMATOR_LABELS[k]} | {e['mean_z']:+.2f} | {e['sd_z']:.2f} | "
+            f"| {ESTIMATOR_LABELS[k]} | {e['n']} | {e['mean_z']:+.2f} | {e['sd_z']:.2f} | "
             f"{e['max_abs_z']:.2f} | {e['share_above_1_96']:.0%} | {e['mean_z_p']:.2f} | "
+            f"{e['zero_variance']} ({'yes' if e['zero_variance_exact'] else 'NO'}) | "
             f"{'yes' if e['pass'] else 'NO'} |"
         )
     lines += [
@@ -301,7 +316,7 @@ def markdown_summary(r: dict[str, Any]) -> str:
         lines.append(
             f"| {m['stack']:g} | {label(m['hero'], m['opponent'])} | {m['exact']:+.4f} | "
             f"{best['mean']:+.4f} [{best['lower']:+.4f}, {best['upper']:+.4f}] | "
-            f"{best['z']:+.2f} | "
+            f"{'exact' if best['z'] is None else format(best['z'], '+.2f')} | "
             + " / ".join(f"{e[k]['hands_needed']:,}" for k in ESTIMATORS)
             + " |"
         )
@@ -364,7 +379,13 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         width = 0.2
         for k, est in enumerate(ESTIMATORS):
             med = [
-                np.median([m["estimates"][est]["hands_needed"] for m in rows if m["stack"] == st])
+                np.median(
+                    [
+                        m["estimates"][est]["hands_needed"]
+                        for m in rows
+                        if m["stack"] == st and m["opponent"] != "nash"
+                    ]
+                )
                 for st in stacks
             ]
             ax.bar(x + (k - 1.5) * width, med, width * 0.9, color=s[k], label=ESTIMATOR_LABELS[est])
@@ -373,7 +394,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         ax.set_xticklabels([f"{st:g} bb" for st in stacks])
         ax.set_ylabel("Hands for a +/-0.05 bb/hand 95% CI")
         ax.legend(frameon=False, fontsize=8.5, labelcolor=theme["ink2"])
-        title(fig, theme, "How many hands a win rate needs", "Median over matchups")
+        title(fig, theme, "How many hands a win rate needs", "Median over the archetype bots")
         return fig
 
     save_both(check, out_dir, "bridge_check")
