@@ -1,9 +1,11 @@
 """Push/fold observations of one opponent, from completed hand histories (P3.4).
 
-``push_fold_observations`` turns completed hands into the sufficient statistics that the push/fold
-opponent models fit (``games.push_fold_bots.Observations``): the opponent's push or fold as small
-blind, its call or fold facing the hero's push as big blind, its hand class when its cards were
-shown, and otherwise the hero's own class (which sets the card-removal term of the likelihood).
+``push_fold_observations`` turns completed hands into the opponent's decisions in hand order
+(``games.push_fold_checks.ActionLog``): its push or fold as small blind, its call or fold facing
+the hero's push as big blind, the hero's own class (which sets the card-removal term of the
+likelihood), and the opponent's class when its cards were shown. The log gives both the
+sufficient statistics the models fit (``Observations``) and the ordered record the model-fit
+checks need (P3.5). Hands are taken in the order given, oldest first.
 
 Firewall. Only completed hands are accepted (an in-progress hand raises
 ``IncompleteHandError``), and every hand is first redacted to what the hero could know
@@ -29,6 +31,7 @@ import numpy as np
 from poker_lab.bots.hand_strength import hand_class
 from poker_lab.games.preflop import CLASS_INDEX
 from poker_lab.games.push_fold_bots import Observations
+from poker_lab.games.push_fold_checks import ActionLog
 from poker_lab.profiling.profile_store import IncompleteHandError
 from poker_lab.schema import ActionType, HandHistory, Street, redact_hole_cards
 from poker_lab.strategy.push_fold import MAX_STACK, OffTree, blind_pot
@@ -38,12 +41,16 @@ SKIP_REASONS = ("duplicate", "not_the_blinds", "off_tree", "stack", "hero_cards_
 
 @dataclass(frozen=True, eq=False)
 class PushFoldHistory:
-    observations: Observations
+    log: ActionLog  # the opponent's decisions in hand order
     skipped: Mapping[str, int]  # hands left out, by reason (``SKIP_REASONS``)
     hand_ids: frozenset[str]  # the hands the observations come from
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "skipped", MappingProxyType(dict(self.skipped)))
+
+    @property
+    def observations(self) -> Observations:
+        return self.log.observations()
 
 
 def _class_of(hand: HandHistory, seat: int, *, shown_only: bool) -> int | None:
@@ -62,12 +69,7 @@ def push_fold_observations(
     max_stack: float = MAX_STACK,
 ) -> PushFoldHistory:
     """What ``hero_id`` saw of ``opponent_id``'s push/fold play at ``stack`` bb."""
-    out = {
-        "sb_shown": np.zeros(169),
-        "sb_hidden": np.zeros((2, 169)),
-        "bb_shown": np.zeros(169),
-        "bb_hidden": np.zeros((2, 169)),
-    }
+    rows: list[tuple[bool, int, int, int]] = []  # (opponent is small blind, action, hero, shown)
     skipped: Counter[str] = Counter()
     used: set[str] = set()
     for raw in hands:
@@ -107,20 +109,19 @@ def push_fold_observations(
             skipped["stack"] += 1
             continue
         if opp == pot.small_blind:
-            seat_key, action = "sb", int(pushed)
+            is_sb, action = True, int(pushed)
         elif pushed:
-            seat_key, action = "bb", int(moves[1].action_type is ActionType.CALL)
+            is_sb, action = False, int(moves[1].action_type is ActionType.CALL)
         else:  # the hero folded its small blind: the opponent made no decision
             used.add(hand.hand_id)
             continue
+        mine = _class_of(hand, hero, shown_only=False)
+        if mine is None:
+            skipped["hero_cards_unknown"] += 1
+            continue
         shown = _class_of(hand, opp, shown_only=True)
-        if shown is not None:
-            out[f"{seat_key}_shown"][shown] += 1
-        else:
-            mine = _class_of(hand, hero, shown_only=False)
-            if mine is None:
-                skipped["hero_cards_unknown"] += 1
-                continue
-            out[f"{seat_key}_hidden"][action, mine] += 1
+        rows.append((is_sb, action, mine, -1 if shown is None else shown))
         used.add(hand.hand_id)
-    return PushFoldHistory(Observations(len(used), **out), skipped, frozenset(used))
+    cols = np.array(rows, dtype=int).reshape(-1, 4)
+    log = ActionLog(cols[:, 0].astype(bool), cols[:, 1], cols[:, 2], cols[:, 3], len(used))
+    return PushFoldHistory(log, skipped, frozenset(used))

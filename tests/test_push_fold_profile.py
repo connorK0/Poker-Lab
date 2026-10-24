@@ -174,3 +174,12 @@ def test_end_to_end_from_hands_to_advice(hands):
     played = _play([AdvisorAgent(advisor), _bot_agent()], 60, seed=9)
     assert len(played) == 60
     assert all(len(h.actions) <= 4 for h in played)  # blinds, push or fold, call or fold
+
+
+def test_the_action_log_keeps_hand_order(hands):
+    """The fit checks (P3.5) need the opponent's decisions in the order they were made."""
+    forward = push_fold_observations(hands, "hero", "villain", stack=10).log
+    backward = push_fold_observations(hands[::-1], "hero", "villain", stack=10).log
+    assert forward.n_hands == len(hands)
+    for key in ("is_sb", "action", "hero_class", "shown"):
+        np.testing.assert_array_equal(getattr(forward, key), getattr(backward, key)[::-1])

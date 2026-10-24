@@ -10,9 +10,12 @@ combos ranked above it plus half its own. A width of 0.4 means "about the top 40
 temperature softens the edge of the range. Archetypes are distributions over the widths (Beta,
 concentration 30, as in Phases 1 and 2) and the temperature (log-normal).
 
-Two hand orders: ``"equity"`` (equity against a random hand, the order both models assume) and
+Three hand orders: ``"equity"`` (equity against a random hand, the order both models assume);
 ``"pairs_first"`` (every pair above every non-pair, then high card, kicker, suited before
-offsuit: a plausible human heuristic, used to make the models misspecified on purpose).
+offsuit: a plausible human heuristic, used to make the models misspecified on purpose, P3.2);
+and ``"connectors_first"`` (a "speculative hands" player who scores pairs, suitedness and
+connectedness above high cards, so 54s ranks above KQo and A9o near the median: rank correlation
+0.48 with the equity order, a much harsher misspecification, P3.5).
 
 **Observation (the firewall in miniature).** The hero plays the bot heads-up for ``n`` hands,
 alternating seats, and records only what a player sees: its own class, the bot's actions, and
@@ -43,7 +46,7 @@ worth.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import astuple, dataclass
+from dataclasses import astuple, dataclass, fields
 from functools import cache
 
 import numpy as np
@@ -53,7 +56,7 @@ from scipy.special import expit, logit
 from poker_lab.games.preflop import CLASSES, N_COMBOS, Matchups, combo_counts, load_matchups
 
 PARAMS = ("push_width", "call_width", "temperature")
-ORDERS = ("equity", "pairs_first")
+ORDERS = ("equity", "pairs_first", "connectors_first")
 RANKS = "23456789TJQKA"
 T_BOUNDS = (0.003, 0.5)
 
@@ -80,6 +83,16 @@ def _order(order: str, m: Matchups) -> np.ndarray:
             return (pair, RANKS.index(cls[0]), RANKS.index(cls[1]), suited)
 
         return np.array(sorted(range(len(CLASSES)), key=lambda k: key(CLASSES[k]), reverse=True))
+    if order == "connectors_first":
+
+        def score(cls: str) -> float:
+            hi, lo = RANKS.index(cls[0]) + 2, RANKS.index(cls[1]) + 2
+            pair = cls[0] == cls[1]
+            suited = len(cls) == 3 and cls[2] == "s"
+            connected = 0.0 if pair else {0: 2.0, 1: 1.0, 2: 0.5}.get(hi - lo - 1, 0.0)
+            return 4 * pair + 2 * suited + connected + hi / 14 + lo / 28
+
+        return np.array(sorted(range(len(CLASSES)), key=lambda k: -score(CLASSES[k])))
     raise ValueError(f"unknown hand order {order!r}")
 
 
@@ -206,6 +219,12 @@ class HandLog:
             )
         return Observations(n, **out)
 
+    @classmethod
+    def concat(cls, logs: Sequence[HandLog]) -> HandLog:
+        """Consecutive stretches of one match (e.g. before and after a bot changes gear)."""
+        names = [f.name for f in fields(cls)]
+        return cls(*(np.concatenate([getattr(log, k) for log in logs]) for k in names))
+
 
 def simulate(
     bot: tuple[np.ndarray, np.ndarray],
@@ -213,14 +232,17 @@ def simulate(
     n_hands: int,
     rng: np.random.Generator,
     matchups: Matchups | None = None,
+    *,
+    first_hand: int = 0,
 ) -> HandLog:
-    """Play ``n_hands`` of push/fold, the bot in the small blind on even hands. ``bot`` and
+    """Play ``n_hands`` of push/fold, the bot in the small blind on even hands (counting from
+    ``first_hand``, so stretches of one match can be simulated separately). ``bot`` and
     ``hero`` are (push, call) probabilities per class."""
     m = matchups or load_matchups()
     p = m.deal_prob.ravel()
     deals = rng.choice(p.size, size=n_hands, p=p / p.sum())
     sb_cls, bb_cls = np.divmod(deals, len(CLASSES))
-    bot_is_sb = np.arange(n_hands) % 2 == 0
+    bot_is_sb = (np.arange(n_hands) + first_hand) % 2 == 0
     bot_cls = np.where(bot_is_sb, sb_cls, bb_cls)
     hero_cls = np.where(bot_is_sb, bb_cls, sb_cls)
     u1, u2 = rng.random(n_hands), rng.random(n_hands)
@@ -261,8 +283,15 @@ class PushFoldPrior:
         lt = np.log(arr[:, 2])
         return cls(beta(arr[:, 0]), beta(arr[:, 1]), (float(lt.mean()), float(lt.std(ddof=1))))
 
+    def sample(self, rng: np.random.Generator) -> PushFoldBotParams:
+        """A bot drawn from the prior itself (the model's own idea of the population)."""
+        t = float(np.exp(rng.normal(*self.log_t)))
+        return PushFoldBotParams(
+            float(rng.beta(*self.push)), float(rng.beta(*self.call)), float(np.clip(t, *T_BOUNDS))
+        )
 
-def _conditional(matchups: Matchups) -> np.ndarray:
+
+def opponent_class_probs(matchups: Matchups) -> np.ndarray:
     """P(opponent's class | own class): rows sum to 1 (card removal)."""
     c = matchups.counts.astype(float)
     return c / c.sum(axis=1, keepdims=True)
@@ -272,7 +301,7 @@ def log_likelihood(
     params: PushFoldBotParams, obs: Observations, matchups: Matchups | None = None
 ) -> float:
     m = matchups or load_matchups()
-    cond = _conditional(m)
+    cond = opponent_class_probs(m)
     push, call = strategy(params, "equity", m)
     eps = 1e-12
     ll = float(obs.sb_shown @ np.log(push + eps))
@@ -364,7 +393,7 @@ def strategies(
 def _log_posterior(z: np.ndarray, obs: Observations, prior: PushFoldPrior, m: Matchups):
     """Unnormalized log posterior density at rows of ``z`` (``fit_likelihood``'s objective, negated,
     vectorized), with the parameters and strategies of each row."""
-    cond_t = _conditional(m).T
+    cond_t = opponent_class_probs(m).T
     params = _from_z(z)
     push, call = strategies(params, "equity", m)
     eps = 1e-12
