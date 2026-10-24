@@ -61,6 +61,7 @@ $B(a,b)$ the beta function.
   * [Step 27: Modeling and exploiting push/fold opponents](#step-27-modeling-and-exploiting-pushfold-opponents-p32)
   * [Step 28: Playing the solved game in real hands](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33)
   * [Step 29: Ranked exploit recommendations with confidence](#step-29-ranked-exploit-recommendations-with-confidence-p34)
+  * [Step 30: Checking the model before trusting it](#step-30-checking-the-model-before-trusting-it-p35)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2456,6 +2457,160 @@ Nash LPs (five values of $p$, two seats). Posterior draws and closed-form scorin
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only recommend` (3 minutes; it
   reads Step 27's results for the cross-check); smoke test with `--quick`.
 
+## Step 30: Checking the model before trusting it (P3.5)
+
+**The question.** Step 29's intervals were honest against bots the model describes, but against
+pairs-first bots their coverage fell to 55% by 3,000 hands: with more data the posterior
+concentrated, ever more confidently, on a slightly wrong answer. A Bayesian posterior answers
+"which parameter values fit?", never "does the model fit at all?". That needs a separate
+check, run before the recommendations are trusted.
+
+**Two harsher ways to be wrong.** Pairs-first bots turned out to be a mild test, since their
+hand order has rank correlation 0.95 with equity. Two new populations push harder.
+
+* *Connectors-first* bots score a hand by pairs, suitedness and connectedness before high cards
+  ($4\cdot\text{pair} + 2\cdot\text{suited} + \text{connectedness} + \text{high}/14 +
+  \text{low}/28$, with connectedness 2, 1 or 0.5 for gaps of 0, 1 or 2). 54s then ranks above
+  KQo and A9o sits near the median. Rank correlation with equity is 0.48, and at a 40% width only
+  half of the bot's combos are ones the model expects.
+* *Gear-change* bots play one archetype and then switch to another at a random hand in the
+  middle half of the session. The model assumes one stationary strategy. The recommendation is
+  judged against the second gear, the one the bot plays from now on.
+
+**Data in order.** The checks need the opponent's decisions in the order they were made, which
+the sufficient statistics of Step 27 throw away. An `ActionLog` keeps, for each decision, the
+seat, the action, the hero's own class and the bot's class when shown. The hand-history
+profiler now builds one (hands in the order given), and its `Observations` are derived from it,
+so the likelihood and the checks always see the same data.
+
+**Posterior predictive checks.** Choose a discrepancy $T(y, \theta)$ that measures how badly
+data $y$ fit parameters $\theta$. Draw $\theta_r$ from the posterior and a replicate $y_r$ from
+the model with $\theta_r$, keeping fixed what the bot did not choose (which decisions it faced,
+the hero's own class each time). The posterior predictive p-value is
+
+$$p = \Pr\big(T(y_r, \theta_r) \ge T(y, \theta_r) \mid y\big),$$
+
+estimated from 400 draws. A small $p$ says the real data are more extreme than the fitted model
+produces (Rubin 1984; Gelman, Meng and Stern 1996). Two discrepancies, one per assumption.
+
+1. *Shown hands (the hand order).* At a showdown the bot's class $i$ is revealed. Given the
+   hero's own class $h$ and that the bot pushed, the model gives
+   $$q(i \mid h, \theta) = \frac{P(i \mid h)\, s_\theta(i)}{\sum_{i'} P(i' \mid h)\, s_\theta(i')},$$
+   card removal times the bot's range ($c_\theta$ for calls). Conditioning on $h$ is exact and
+   needs no model of the hero. The hero's decision to call depends only on $h$, so given $h$ it
+   carries no information about $i$: the check is valid whatever the hero plays. The classes go
+   into bins (pair, suited, offsuit × equity quartile; 10 are non-empty, since every pair is in
+   the top half), and $T$ is Pearson's chi-square $\sum_b (O_b - E_b)^2 / E_b$, with expected
+   counts $E_b = \sum_{\text{shown}} q(b \mid h_t, \theta)$, summed over both seats. A bot that
+   shows 54s and 76s where the model expects A9o and KTo fills the wrong bins.
+2. *Stability (stationarity).* For each decision, the residual $x_t - p_t$ compares the action
+   (1 aggressive, 0 fold) with the model's probability given only the hero's class,
+   $p_t = \sum_i P(i \mid h_t)\, s_\theta(i)$. Under the model the partial sums
+   $S_k = \sum_{t \le k}(x_t - p_t)$ wander like a random walk. A gear change makes them drift
+   one way and then the other. $T = \max_k |S_k| / \sqrt{\sum_t p_t(1 - p_t)}$, a CUSUM
+   (Page 1954), taken per seat, and the larger of the two is used.
+
+Ties are frequent with few decisions (many replicates give the same small CUSUM), so the
+p-values are *mid-p*: ties count half (Lancaster 1961).
+
+**Calibration: why the threshold is not 0.05.** Posterior predictive p-values are conservative.
+The posterior was fitted to the same data, so the replicates resemble the data more than fresh
+data would, and under a correct model the p-values pile up toward 0.5 instead of spreading
+uniformly (Bayarri and Berger 2000). A fixed 0.05 cut-off would almost never fire. The fix is
+to calibrate on data the model describes by construction (Hjort, Dahl and Steinbakk 2006).
+Draw 300 bots from the fitted prior, play each for 3,000 hands with the same hero, compute the
+p-values at every sample size, and set each check's threshold at the 2.5% quantile. A bot the
+model describes then fails each check with probability 2.5%, and fails at least one with
+probability at most 5% (the union bound). Only the prior and the hero are needed, both available
+in real use: no test bot, and no ground truth.
+
+**What to do on a flag.** `PushFoldRecommender` takes the `ActionLog` and a calibrated
+`FitChecker`, runs both checks on the same posterior it ranks with, and adds them to the
+report. When a check fails, `RecommendationReport.advised` is the equilibrium instead of the
+top of the ranking, and the explanation says which assumption broke and what the model would
+have recommended. That was the pre-registered action. The results below show it is right for
+one kind of misfit and wrong for the other.
+
+**Designing on development seeds.** Two pilots on seeds 98 and 99 (never reporting seeds) fixed
+the design before the pre-registration.
+
+* The log-likelihood of the shown classes flagged connectors-first bots sooner than chi-square
+  (93% vs 60% at 100 hands) but never flagged pairs-first bots. Chi-square caught those
+  eventually, so chi-square it is.
+* The first pilot, with 120 calibration bots, gave 10-15% false alarms at some sample sizes.
+  The second showed why: a 2.5% quantile estimated from 120 values is about the third-smallest
+  p-value, which is noisy. With 300 calibration bots per seed false alarms fell to 3-7%, and
+  whether the calibration bots come from the prior or from the training population, or the
+  p-values are mid-p or not, barely mattered.
+
+**The experiment** (`experiments/phase3_fitcheck.py`, pre-registered at commit `c4c15d0`; 5
+seeds × 30 bots per population, 10 bb, 400 replicates per check, 7 minutes on 12 processes).
+The standard and pairs-first bots and hands are Step 27's, so the same bots are now seen by
+three experiments.
+
+**Results.** Share of bots flagged by either check (95% Wilson intervals in the summary file):
+
+| Hands | Standard (model right) | Pairs first | Connectors first | Gear change |
+|---|---|---|---|---|
+| 10 | 4.0% | 8.0% | 14.7% | 7.3% |
+| 30 | 2.0% | 8.7% | 38.0% | 18.7% |
+| 100 | 6.7% | 16.7% | 76.0% | 44.0% |
+| 300 | 5.3% | 30.0% | 96.7% | 70.0% |
+| 1,000 | 9.3% | 43.3% | 100.0% | 88.0% |
+| 3,000 | 4.7% | 71.3% | 100.0% | 98.7% |
+
+* *All pre-registered predictions hold.* False alarms reach 9.3% at most (prediction: at most
+  10%), though that is above the calibrated 5%. Connectors-first bots are flagged 76% at 100
+  hands and 97-100% from 300 (predictions 60% and 90%). Gear-change bots are flagged 44% at 100
+  hands and 88-99% from 1,000 (predictions 40% and 85%).
+* *Each check catches its own failure.* The shown-hands check catches the wrong hand orders
+  (connectors-first 95% by 300 hands; pairs-first slowly, 69% by 3,000), and the stability
+  check catches the gear changes (69% by 300 hands, 99% by 3,000).
+* *Flags mark bad intervals, mostly by population.* Pooled over the three misspecified
+  populations, flagged bots' 90% intervals cover the true gain less often than unflagged bots'
+  (45% vs 61% at 100 hands, 32% vs 53% at 3,000): the pre-registered prediction holds. Within a
+  single population the gap is small or mixed, and for pairs-first bots after 1,000 hands it
+  reverses (75% vs 64%). So most of the pooled gap comes from *which populations* get flagged,
+  a composition effect (Simpson's paradox in miniature), not from a sharper per-bot signal.
+* *Gear-changers break Step 29's promise, and the fallback restores it.* Against bots that
+  changed gear, trusting the model loses to equilibrium play against 34% of them after 300
+  hands and 31% after 3,000, far from the 5% the ranking promises when the model is right.
+  Falling back on a flag cuts that to 8% at 300 hands, 1.3% at 1,000 and 0% at 3,000. The
+  average gain falls too (+0.027 to +0.015 at 300 hands, +0.036 to +0.002 at 3,000), because
+  trusting the model wins big against some gear-changers while losing to others.
+* *A wrong hand order is a different story.* Against connectors-first bots the model's
+  recommendation earns +0.091 bb/hand after 300 hands (the oracle: +0.110) and loses to none
+  of them, although its intervals cover only 49%. The flag is right that the intervals are
+  wrong, but the recommendation's *direction* is still right. A bot with a strange order is
+  still too loose or too tight, and that is what the best response exploits. Falling back
+  throws almost everything away (+0.002 at 300 hands, 0 from 1,000). Pairs-first bots: +0.094
+  vs +0.029 after 1,000 hands.
+* *Post hoc: act on the stability flag only.* Falling back only when the stability check fails
+  keeps +0.083 (standard), +0.092 (pairs-first) and +0.065 (connectors-first) bb/hand after
+  1,000 hands, while matching the full fallback against gear-changers (1.3% lost to). It still
+  costs against connectors-first bots, because the stability check fires on 24-33% of them
+  from 1,000 hands: a wrong hand order also leaves structure in the action residuals. This rule
+  was chosen after seeing the results, so the library default stays as pre-registered until
+  fresh seeds confirm it (PROGRESS, Future).
+
+The lesson generalizes beyond poker: a model-fit check answers "can I trust the numbers?",
+not "is the decision wrong?". Which failures should change the decision depends on how the
+decision depends on the model. Here it depends on the opponent's range *sizes*, which the model
+still gets right under a wrong order, and on stationarity, which a gear change breaks.
+
+**Verification.**
+
+* `tests/test_fit_checks.py` (11 tests): the `ActionLog` reproduces the hand log's
+  observations at every prefix; bins split type and strength; mid-p counts ties half; a bot
+  the model describes is rarely flagged; the shown-hands check catches a connectors-first bot
+  and the stability check a gear change (and not a stationary bot); the shown-hands check is
+  unaffected by how the hero plays (a hero who calls far tighter than equilibrium); empty data
+  give p = 1; calibration and threshold lookup; the recommender falls back, and says why, when
+  a check fails.
+* `tests/test_push_fold_profile.py`: the hand-history profile keeps hand order.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only fitcheck` (7 minutes);
+  smoke test with `--quick`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -2476,7 +2631,7 @@ Nash LPs (five values of $p$, two seats). Posterior draws and closed-form scorin
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 288 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 300 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2560,6 +2715,8 @@ numeric table next to it, so no number depends on reading a color.
 | Aggregation divided by a standard error that was exactly zero (Nash vs Nash, duplicate dealing, pure equilibrium at 20 bb) | a crash after 20 minutes of simulation, before any output | zero-variance estimates have no z and must equal the exact value (amendment committed before the rerun); the quick config covers the case | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
 | A scratch script's output path was a literal `%s` (a shell substitution had failed) | a stray folder in the repository root | moved the files out; scratch outputs go to the scratch directory | [28](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33) |
 | Test tables reused the default hand-id prefix, so the profiler counted their hands as duplicates | a failing skip-count test (the code was right, the test wrong) | a distinct `hand_id_prefix` per table | [29](#step-29-ranked-exploit-recommendations-with-confidence-p34) |
+| A 2.5% threshold estimated from 120 calibration bots (about the third-smallest p-value) gave 10-15% false alarms in a pilot | a second pilot that varied the calibration | 300 calibration bots per seed, decided on development seeds before the pre-registration | [30](#step-30-checking-the-model-before-trusting-it-p35) |
+| A test assumed the first hand always gives the opponent a decision (it does not when the hero folds its small blind) | the test failed against correct code | the order test compares a forward and a reversed history instead | [30](#step-30-checking-the-model-before-trusting-it-p35) |
 | A takeaway said Bayes and mode best responses differ "until 100 hands", though the interval already included zero at 30 | re-reading the sentence against the table | the sentence is now computed from the intervals | [29](#step-29-ranked-exploit-recommendations-with-confidence-p34) |
 
 ---
@@ -2575,6 +2732,7 @@ numeric table next to it, so no number depends on reading a color.
 | Best response | a strategy that maximizes payoff against a fixed opponent |
 | Button (BTN) | dealer position; acts last after the flop |
 | C-bet | continuation bet: the preflop raiser bets the flop |
+| Calibrated p-value | a p-value whose threshold is set from its distribution on data simulated from the model, so the false-alarm rate is what it says |
 | Calibration | predicted probabilities match observed frequencies |
 | Capability | an unforgeable reference whose possession grants a permission |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
@@ -2584,6 +2742,7 @@ numeric table next to it, so no number depends on reading a color.
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
 | Credible interval | interval containing the parameter with a given posterior probability |
+| CUSUM | cumulative sum of residuals; its largest excursion detects a change in level (Page 1954) |
 | Data-biased response | robust response that trusts the model per information set by data count |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
@@ -2604,6 +2763,7 @@ numeric table next to it, so no number depends on reading a color.
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
+| Mid-p value | a p-value that counts ties with the observed statistic as half, for discrete statistics |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
@@ -2612,6 +2772,7 @@ numeric table next to it, so no number depends on reading a color.
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Perfect recall | players never forget their own actions or observations |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
+| Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
@@ -2620,7 +2781,9 @@ numeric table next to it, so no number depends on reading a color.
 | Restricted Nash response | best response to a model, hedged against an adversary with probability 1-p |
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
+| Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
 | Side pot | pot that an all-in player for less is not eligible for |
+| Stationarity | the data-generating process does not change over time |
 | Stratified sampling | splitting a Monte Carlo estimate into strata (here: combo pairs) sampled equally, removing the variance between strata |
 | Street | betting round: preflop, flop, turn, river |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
@@ -2707,6 +2870,17 @@ Statistics and machine learning
   Analysis*, 3rd ed. CRC Press. Chapters 4 (normal approximation at the mode) and 10
   (importance sampling). (Step 29)
 * Kish, L. (1965). *Survey Sampling.* Wiley. (The effective sample size of weighted samples)
+* Rubin, D. (1984). *Bayesianly Justifiable and Relevant Frequency Calculations for the
+  Applied Statistician.* Annals of Statistics 12. (Posterior predictive checks)
+* Gelman, A., Meng, X.-L., Stern, H. (1996). *Posterior Predictive Assessment of Model
+  Fitness via Realized Discrepancies.* Statistica Sinica 6. (Discrepancies that depend on the
+  parameters; Step 30)
+* Bayarri, M. J., Berger, J. (2000). *P Values for Composite Null Models.* JASA 95. (Why
+  posterior predictive p-values are conservative)
+* Hjort, N. L., Dahl, F. A., Steinbakk, G. H. (2006). *Post-Processing Posterior Predictive
+  p Values.* JASA 101. (Calibrating them)
+* Page, E. S. (1954). *Continuous Inspection Schemes.* Biometrika 41. (CUSUM)
+* Lancaster, H. O. (1961). *Significance Tests in Discrete Distributions.* JASA 56. (Mid-p)
 * Owen, A. B. (2013). *Monte Carlo theory, methods and examples*, chapter 9 (importance
   sampling). statweb.stanford.edu/~owen/mc.
 
@@ -2748,3 +2922,7 @@ Software design
   `a433bc5`, cross-checked against `experiments/results/phase3/recommend/recommend_summary.md`;
   the ESS range, the 0-hand lower bounds and the timing were computed from `recommend.json` and
   a scratch benchmark for this step.
+* 2026-10-24: Step 30 (model-fit checks). Results from commit `c4c15d0`, cross-checked against
+  `experiments/results/phase3/fitcheck/fitcheck_summary.md`; the post-hoc stability-only
+  rule and the within-population coverage split were computed from `fitcheck.json` for this
+  step.

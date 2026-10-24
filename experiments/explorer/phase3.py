@@ -30,7 +30,8 @@ PUSHFOLD = "experiments/results/phase3/pushfold/pushfold.json"
 EXPLOIT = "experiments/results/phase3/exploit/exploit.json"
 BRIDGE = "experiments/results/phase3/bridge/bridge.json"
 RECOMMEND = "experiments/results/phase3/recommend/recommend.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND)
+FITCHECK = "experiments/results/phase3/fitcheck/fitcheck.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -56,7 +57,11 @@ def _grid(values: dict[str, float]) -> list[list[float]]:
 
 
 def overview(
-    r: dict[str, Any], ex: dict[str, Any], br: dict[str, Any], rc: dict[str, Any]
+    r: dict[str, Any],
+    ex: dict[str, Any],
+    br: dict[str, Any],
+    rc: dict[str, Any],
+    fc: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -77,6 +82,11 @@ def overview(
     rsizes = _rec_sizes(rc)
     rec_loss = max(rstd[n]["rules"]["lower_bound"]["loses"]["share"] for n in rsizes)
     rec_cov = [rstd[n]["coverage"]["share"] for n in rsizes]
+    fagg = fc["aggregate"]
+    fsizes = [str(n) for n in fc["meta"]["config"]["sizes"]]
+    false_alarm = max(fagg["standard"][n]["flags"]["either"]["share"] for n in fsizes)
+    harsh = fagg["connectors_first"]["300"]["flags"]["either"]["share"]
+    gear = fagg["gear_change"]["1000"]["flags"]["either"]["share"]
     return {
         "tiles": [
             tile(
@@ -131,6 +141,16 @@ def overview(
                 f"{min(rec_cov):.0%}-{max(rec_cov):.0%}",
                 "of candidates, by sample size (standard bots)",
             ),
+            tile(
+                "Model-fit checks: false alarms",
+                f"at most {false_alarm:.0%}",
+                "of bots the model describes are flagged (calibrated level 5%)",
+            ),
+            tile(
+                "Misfits caught",
+                f"{harsh:.0%} / {gear:.0%}",
+                "of connectors-first bots by 300 hands / gear-changers by 1,000",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -141,7 +161,8 @@ def overview(
             "solved strategy plays real hands through the game engine behind the advisor "
             "firewall, checked against the exact values (P3.3), and exploit recommendations "
             "are ranked by how confidently they beat equilibrium play, with posterior intervals "
-            "checked against the truth (P3.4)."
+            "checked against the truth (P3.4). Before the model is trusted, posterior predictive "
+            "checks ask whether the opponent plays the way it assumes (P3.5)."
         ),
     }
 
@@ -1261,12 +1282,349 @@ def recommend_examples(rc: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+# --------------------------------------------------------------------- model-fit checks (P3.5)
+
+FIT_POPS = [
+    ("standard", "Standard (the model is right)"),
+    ("pairs_first", "Pairs first (mild)"),
+    ("connectors_first", "Connectors first (harsh)"),
+    ("gear_change", "Gear change"),
+]
+FIT_POP_LABEL = dict(FIT_POPS)
+FIT_POP_COLOR = {
+    "standard": "c1",
+    "pairs_first": "c2",
+    "connectors_first": "c3",
+    "gear_change": "c4",
+}
+FIT_CHECKS = [
+    ("either", "Either check (the flag)"),
+    ("shown_hands", "Shown hands"),
+    ("stability", "Stability"),
+]
+
+
+def _fit_sizes(fc: dict[str, Any]) -> list[str]:
+    return [str(n) for n in fc["meta"]["config"]["sizes"]]
+
+
+def _share_pts(blocks: list[tuple[str, dict[str, Any]]]) -> list[tuple]:
+    return [(int(n), d["share"], d["lower"], d["upper"]) for n, d in blocks if d["n"]]
+
+
+def fitcheck_flags(fc: dict[str, Any]) -> dict[str, Any]:
+    cfg = fc["meta"]["config"]
+    sizes = _fit_sizes(fc)
+    agg = fc["aggregate"]
+    level = cfg["fit_level"]
+    views = {}
+    for check, clabel in FIT_CHECKS:
+        rates = line_chart(
+            f"Bots flagged: {clabel.lower()}",
+            HANDS_SEEN,
+            axis("Share of bots flagged", fmt="pct", lo=0, hi=1),
+            [
+                series(
+                    plabel,
+                    FIT_POP_COLOR[pop],
+                    _share_pts([(n, agg[pop][n]["flags"][check]) for n in sizes]),
+                )
+                for pop, plabel in FIT_POPS
+            ],
+            refs=[ref(level if check == "either" else level / 2, "Calibrated false-alarm level")],
+            subtitle="5 seeds x 30 held-out bots per population; 95% Wilson intervals.",
+        )
+        cal_checks = ["shown_hands", "stability"] if check == "either" else [check]
+        cal = line_chart(
+            "Calibration: why the threshold is not 0.05",
+            HANDS_SEEN,
+            axis("p-value", lo=0, hi=1),
+            [
+                series(
+                    f"{name.replace('_', ' ').capitalize()}: {what}",
+                    "c1" if name == "shown_hands" else "c2",
+                    [
+                        (
+                            int(n),
+                            float(np.mean([c[key][n][name] for c in fc["calibration"].values()])),
+                        )
+                        for n in sizes
+                    ],
+                    dash=key == "median_p",
+                )
+                for name in cal_checks
+                for key, what in (("thresholds", "threshold"), ("median_p", "median p-value"))
+            ],
+            subtitle="On bots simulated from the model itself (300 per seed, averaged over seeds): "
+            "posterior predictive p-values pile up toward 0.5, so the threshold that flags 2.5% "
+            "of them sits well above 0.025.",
+        )
+        views[check] = view(rates, cal)
+
+    def either(pop: str, n: str) -> float:
+        return agg[pop][n]["flags"]["either"]["share"]
+
+    worst_n = max(sizes, key=lambda n: either("standard", n))
+    takeaways = [
+        f"False alarms: {min(either('standard', n) for n in sizes):.0%} to "
+        f"{either('standard', worst_n):.0%} of the bots the model describes are flagged, the most "
+        f"after {int(worst_n):,} hands: above the calibrated {level:.0%}, within the "
+        "pre-registered 10%.",
+        "Connectors-first bots (a hand order far from equity): flagged "
+        + ", ".join(f"{either('connectors_first', n):.0%} after {int(n):,}" for n in sizes[1:4])
+        + " hands, by the shown-hands check.",
+        "Gear-change bots: flagged "
+        + ", ".join(f"{either('gear_change', n):.0%} after {int(n):,}" for n in sizes[2:])
+        + " hands, mostly by the stability check.",
+        "Pairs-first bots (a hand order close to equity, rank correlation 0.95) are the slow "
+        "case: flagged "
+        + ", ".join(f"{either('pairs_first', n):.0%} after {int(n):,}" for n in sizes[2:])
+        + " hands, almost all by the shown-hands check.",
+    ]
+    return section(
+        "fitcheck-flags",
+        "Model-fit checks: who gets flagged?",
+        "Before trusting the model, two posterior predictive checks ask whether the observed play "
+        "looks like data the fitted model produces: do the hands the bot showed match the model's "
+        "hand order, and did its push and call rates stay put? Thresholds are calibrated on bots "
+        "simulated from the model, so a bot the model describes is flagged about 5% of the time.",
+        sources=[FITCHECK],
+        controls=[control("check", "Check", FIT_CHECKS)],
+        views=views,
+        takeaways=takeaways,
+        method=(
+            "Pre-registered in experiments/phase3_fitcheck.py. Shown hands: Pearson chi-square of "
+            "the bot's shown classes over 10 bins (pair, suited, offsuit x equity quartile), "
+            "conditional on the hero's own class each time. Stability: the largest absolute "
+            "partial sum of the residuals of the bot's decisions in hand order (a CUSUM), "
+            "standardized. Each compared with 400 replicates from the posterior (mid-p). Gear-"
+            "change bots switch archetype at a random hand in the middle half of each session."
+        ),
+    )
+
+
+FIT_RULES = [
+    ("lower_bound", "Trust the ranking (P3.4)", "c1"),
+    ("checked", "Equilibrium when either check fails", "c3"),
+    ("stability_only", "Equilibrium only when stability fails (post hoc)", "c5"),
+]
+
+
+def _fit_rule_gain(b: dict[str, Any], n: str, rule: str) -> float:
+    """True gain of a rule's choice: the top pick, or the equilibrium (gain 0) on a flag."""
+    s = b["sizes"][n]
+    fallback = (rule == "checked" and s["flagged"]) or (
+        rule == "stability_only" and s["failed"]["stability"]
+    )
+    return s["candidates"]["equilibrium" if fallback else s["ranked"][0]]["true_gain"]
+
+
+def fitcheck_consequences(fc: dict[str, Any]) -> dict[str, Any]:
+    from experiments.phase3_fitcheck import TOL
+
+    sizes = _fit_sizes(fc)
+    agg = fc["aggregate"]
+    views = {}
+    for pop, plabel in FIT_POPS:
+        a = agg[pop]
+        groups = [[b for b in seed if b["population"] == pop] for seed in fc["per_seed"]]
+        flat = [b for g in groups for b in g]
+        cover = line_chart(
+            "Do flags mark untrustworthy intervals?",
+            HANDS_SEEN,
+            axis("90% interval coverage", fmt="pct", hi=1),
+            [
+                series(lab, color, _share_pts([(n, a[n]["coverage"][key]) for n in sizes]))
+                for key, lab, color in (
+                    ("unflagged", "Unflagged bots", "c1"),
+                    ("flagged", "Flagged bots", "c2"),
+                    ("all", "All bots", "muted"),
+                )
+            ],
+            refs=[ref(0.9, "Nominal 90%")],
+            subtitle=f"{plabel}. Every non-equilibrium candidate's interval vs its true gain.",
+        )
+        gains = line_chart(
+            "True gain: trust the ranking, or fall back when flagged?",
+            HANDS_SEEN,
+            axis("bb/hand above equilibrium", fmt="signed"),
+            [
+                series(
+                    label,
+                    color,
+                    [
+                        (int(n), *_seed_ci(groups, lambda b, n=n, r=rule: _fit_rule_gain(b, n, r)))
+                        for n in sizes
+                    ],
+                    dash=rule == "stability_only",
+                )
+                for rule, label, color in FIT_RULES
+            ],
+            refs=[
+                ref(a[sizes[-1]]["oracle_gain"]["mean"], "Oracle best response"),
+                ref(0.0, "Equilibrium"),
+            ],
+            subtitle=f"{plabel}. Against the bot's true current strategy; 95% t-intervals "
+            "across seeds.",
+        )
+        losses = line_chart(
+            "Bots the choice does worse than equilibrium against",
+            HANDS_SEEN,
+            axis("Share of bots", fmt="pct", lo=0),
+            [
+                series(
+                    label,
+                    color,
+                    [
+                        (int(n), float(np.mean([_fit_rule_gain(b, n, rule) < -TOL for b in flat])))
+                        for n in sizes
+                    ],
+                    dash=rule == "stability_only",
+                )
+                for rule, label, color in FIT_RULES
+            ],
+            refs=[ref(0.05, "5%: what P3.4's ranking promises")],
+            subtitle=f"{plabel}. Pooled over 150 bots.",
+        )
+        views[pop] = view(cover, gains, losses)
+
+    def mean_gain(pop: str, n: str, rule: str) -> float:
+        groups = [[b for b in seed if b["population"] == pop] for seed in fc["per_seed"]]
+        return float(np.mean([np.mean([_fit_rule_gain(b, n, rule) for b in g]) for g in groups]))
+
+    def lose(pop: str, n: str, rule: str) -> float:
+        flat = [b for seed in fc["per_seed"] for b in seed if b["population"] == pop]
+        return float(np.mean([_fit_rule_gain(b, n, rule) < -TOL for b in flat]))
+
+    gear_n = [n for n in sizes if int(n) >= 300]
+    oracle_c = agg["connectors_first"]["300"]["oracle_gain"]["mean"]
+    pooled = agg["misspecified_pooled"]
+    big = [n for n in sizes if int(n) >= 100 and pooled[n]["flagged"]["n"]]
+    takeaways = [
+        "Gear-changers break the ranking's promise: trusting the model loses to equilibrium "
+        "against "
+        + ", ".join(f"{lose('gear_change', n, 'lower_bound'):.0%}" for n in gear_n)
+        + f" of them after {', '.join(f'{int(n):,}' for n in gear_n)} hands (P3.4 promised at most "
+        "5%). Falling back on a flag cuts that to "
+        + ", ".join(f"{lose('gear_change', n, 'checked'):.0%}" for n in gear_n)
+        + ", for a lower average gain ("
+        + ", ".join(
+            f"{mean_gain('gear_change', n, 'checked'):+.3f} vs "
+            f"{mean_gain('gear_change', n, 'lower_bound'):+.3f}"
+            for n in gear_n
+        )
+        + " bb/hand): trusting the model wins big against some gear-changers and loses against "
+        "others.",
+        f"A wrong hand order is a different story. Against connectors-first bots the model's "
+        f"recommendation still earns {mean_gain('connectors_first', '300', 'lower_bound'):+.3f} "
+        f"bb/hand after 300 hands (the oracle {oracle_c:+.3f}) and loses to "
+        f"{lose('connectors_first', '300', 'lower_bound'):.0%} of them, even though its "
+        f"intervals cover only {agg['connectors_first']['300']['coverage']['all']['share']:.0%}. "
+        f"The flag is right about the intervals, but falling back throws the gain away "
+        f"({mean_gain('connectors_first', '300', 'checked'):+.3f}). Pairs-first bots: "
+        f"{mean_gain('pairs_first', '1000', 'lower_bound'):+.3f} vs "
+        f"{mean_gain('pairs_first', '1000', 'checked'):+.3f} after 1,000 hands.",
+        "Post hoc: falling back only when the stability check fails keeps "
+        f"{mean_gain('standard', '1000', 'stability_only'):+.3f} (standard), "
+        f"{mean_gain('pairs_first', '1000', 'stability_only'):+.3f} (pairs first) and "
+        f"{mean_gain('connectors_first', '1000', 'stability_only'):+.3f} (connectors first) "
+        "bb/hand after 1,000 hands, while matching the full fallback against gear-changers "
+        f"({lose('gear_change', '1000', 'stability_only'):.0%} lost to). This rule was chosen "
+        "after seeing these results, so it needs fresh seeds before it becomes the default.",
+        "Pre-registered: pooled over the three misspecified populations, flagged bots have "
+        "lower coverage than unflagged ones ("
+        + ", ".join(
+            f"{pooled[n]['flagged']['share']:.0%} vs {pooled[n]['unflagged']['share']:.0%} at "
+            f"{int(n):,}"
+            for n in big
+        )
+        + "). Within one population the gap is small or mixed (for pairs-first bots after "
+        "1,000 hands it even reverses), so most of it comes from the flags picking out the "
+        "populations whose intervals are worst.",
+    ]
+    return section(
+        "fitcheck-consequences",
+        "What a flag means, and what acting on it does",
+        "A flag says the model's intervals should not be trusted. Here is whether flagged bots "
+        "really have worse intervals, and what playing the equilibrium instead of the top-ranked "
+        "response earns or loses against each kind of bot.",
+        sources=[FITCHECK],
+        controls=[control("pop", "Bots", FIT_POPS)],
+        defaults={"pop": "gear_change"},
+        views=views,
+        takeaways=takeaways,
+        method="The two pre-registered rules are the top pick and the top pick replaced by the "
+        "equilibrium whenever either check fails. The third rule (equilibrium only when the "
+        "stability check fails) was added after the results were seen and is computed from the "
+        "same per-bot records.",
+    )
+
+
+def fitcheck_examples(fc: dict[str, Any]) -> dict[str, Any]:
+    from experiments.phase3_recommend import candidate_label
+
+    sizes = _fit_sizes(fc)
+    examples = [b for b in fc["per_seed"][0] if "explanation" in b["sizes"][sizes[-1]]]
+    options = []
+    views = {}
+    for b in examples:
+        key = b["bot_id"]
+        who = f"{FIT_POP_LABEL[b['population']].split(' (')[0]}: {ARCHETYPE_LABELS[b['archetype']]}"
+        if "second_archetype" in b:
+            who += f" → {ARCHETYPE_LABELS[b['second_archetype']]}"
+        options.append((key, who))
+        for n in sizes:
+            s = b["sizes"][n]
+            ranked = s["ranked"]
+            cands = [s["candidates"][k] for k in ranked]
+            rows = [f"{i}. {candidate_label(k)}" for i, k in enumerate(ranked, start=1)]
+            chart = dots_chart(
+                f"{who} after {int(n):,} hands: the ranked candidates",
+                rows,
+                axis("Gain over equilibrium (bb/hand)", fmt="signed"),
+                [
+                    dot_series(
+                        "Posterior mean, 90% interval",
+                        "c1",
+                        [(c["mean"], c["lower"], c["upper"]) for c in cands],
+                    ),
+                    dot_series("True gain", "c2", [(c["true_gain"],) for c in cands]),
+                ],
+                subtitle="Flagged: "
+                + ("yes" if s["flagged"] else "no")
+                + ". p-values: "
+                + ", ".join(f"{k.replace('_', ' ')} {v:.3f}" for k, v in s["p"].items())
+                + (f". The bot changed gear at hand {s['switch']:,}." if "switch" in s else "."),
+                refs=[ref(0.0, "Equilibrium", axis_name="x")],
+            )
+            views[f"{key}|{n}"] = view(chart, notes=[s["explanation"]])
+    return section(
+        "fitcheck-examples",
+        "Reports with a model-fit check",
+        "The recommender's report for one connectors-first and one gear-change bot of each "
+        "archetype (first seed), with the fit check's verdict in the explanation.",
+        sources=[FITCHECK],
+        controls=[
+            control("bot", "Bot", options),
+            control("n", "Hands observed", [(n, f"{int(n):,}") for n in sizes]),
+        ],
+        defaults={"n": "300"},
+        views=views,
+        takeaways=[
+            "When a check fails, the explanation says which assumption broke (the hand order or "
+            "the stability of the bot's play) and advises the equilibrium, while still showing "
+            "what the model would have recommended.",
+        ],
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
     br = load(BRIDGE)
     rc = load(RECOMMEND)
-    head = overview(r, ex, br, rc)
+    fc = load(FITCHECK)
+    head = overview(r, ex, br, rc, fc)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -1279,6 +1637,7 @@ def build(load) -> dict[str, Any]:
             provenance(EXPLOIT, ex),
             provenance(BRIDGE, br),
             provenance(RECOMMEND, rc),
+            provenance(FITCHECK, fc),
         ],
         "sections": [
             charts(r),
@@ -1292,5 +1651,8 @@ def build(load) -> dict[str, Any]:
             recommend_rules(rc),
             recommend_calibration(rc),
             recommend_examples(rc),
+            fitcheck_flags(fc),
+            fitcheck_consequences(fc),
+            fitcheck_examples(fc),
         ],
     }

@@ -455,8 +455,36 @@ The recommender was evaluated on P3.2's 300 held-out bots against their true str
   recommendation loses to equilibrium play against at most 5.3% of those bots. Detecting such
   a misfit is the next step.
 
-Next: model-fit checks before exploiting (P3.5), then batch import of hand histories (P3.6);
-see [PROGRESS.md](PROGRESS.md).
+**Checking the model before trusting it (P3.5).** Before the recommendations are used, two
+posterior predictive checks ask whether the opponent plays the way the model assumes. The
+*shown-hands* check asks whether the hands it showed at showdowns match the model's hand order,
+given the hero's own cards each time. The *stability* check asks whether its push and call rates
+stayed put over the session (a CUSUM of residuals). Thresholds are calibrated on bots simulated
+from the model itself, so a bot the model describes is flagged about 5% of the time. Two harsher
+opponents test them: "connectors-first" bots that rank 54s above KQo (rank correlation 0.48
+with the equity order) and "gear-change" bots that switch archetype mid-session (pre-registered;
+commit `c4c15d0`;
+[`fitcheck_summary.md`](experiments/results/phase3/fitcheck/fitcheck_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/fitcheck/fitcheck_flags-dark.png">
+  <img alt="Share of bots flagged by either check vs hands observed: well-specified bots stay near the 5% false-alarm level; connectors-first bots are flagged almost always from 300 hands, gear-change bots from about 1,000, pairs-first bots slowly" src="experiments/results/phase3/fitcheck/fitcheck_flags.png">
+</picture>
+
+* **The checks work.** Well-specified bots are flagged 2–9% of the time. Connectors-first bots
+  are flagged 76% of the time after 100 hands and 97% after 300. Gear-change bots: 44% after 100
+  hands and 88% after 1,000. Pairs-first bots, whose order is close to equity, are caught
+  slowly (71% after 3,000).
+* **What to do with a flag depends on what broke.** Against gear-changers, trusting the model
+  loses to equilibrium play against about 30% of them. Falling back to equilibrium on a flag
+  cuts that to 1% by 1,000 hands. Against connectors-first bots, the model's recommendation
+  still earns +0.091 bb/hand after 300 hands (the oracle: +0.110) and loses to none of them,
+  even though its intervals are wrong. Falling back there throws the gain away.
+* **Post hoc,** falling back only when the *stability* check fails keeps most of the gain and all
+  of the safety. That rule was found after seeing the results, so it awaits confirmation on
+  fresh seeds.
+
+Next: batch import of hand histories (P3.6); see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -478,9 +506,10 @@ python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
 
 # Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
-# the solved strategy played through the real engine (20 min), recommendations evaluated (3 min)
-python -m experiments.run_phase3 --seed 2026          # ~28 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only recommend   # one step: pushfold, exploit, bridge or recommend
+# the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
+# model-fit checks evaluated (7 min)
+python -m experiments.run_phase3 --seed 2026          # ~35 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only fitcheck   # one step: pushfold, exploit, bridge, recommend or fitcheck
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
@@ -528,7 +557,9 @@ flowchart LR
 * **`games/`** (Phase 2): Kuhn and Leduc behind one `Game` interface, compiled to flat
   breadth-first arrays so that strategy values, reach probabilities and best responses are
   vectorized NumPy passes over tree levels. Also `TabularPolicy`, exact best response and
-  exploitability, and Leduc archetype bots with exact likelihood fitting.
+  exploitability, and Leduc archetype bots with exact likelihood fitting. Phase 3 adds
+  heads-up push/fold hold'em, push/fold bots with a full posterior, and posterior predictive
+  model-fit checks (`push_fold_checks.py`).
 * **`solvers/`** (Phase 2): sequence-form LP (exact reference), CFR / CFR+ / linear / discounted
   CFR, external-sampling MCCFR, Deep CFR (PyTorch), and restricted Nash and data-biased
   responses as LPs.
@@ -597,7 +628,8 @@ poker_lab/
   profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore,
                push/fold observations from completed hands
   games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
-               TabularPolicy, best response, Leduc bots + fitting
+               TabularPolicy, best response, Leduc bots + fitting, push/fold bots,
+               posterior and model-fit checks
   solvers/     LP, CFR family, MCCFR, Deep CFR, restricted Nash / data-biased responses
   strategy/    StrategyProvider, baselines, push/fold provider over the solved game (Phase 3)
   exploit/     exact small-game exploit engines; ranked push/fold recommendations;
@@ -618,7 +650,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -626,7 +658,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (288 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (300 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working

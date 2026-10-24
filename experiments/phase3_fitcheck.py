@@ -582,7 +582,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         ax.set_ylim(0, 100)
         ax.set_xlabel("Hands observed")
         ax.set_ylabel("Bots flagged by either check (%)")
-        legend(ax, theme, loc="center right")
+        legend(ax, theme, loc="upper left")
         title(
             fig,
             theme,
