@@ -14,22 +14,14 @@ import random
 from poker_lab.bots.hand_strength import equity_vs_random, preflop_percentile
 from poker_lab.engine.agent import Decision, clamp_raise
 from poker_lab.schema import SeatView, Street
-from poker_lab.strategy.base import ActionDistribution, StrategyProvider
-
-
-def _require_actor(view: SeatView):
-    if type(view) is not SeatView:
-        raise TypeError("strategy providers take exactly a SeatView")
-    if view.legal is None:
-        raise ValueError("view.legal is None: the seat is not the actor")
-    return view.legal
+from poker_lab.strategy.base import ActionDistribution, StrategyProvider, require_actor
 
 
 class CheckCallStrategy(StrategyProvider):
     name = "check_call"
 
     def action_distribution(self, view: SeatView) -> ActionDistribution:
-        _require_actor(view)
+        require_actor(view)
         return ActionDistribution.pure(Decision.check_call())
 
 
@@ -37,7 +29,7 @@ class UniformRandomStrategy(StrategyProvider):
     name = "uniform_random"
 
     def action_distribution(self, view: SeatView) -> ActionDistribution:
-        legal = _require_actor(view)
+        legal = require_actor(view)
         options = [Decision.check_call()]
         if legal.can_fold:
             options.append(Decision.fold())
@@ -62,7 +54,7 @@ class PotOddsStrategy(StrategyProvider):
         return equity_vs_random(view.hole_cards, view.public.board, self._rng, self.equity_samples)
 
     def action_distribution(self, view: SeatView) -> ActionDistribution:
-        legal = _require_actor(view)
+        legal = require_actor(view)
         equity = self._equity(view)
         pot = view.public.pot
         if legal.can_bet_or_raise and equity >= self.raise_equity:

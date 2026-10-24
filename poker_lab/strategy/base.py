@@ -14,7 +14,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 
-from poker_lab.engine.agent import Decision, DecisionKind, check_decision
+from poker_lab.engine.agent import Agent, Decision, DecisionKind, check_decision
 from poker_lab.schema import LegalActions, SeatView
 
 _TOL = 1e-9
@@ -94,6 +94,15 @@ class ActionDistribution:
         return 0.5 * sum(abs(p.get(d, 0.0) - q.get(d, 0.0)) for d in set(p) | set(q))
 
 
+def require_actor(view: SeatView) -> LegalActions:
+    """The actor's legal options; rejects anything but a ``SeatView`` of the seat to act."""
+    if type(view) is not SeatView:
+        raise TypeError("strategy providers take exactly a SeatView")
+    if view.legal is None:
+        raise ValueError("view.legal is None: the seat is not the actor")
+    return view.legal
+
+
 class StrategyProvider(ABC):
     """Maps a seat's view of the current hand to a mixed strategy over its legal decisions.
 
@@ -108,3 +117,19 @@ class StrategyProvider(ABC):
     @abstractmethod
     def action_distribution(self, view: SeatView) -> ActionDistribution:
         """Mixed strategy for the seat in ``view`` (``view.legal`` is not None)."""
+
+
+class StrategyAgent(Agent):
+    """Plays a seat by sampling a provider's strategy with the table's RNG.
+
+    For opponents in experiments. A hero whose decisions count as advice plays through
+    ``poker_lab.advisor.AdvisorAgent`` instead, which adds the profile firewall.
+    """
+
+    def __init__(self, strategy: StrategyProvider) -> None:
+        if not isinstance(strategy, StrategyProvider):
+            raise TypeError("strategy must be a StrategyProvider")
+        self.strategy = strategy
+
+    def act(self, view: SeatView, rng: random.Random) -> Decision:
+        return self.strategy.action_distribution(view).sample(rng)

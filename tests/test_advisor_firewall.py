@@ -9,7 +9,9 @@ from pokerkit import NoLimitTexasHoldem
 
 from poker_lab.advisor import Advisor, AdvisorAgent, FirewallViolation
 from poker_lab.bots import Archetype, ParametricBot, mean_params
-from poker_lab.engine import SeatedPlayer, TableSimulator
+from poker_lab.engine import DecisionKind, SeatedPlayer, TableSimulator
+from poker_lab.games.push_fold_bots import PushFoldBotParams
+from poker_lab.games.push_fold_bots import strategy as bot_strategy
 from poker_lab.profiling.profile_store import (
     IncompleteHandError,
     PlayerProfile,
@@ -17,16 +19,33 @@ from poker_lab.profiling.profile_store import (
     ProfileStore,
 )
 from poker_lab.schema import (
+    Action,
+    ActionType,
     HandHistory,
     HandHistoryStore,
     HoleCards,
     LegalActions,
+    SeatInfo,
     SeatView,
+    Street,
     TableConfig,
 )
 from poker_lab.schema.store import _HoleCardVault
-from poker_lab.strategy import StrategyProvider, UniformRandomStrategy
-from tests.helpers import BOARD, HOLE, reachable_card_strings, record_reference_hand, walk_reachable
+from poker_lab.strategy import (
+    PushFoldStrategy,
+    StrategyAgent,
+    StrategyProvider,
+    UniformRandomStrategy,
+    fixed_ranges,
+)
+from tests.helpers import (
+    BOARD,
+    HOLE,
+    obs,
+    reachable_card_strings,
+    record_reference_hand,
+    walk_reachable,
+)
 
 LEGAL = LegalActions(
     can_fold=False, can_check=True, call_amount=0, can_bet_or_raise=True, min_raise_to=2,
@@ -161,12 +180,13 @@ def test_nothing_reachable_from_advisor_inputs_reveals_opponent_cards(live):
 
 
 class _SpyStrategy(StrategyProvider):
-    def __init__(self):
+    def __init__(self, inner: StrategyProvider | None = None):
         self.seen: list[object] = []
+        self.inner = inner or UniformRandomStrategy()
 
     def action_distribution(self, view):
         self.seen.append(view)
-        return UniformRandomStrategy().action_distribution(view)
+        return self.inner.action_distribution(view)
 
 
 def test_advisor_agent_end_to_end_firewall():
@@ -192,3 +212,64 @@ def test_advisor_agent_end_to_end_firewall():
     assert hero.store.hands_ingested == 60  # each hand was profiled only after it completed
     seen_ids = [a.hand_id for a in hero.advice_log]
     assert seen_ids == sorted(seen_ids)  # advice follows play order
+
+
+# ---------------------------------------------------------------- push/fold provider (P3.3)
+PF_TABLE = TableConfig("pf", 2, 50, 100)
+PF_HERO_CARDS = ("Ts", "9s")
+SB_LEGAL = LegalActions(
+    can_fold=True, can_check=False, call_amount=50, can_bet_or_raise=True, min_raise_to=200,
+    max_raise_to=1000,
+)  # fmt: skip
+BB_LEGAL = LegalActions(can_fold=True, can_check=False, call_amount=900, can_bet_or_raise=False)
+
+
+def _push_fold_view(hero_seat: int, villain_cards: tuple[str, str]) -> SeatView:
+    """The hero's view of a live heads-up hand at 10 bb: as the small blind (seat 0, first to
+    act) or as the big blind (seat 1) facing the small blind's all-in."""
+    store = HandHistoryStore()
+    seat_infos = (SeatInfo(0, "a", 1000, "BTN"), SeatInfo(1, "b", 1000, "BB"))
+    store.begin_hand("pf", PF_TABLE, 0, seat_infos)
+    store.record_action("pf", Action(0, Street.PREFLOP, ActionType.POST_SMALL_BLIND, 50, 50))
+    store.record_action("pf", Action(1, Street.PREFLOP, ActionType.POST_BIG_BLIND, 100, 100))
+    cards = {hero_seat: PF_HERO_CARDS, 1 - hero_seat: villain_cards}
+    keys = {s: store.deal_hole_cards("pf", s, [obs(c) for c in cards[s]]) for s in (0, 1)}
+    if hero_seat == 0:
+        return store.seat_view("pf", keys[0], legal=SB_LEGAL)
+    store.record_action("pf", Action(0, Street.PREFLOP, ActionType.RAISE, 950, 1000, True))
+    return store.seat_view("pf", keys[1], legal=BB_LEGAL)
+
+
+@pytest.mark.parametrize("hero_seat", [0, 1])
+def test_push_fold_advice_ignores_the_opponents_sealed_cards(hero_seat):
+    advisor = Advisor(PushFoldStrategy())
+    snapshot = ProfileStore().snapshot()
+    views = [_push_fold_view(hero_seat, c) for c in (("Ac", "Ad"), ("7d", "2c"), ("9d", "Th"))]
+    advice = [advisor.advise(v, snapshot) for v in views]
+    # Hands that differ only in the villain's sealed cards give the hero identical views, so no
+    # provider (whatever it computes) can tell them apart.
+    assert views[0] == views[1] == views[2]
+    assert advice[0].strategy == advice[1].strategy == advice[2].strategy
+    assert reachable_card_strings(views[0]) == set(PF_HERO_CARDS)
+    assert reachable_card_strings(advisor) == set()  # cached policies hold no cards
+
+
+def test_push_fold_advisor_end_to_end_firewall():
+    spy = _SpyStrategy(PushFoldStrategy())
+    hero = AdvisorAgent(Advisor(spy, sample=True, seed=2))
+    maniac = PushFoldBotParams(push_width=0.9, call_width=0.55, temperature=0.03)
+    villain = StrategyAgent(PushFoldStrategy(fixed_ranges(*bot_strategy(maniac))))
+    players = [SeatedPlayer(0, "hero", hero), SeatedPlayer(1, "maniac", villain)]
+    sim = TableSimulator(PF_TABLE, players, seed=7, starting_stack=1000)
+    hands = list(sim.play(80))
+    by_id = {h.hand_id: h for h in hands}
+    for view in spy.seen:
+        assert type(view) is SeatView
+        assert spy.inner.covers(view)
+        own = tuple(o.card for o in by_id[view.public.hand_id].hole_cards_of(0).cards)
+        assert view.hole_cards == own
+        assert reachable_card_strings(view) <= set(own)  # preflop: no board yet
+    kinds = {a.recommended.kind for a in hero.advice_log}
+    assert kinds <= {DecisionKind.FOLD, DecisionKind.BET_RAISE, DecisionKind.CHECK_CALL}
+    assert len(hero.advice_log) == len(spy.seen) > 40
+    assert hero.store.hands_ingested == 80

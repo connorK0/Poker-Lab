@@ -1,17 +1,45 @@
-"""Strategy providers. Phase 2 (GTO baseline: CFR / Deep CFR) plugs in here.
+"""Strategy providers: a ``SeatView`` of a real hold'em hand -> a mixed strategy.
 
-TODO(Phase 2): ``CFRStrategy`` for Kuhn/Leduc (tabular CFR+), ``DeepCFRStrategy`` (PyTorch),
-and an NLHE provider over an abstracted action space with action translation.
+Baselines (``baselines``) and the push/fold provider over the solved abstract game
+(``push_fold``, P3.3). The small games of Phase 2 keep their own ``TabularPolicy`` objects; see
+the Decisions Log in PROGRESS.md. Names are re-exported lazily (PEP 562), so importing a baseline
+does not load the solvers.
 """
 
-from poker_lab.strategy.base import ActionDistribution, ActionOption, StrategyProvider
-from poker_lab.strategy.baselines import CheckCallStrategy, PotOddsStrategy, UniformRandomStrategy
+from importlib import import_module
+from typing import Any
 
-__all__ = [
-    "ActionDistribution",
-    "ActionOption",
-    "CheckCallStrategy",
-    "PotOddsStrategy",
-    "StrategyProvider",
-    "UniformRandomStrategy",
-]
+_EXPORTS = {
+    "poker_lab.strategy.base": (
+        "ActionDistribution",
+        "ActionOption",
+        "StrategyAgent",
+        "StrategyProvider",
+        "require_actor",
+    ),
+    "poker_lab.strategy.baselines": (
+        "CheckCallStrategy",
+        "PotOddsStrategy",
+        "UniformRandomStrategy",
+    ),
+    "poker_lab.strategy.push_fold": (
+        "OffTree",
+        "PushFoldSpot",
+        "PushFoldStrategy",
+        "fixed_ranges",
+        "nash_ranges",
+        "push_fold_spot",
+    ),
+}
+_WHERE = {name: module for module, names in _EXPORTS.items() for name in names}
+__all__ = sorted(_WHERE)
+
+
+def __getattr__(name: str) -> Any:
+    if name in _WHERE:
+        return getattr(import_module(_WHERE[name]), name)
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+    return __all__
