@@ -363,8 +363,38 @@ commit `3aa83c2`; see
   wrong cells. A second read fixed them, and the corrections are logged in
   `experiments/references/hune_no_ante.json`.
 
-Next: opponent models and exploitation in push/fold (P3.2), then advice for real hands behind
-the firewall and ranked recommendations (see [PROGRESS.md](PROGRESS.md)).
+**Modeling and exploiting push/fold opponents (P3.2).** Simulated bots push or call the top
+*w*% of hands, with a soft edge. Five archetypes sit on both sides of the equilibrium. The
+hero watches a bot for *n* hands at 10 bb, seeing its cards only when a push is called, and
+fits one of two models:
+
+* a likelihood model that uses the shown cards, with an exact marginal over hidden ones;
+* a frequency model that uses push and call rates only, like a HUD.
+
+It then responds with the Phase 2 engines. The setup is 5 seeds × 30 held-out bots with
+exact values (commit `a8ea075`; [`exploit_summary.md`](experiments/results/phase3/exploit/exploit_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/exploit/exploit_gain-dark.png">
+  <img alt="Gain over equilibrium vs hands observed for best, restricted Nash and data-biased responses with likelihood and frequency models, for standard and misspecified bots" src="experiments/results/phase3/exploit/exploit_gain.png">
+</picture>
+
+* **The reverse of the Leduc result.** A best response to the population's average bot
+  *loses* to equilibrium play (−0.007 bb/hand), because the archetypes straddle the
+  equilibrium. Watching the individual pays. The best response reaches 58% of the oracle's
+  gain (+0.088 bb/hand) after 10 hands, 80% after 30 and 97% after 100.
+* **Shown cards help early, then frequencies catch up.** After 10 hands the gain is +0.051
+  vs +0.038 bb/hand; from about 300 hands the two models are equal. Range sizes are what
+  matter.
+* **Hedge while uncertain.** After 10 hands the best response loses to equilibrium against
+  26% of bots. Restricted Nash with p = 0.9 gains as much at 55% of the exploitability.
+* **A weak control, reported as such.** Against bots that rank hands "pairs first", which
+  both models assume wrongly, the best response still captures 99% of the oracle's gain. But
+  the two hand orders are close (rank correlation 0.95), so this shows that range size
+  dominates, not that misspecification is harmless.
+
+Next: advice for real hold'em hands behind the firewall (P3.3), then ranked recommendations
+with confidence (see [PROGRESS.md](PROGRESS.md)).
 
 ## Quickstart
 
@@ -520,7 +550,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: heads-up push/fold solved exactly (P3.1). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -528,7 +558,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (242 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (252 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working

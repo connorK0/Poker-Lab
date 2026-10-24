@@ -58,6 +58,7 @@ $B(a,b)$ the beta function.
   * [Step 25: The results explorer](#step-25-the-results-explorer-one-interactive-page-for-every-phase)
   * Phase 3
   * [Step 26: Heads-up push/fold solved exactly](#step-26-a-bridge-to-holdem-heads-up-pushfold-solved-exactly-p31)
+  * [Step 27: Modeling and exploiting push/fold opponents](#step-27-modeling-and-exploiting-pushfold-opponents-p32)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1992,6 +1993,111 @@ rules, ranking hands by equity against a random hand:
 
 Experiment at commit `3aa83c2` (clean): `python -m experiments.run_phase3 --seed 2026`.
 
+## Step 27: Modeling and exploiting push/fold opponents (P3.2)
+
+**The question.** Phase 2 found that in Leduc most of the exploitation gain came from the
+population prior, before watching the individual at all. Does that hold in a hold'em game,
+and how much do the cards you happen to see at showdown add over plain action frequencies?
+
+**Bots with interpretable ranges.** A push/fold bot plays hand class $i$ with probability
+
+$$P(\text{push } i) = \sigma\!\left(\frac{w_{push} - \text{pct}_i}{T}\right), \qquad
+P(\text{call } i) = \sigma\!\left(\frac{w_{call} - \text{pct}_i}{T}\right),$$
+
+where $\sigma$ is the logistic function.
+
+* $\text{pct}_i$ is the hand's strength percentile: the share of the 1,326 combos ranked above
+  it, plus half its own.
+* The *width* $w$ is roughly the share of hands played.
+* The *temperature* $T$ softens the edge of the range.
+
+Archetypes are distributions over $(w_{push}, w_{call}, T)$: Beta for the widths (concentration
+30, as before) and log-normal for $T$. The archetypes sit on both sides of the 10 bb
+equilibrium (push about 58%, call about 37%):
+
+| Archetype | Push width | Call width |
+|---|---|---|
+| Nit | 0.20 | 0.10 |
+| TAG | 0.40 | 0.25 |
+| LAG | 0.65 | 0.40 |
+| Calling station | 0.30 | 0.70 |
+| Maniac | 0.90 | 0.55 |
+
+**What the hero sees.** The hero plays the equilibrium while watching. It sees its own class,
+the bot's actions, and the bot's class *only when a push is called*: a fold never shows
+cards. The simulation deals class pairs with the game's own probabilities, so observation and
+exact evaluation share one model of the deal. A test scrambles every hidden class and checks
+that the observations do not change, the same firewall test used for the real store.
+
+**Two models of the same hands.**
+
+1. *Likelihood.* Shown hands contribute $\log P(a \mid i)$. Hidden hands contribute the
+   marginal over the classes the bot could hold given the hero's own class:
+
+   $$\log \sum_i P(i \mid h)\,P(a \mid i), \qquad P(i \mid h) = \frac{n_{hi}}{\sum_k n_{hk}}.$$
+
+   This is the card-removal weight from Step 26. The fit is the posterior mode over
+   (logit $w_{push}$, logit $w_{call}$, $\log T$), with Beta priors on the widths (mode in logit
+   space, as in Step 21) and a normal prior on $\log T$, fitted to a separate training
+   population. Because the data enter only through counts, the whole likelihood is six dot
+   products. A test checks it against a hand-by-hand sum.
+2. *Frequency* (the HUD model). It takes only the push rate as small blind and the call rate
+   facing a push, each shrunk toward the population with 10 pseudo-hands. It then solves for
+   the widths that reproduce them at the population's temperature (Brent's method). It never
+   looks at a shown card.
+
+**Responses and evaluation.** Responses come from the Phase 2 engines, unchanged, on the
+push/fold tree:
+
+* best response;
+* restricted Nash with $p \in \{0.5, 0.9\}$;
+* data-biased response, with confidence $n/(n + 10)$ per seat.
+
+Gain is exact: the value against the true bot minus the equilibrium's, over both seats. The
+design follows Phase 2:
+
+* 5 seeds × 30 held-out bots;
+* 10 to 3,000 hands observed;
+* oracle and population-model references.
+
+The pre-registered control is a population that ranks hands "pairs first", so both models
+are wrong about *which* hands a bot plays.
+
+**Results** (commit `a8ea075`):
+
+* *The population prior is worthless here.* A best response to the average bot gains
+  −0.007 bb/hand: it loses to equilibrium play. The archetypes straddle the equilibrium, so
+  their average is near it, and a best response to a near-equilibrium model is a poor guess
+  against any individual. This is the opposite of Leduc, where every archetype was
+  exploitable in the same direction. Watching the individual is what pays: with the
+  likelihood model, the best response reaches 58% of the oracle's gain after 10 hands, 80%
+  after 30 and 97% after 100.
+* *Shown cards help early.* After 10 hands the likelihood model's push-width error is 0.106
+  against 0.157 for the frequency model, and its best response gains +0.051 against +0.038
+  bb/hand. From about 300 hands the two are equal. Frequencies pin down the range sizes, and
+  the sizes are what matters.
+* *Hedging pays while the model is uncertain.* After 10 hands the best response loses to
+  equilibrium play against 26% of bots. Restricted Nash with p = 0.9 gains as much (+0.052)
+  at 55% of the exploitability.
+* *The misspecification control turned out mild.* Against pairs-first bots, the best response
+  still gets 99% of the oracle's gain by 3,000 hands. Before reporting that as robustness,
+  the overlap was measured: the two orders have rank correlation 0.95, and at equal width
+  their ranges differ by only 4–12% of combos. So this result supports "get the range size
+  right", not "misspecification is harmless". A harsher test belongs with the model-fit
+  checks (P3.5).
+
+**Verification.** `tests/test_push_fold_bots.py` has 9 tests:
+
+* percentiles form a CDF in both orders;
+* a sharp threshold plays its width;
+* hidden classes never reach the observations;
+* the simulated push rate matches the strategy;
+* the likelihood equals a hand-by-hand sum;
+* zero hands give the population;
+* recovery from 3,000 hands for both models.
+
+Experiment: `python -m experiments.run_phase3 --seed 2026 --only exploit` (4 minutes).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -2012,7 +2118,7 @@ Experiment at commit `3aa83c2` (clean): `python -m experiments.run_phase3 --seed
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 242 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 252 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2247,3 +2353,6 @@ Software design
   results; the card-blind per-archetype loss shares were computed for this step and are new.
 * 2026-10-23: Phase 3 begun. Step 26 (heads-up push/fold). Results from commit `3aa83c2`,
   cross-checked against `experiments/results/phase3/pushfold/pushfold_summary.md`.
+* 2026-10-23: Step 27 (push/fold opponent models). Results from commit `a8ea075`,
+  cross-checked against `experiments/results/phase3/exploit/exploit_summary.md`; the
+  hand-order overlap figures were computed for this step.
