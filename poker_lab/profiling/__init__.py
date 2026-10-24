@@ -7,6 +7,7 @@
 * ``regression``: continuous bot-parameter regression.
 * ``situations`` / ``action_model``: next-action prediction from public situations + profile.
 * ``profile_store``: per-player profiles accumulated across sessions from completed hands.
+* ``push_fold``: one opponent's push/fold observations from completed hands (P3.4).
 
 Names are re-exported lazily (PEP 562): simulation workers that only need ``stats`` do not
 pay for importing scikit-learn.
@@ -52,6 +53,7 @@ _EXPORTS = {
         "raw_stats",
     ),
     "poker_lab.profiling.profile_store": ("PlayerProfile", "ProfileSnapshot", "ProfileStore"),
+    "poker_lab.profiling.push_fold": ("PushFoldHistory", "push_fold_observations"),
 }
 _WHERE = {name: module for module, names in _EXPORTS.items() for name in names}
 __all__ = sorted(_WHERE)

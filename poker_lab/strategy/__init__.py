@@ -23,9 +23,11 @@ _EXPORTS = {
         "UniformRandomStrategy",
     ),
     "poker_lab.strategy.push_fold": (
+        "BlindPot",
         "OffTree",
         "PushFoldSpot",
         "PushFoldStrategy",
+        "blind_pot",
         "fixed_ranges",
         "nash_ranges",
         "push_fold_spot",

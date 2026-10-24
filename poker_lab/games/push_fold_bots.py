@@ -31,6 +31,13 @@ exact evaluation in ``push_fold``.
   blind) and called (when facing a push), shrunk toward the population with a pseudo-count, and
   finds the widths that reproduce those frequencies at the population's temperature. It never
   looks at shown cards.
+
+**Posterior (P3.4).** ``posterior`` returns weighted draws from the likelihood model's full
+posterior, not just its mode: a Laplace approximation (a Student-t centred at the mode, with the
+inverse Hessian of the negative log posterior as its scale) serves as the proposal for
+self-normalized importance sampling, which corrects it toward the exact posterior. The Kish
+effective sample size ``1 / sum w^2`` says how many independent draws the weighted sample is
+worth.
 """
 
 from __future__ import annotations
@@ -152,6 +159,11 @@ class Observations:
     sb_hidden: np.ndarray  # (2, 169)
     bb_shown: np.ndarray  # (169,)
     bb_hidden: np.ndarray  # (2, 169)
+
+    @classmethod
+    def empty(cls) -> Observations:
+        """No hands seen: the posterior is the prior."""
+        return cls(0, np.zeros(169), np.zeros((2, 169)), np.zeros(169), np.zeros((2, 169)))
 
     @property
     def n_sb(self) -> int:
@@ -324,3 +336,144 @@ def fit_frequency(
         return float(brentq(gap, lo, hi, xtol=1e-6))
 
     return PushFoldBotParams(width_for(push_rate, 0), width_for(call_rate, 1), t)
+
+
+# -------------------------------------------------------------------------------- posterior
+
+
+def to_z(params: PushFoldBotParams) -> np.ndarray:
+    """(logit push width, logit call width, log temperature): the space the fits work in."""
+    return np.array(
+        [logit(params.push_width), logit(params.call_width), np.log(params.temperature)]
+    )
+
+
+def _from_z(z: np.ndarray) -> np.ndarray:
+    return np.column_stack([expit(z[:, 0]), expit(z[:, 1]), np.exp(z[:, 2])])
+
+
+def strategies(
+    params: np.ndarray, order: str = "equity", matchups: Matchups | None = None
+) -> tuple[np.ndarray, np.ndarray]:
+    """``strategy`` for many parameter rows ``(K, 3)`` at once: push and call, each ``(K, 169)``."""
+    pct = percentiles(order, matchups)
+    t = params[:, 2:3]
+    return expit((params[:, 0:1] - pct) / t), expit((params[:, 1:2] - pct) / t)
+
+
+def _log_posterior(z: np.ndarray, obs: Observations, prior: PushFoldPrior, m: Matchups):
+    """Unnormalized log posterior density at rows of ``z`` (``fit_likelihood``'s objective, negated,
+    vectorized), with the parameters and strategies of each row."""
+    cond_t = _conditional(m).T
+    params = _from_z(z)
+    push, call = strategies(params, "equity", m)
+    eps = 1e-12
+    lp = np.log(push + eps) @ obs.sb_shown
+    lp += np.log(push @ cond_t + eps) @ obs.sb_hidden[1]
+    lp += np.log((1 - push) @ cond_t + eps) @ obs.sb_hidden[0]
+    lp += np.log(call + eps) @ obs.bb_shown
+    lp += np.log(call @ cond_t + eps) @ obs.bb_hidden[1]
+    lp += np.log((1 - call) @ cond_t + eps) @ obs.bb_hidden[0]
+    for k, (a, b) in ((0, prior.push), (1, prior.call)):
+        # Beta(a, b) with the logit Jacobian: a log w + b log(1 - w), via stable log-sigmoids
+        lp += -a * np.logaddexp(0.0, -z[:, k]) - b * np.logaddexp(0.0, z[:, k])
+    mu, sd = prior.log_t
+    lp += -0.5 * ((z[:, 2] - mu) / sd) ** 2
+    return lp, params, push, call
+
+
+def log_posterior(
+    z: np.ndarray, obs: Observations, prior: PushFoldPrior, matchups: Matchups | None = None
+) -> np.ndarray:
+    """Unnormalized log posterior density of ``z`` rows ``(K, 3)`` (see ``to_z``)."""
+    return _log_posterior(np.atleast_2d(z), obs, prior, matchups or load_matchups())[0]
+
+
+def _laplace_covariance(
+    z0: np.ndarray, obs: Observations, prior: PushFoldPrior, m: Matchups, h: float = 5e-3
+) -> np.ndarray:
+    """Inverse Hessian of the negative log posterior at ``z0`` (central differences)."""
+    d = len(z0)
+    steps = [np.zeros(d)]
+    for i in range(d):
+        for sign in (1, -1):
+            steps.append(sign * h * np.eye(d)[i])
+    pairs = [(i, j) for i in range(d) for j in range(i + 1, d)]
+    for i, j in pairs:
+        for si, sj in ((1, 1), (1, -1), (-1, 1), (-1, -1)):
+            steps.append(h * (si * np.eye(d)[i] + sj * np.eye(d)[j]))
+    f = -_log_posterior(z0 + np.array(steps), obs, prior, m)[0]
+    hess = np.empty((d, d))
+    for i in range(d):
+        hess[i, i] = (f[1 + 2 * i] - 2 * f[0] + f[2 + 2 * i]) / h**2
+    for k, (i, j) in enumerate(pairs):
+        pp, pm, mp, mm = f[1 + 2 * d + 4 * k : 5 + 2 * d + 4 * k]
+        hess[i, j] = hess[j, i] = (pp - pm - mp + mm) / (4 * h**2)
+    vals, vecs = np.linalg.eigh(hess)
+    return (vecs / np.maximum(vals, 1e-2)) @ vecs.T  # floor: a numerical guard only
+
+
+def weighted_quantile(values: np.ndarray, weights: np.ndarray, q) -> np.ndarray:
+    """Weighted quantiles along the last axis: the smallest value whose cumulative weight reaches
+    ``q`` (the inverse of the weighted empirical CDF)."""
+    v = np.asarray(values, dtype=float)
+    order = np.argsort(v, axis=-1, kind="stable")
+    sorted_v = np.take_along_axis(v, order, axis=-1)
+    cum = np.cumsum(weights[order], axis=-1)
+    qs = np.atleast_1d(np.asarray(q, dtype=float))
+    idx = (cum[..., None, :] < qs[:, None] * cum[..., -1:, None]).sum(axis=-1)
+    out = np.take_along_axis(sorted_v, np.minimum(idx, v.shape[-1] - 1), axis=-1)
+    return out[..., 0] if np.ndim(q) == 0 else out
+
+
+@dataclass(frozen=True, eq=False)
+class Posterior:
+    """Weighted draws from a bot's posterior. ``draws[k]`` = (push width, call width,
+    temperature); ``weights`` sum to 1; ``push`` and ``call`` hold each draw's per-class
+    probabilities, ``(K, 169)``."""
+
+    draws: np.ndarray
+    weights: np.ndarray
+    push: np.ndarray
+    call: np.ndarray
+    mode: PushFoldBotParams
+
+    @property
+    def ess(self) -> float:
+        """Kish effective sample size, ``1 / sum w^2``."""
+        return float(1.0 / np.sum(self.weights**2))
+
+    def mean_strategy(self) -> tuple[np.ndarray, np.ndarray]:
+        """Posterior predictive push and call probability of each class."""
+        return self.weights @ self.push, self.weights @ self.call
+
+    def quantile(self, values: np.ndarray, q) -> np.ndarray:
+        """Posterior quantiles of per-draw ``values`` (last axis: draws)."""
+        return weighted_quantile(values, self.weights, q)
+
+
+def posterior(
+    obs: Observations,
+    prior: PushFoldPrior,
+    rng: np.random.Generator,
+    *,
+    draws: int = 1000,
+    df: float = 4.0,
+    matchups: Matchups | None = None,
+) -> Posterior:
+    """Self-normalized importance sampling with a Student-t proposal (``df`` degrees of
+    freedom) centred at the posterior mode, scaled by the Laplace covariance."""
+    m = matchups or load_matchups()
+    mode = fit_likelihood(obs, prior, m)
+    z0 = to_z(mode)
+    chol = np.linalg.cholesky(_laplace_covariance(z0, obs, prior, m))
+    d = len(z0)
+    g = rng.standard_normal((draws, d))
+    scale = np.sqrt(rng.chisquare(df, draws) / df)
+    z = z0 + (g @ chol.T) / scale[:, None]
+    maha = np.sum(np.linalg.solve(chol, (z - z0).T) ** 2, axis=0)
+    log_q = -0.5 * (df + d) * np.log1p(maha / df)  # up to a constant, which cancels
+    lp, params, push, call = _log_posterior(z, obs, prior, m)
+    log_w = lp - log_q
+    w = np.exp(log_w - log_w.max())
+    return Posterior(params, w / w.sum(), push, call, mode)

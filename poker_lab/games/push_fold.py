@@ -161,6 +161,63 @@ def hand_gains(
     return sb, bb
 
 
+@cache
+def _value_terms(matchups: Matchups) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """(r, P, Q): row marginals of the deal, the deal probabilities, P * (2 e - 1)."""
+    p = matchups.deal_prob
+    return p.sum(axis=1), p, p * (2.0 * matchups.equity - 1.0)
+
+
+def match_values(
+    stack: float,
+    hero_push: np.ndarray,
+    hero_call: np.ndarray,
+    opp_push: np.ndarray,
+    opp_call: np.ndarray,
+    matchups: Matchups | None = None,
+) -> np.ndarray:
+    """Hero's expected bb/hand against each opponent, averaged over both seats (closed form).
+
+    Strategies are per-class push and call probabilities: hero arrays ``(M, 169)``, opponent
+    arrays ``(K, 169)``; the result is ``(M, K)`` (1-D inputs drop their axis). It equals
+    ``evaluate.head_to_head`` on the tree. With deal probabilities ``P``, ``r_i = sum_j P_ij``
+    and ``D = P * (S (2 e - 1) - 1)``, the small blind's value is
+    ``u(s, c) = r . (1.5 s - 0.5) + s^T D c``, and the hero's is
+    ``(u(s_h, c_o) - u(s_o, c_h)) / 2``.
+    """
+    r, p, q = _value_terms(matchups or load_matchups())
+    d = stack * q - p
+    hp, hc = np.atleast_2d(hero_push), np.atleast_2d(hero_call)
+    op, oc = np.atleast_2d(opp_push), np.atleast_2d(opp_call)
+    as_sb = (hp * 1.5 - 0.5) @ r
+    opp_as_sb = (op * 1.5 - 0.5) @ r
+    out = 0.5 * (as_sb[:, None] + hp @ d @ oc.T - opp_as_sb[None, :] - (op @ d @ hc.T).T)
+    if np.ndim(opp_push) == 1:
+        out = out[:, 0]
+    if np.ndim(hero_push) == 1:
+        out = out[0]
+    return out
+
+
+def strategy_exploitability(
+    stack: float, push: np.ndarray, call: np.ndarray, matchups: Matchups | None = None
+) -> np.ndarray | float:
+    """Exact exploitability (NashConv / 2, bb/hand) of per-class ranges, in closed form.
+
+    A best-responding opponent calls the hero's push ``s`` with class ``j`` when
+    ``(s^T D)_j < 0`` and pushes class ``i`` against the hero's calls ``c`` when
+    ``1.5 r_i + (D c)_i > 0``. Equals ``evaluate.exploitability`` on the tree; ``push`` and
+    ``call`` may be ``(M, 169)`` for M strategies at once.
+    """
+    r, p, q = _value_terms(matchups or load_matchups())
+    d = stack * q - p
+    s, c = np.atleast_2d(push), np.atleast_2d(call)
+    vs_push = -(s * 1.5 - 0.5) @ r - np.minimum(0.0, s @ d).sum(axis=1)
+    vs_call = -0.5 * r.sum() + np.maximum(0.0, 1.5 * r[None, :] + c @ d.T).sum(axis=1)
+    out = 0.5 * (vs_push + vs_call)
+    return float(out[0]) if np.ndim(push) == 1 else out
+
+
 def threshold_policy(
     tree: GameTree, push: np.ndarray | None = None, call: np.ndarray | None = None
 ) -> TabularPolicy:

@@ -32,7 +32,7 @@ change its output.
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
 
@@ -42,7 +42,7 @@ from poker_lab.bots.hand_strength import hand_class
 from poker_lab.engine.agent import Decision
 from poker_lab.games.preflop import CLASS_INDEX
 from poker_lab.games.push_fold import BB, SB, aggressive_probabilities, infoset_key, push_fold_tree
-from poker_lab.schema import ActionType, SeatView, Street
+from poker_lab.schema import Action, ActionType, SeatInfo, SeatView, Street, TableConfig
 from poker_lab.solvers.lp import solve_lp
 from poker_lab.strategy.base import ActionDistribution, StrategyProvider, require_actor
 
@@ -68,39 +68,65 @@ class PushFoldSpot:
         return infoset_key(self.hand_class, self.player)
 
 
+@dataclass(frozen=True, slots=True)
+class BlindPot:
+    """A preflop pot only the two blinds have entered (``blind_pot``)."""
+
+    small_blind: int  # seat
+    big_blind: int  # seat
+    effective: int  # chips: the smaller of the two blinds' starting stacks
+    stack: float  # the same in big blinds
+    decisions: tuple[Action, ...]  # the blinds' voluntary actions, in order
+
+    def is_push(self, action: Action) -> bool:
+        """A small-blind raise that puts the big blind all-in."""
+        return (
+            action.seat == self.small_blind
+            and action.action_type is ActionType.RAISE
+            and action.total_bet >= self.effective
+        )
+
+
+def blind_pot(
+    table: TableConfig,
+    seats: Sequence[SeatInfo],
+    actions: Sequence[Action],
+    *,
+    max_stack: float = MAX_STACK,
+) -> BlindPot:
+    """The table rules and forced bets of a push/fold spot, from a hand's actions so far (or all
+    of them); raises ``OffTree`` when the abstract game cannot describe the hand."""
+    if table.ante or 2 * table.small_blind != table.big_blind:
+        raise OffTree("the game needs blinds in a 1:2 ratio and no ante")
+    forced = [a for a in actions if a.action_type.is_forced]
+    posters = {a.action_type: a.seat for a in forced}
+    if len(forced) != 2 or set(posters) != {ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND}:
+        raise OffTree("needs exactly one small blind and one big blind, and nothing else posted")
+    sb, bb = posters[ActionType.POST_SMALL_BLIND], posters[ActionType.POST_BIG_BLIND]
+    decisions = [a for a in actions if a.action_type.is_decision]
+    if any(a.action_type is not ActionType.FOLD for a in decisions if a.seat not in (sb, bb)):
+        raise OffTree("a player other than the blinds entered the pot")
+    start = {s.seat: s.starting_stack for s in seats}
+    effective = min(start[sb], start[bb])
+    stack = effective / table.big_blind
+    if not 1.0 < stack <= max_stack:
+        raise OffTree(f"effective stack {stack:g} bb is outside (1, {max_stack:g}]")
+    blinds = tuple(a for a in decisions if a.seat in (sb, bb))
+    return BlindPot(sb, bb, effective, stack, blinds)
+
+
 def push_fold_spot(view: SeatView, *, max_stack: float = MAX_STACK) -> PushFoldSpot:
     """The abstract information set of ``view``; raises ``OffTree`` if there is none."""
     if type(view) is not SeatView:
         raise TypeError("push_fold_spot takes exactly a SeatView")
     pub = view.public
-    table = pub.table
     if pub.street is not Street.PREFLOP:
         raise OffTree("not preflop")
-    if table.ante or 2 * table.small_blind != table.big_blind:
-        raise OffTree("the game needs blinds in a 1:2 ratio and no ante")
-    forced = [a for a in pub.actions if a.action_type.is_forced]
-    posters = {a.action_type: a.seat for a in forced}
-    if len(forced) != 2 or set(posters) != {ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND}:
-        raise OffTree("needs exactly one small blind and one big blind, and nothing else posted")
-    sb, bb = posters[ActionType.POST_SMALL_BLIND], posters[ActionType.POST_BIG_BLIND]
-    decisions = [a for a in pub.actions if a.action_type.is_decision]
-    if any(a.action_type is not ActionType.FOLD for a in decisions if a.seat not in (sb, bb)):
-        raise OffTree("a player other than the blinds entered the pot")
-    start = {s.seat: s.starting_stack for s in pub.seats}
-    effective = min(start[sb], start[bb])
-    stack = effective / table.big_blind
-    if not 1.0 < stack <= max_stack:
-        raise OffTree(f"effective stack {stack:g} bb is outside (1, {max_stack:g}]")
-    blinds = [a for a in decisions if a.seat in (sb, bb)]
+    pot = blind_pot(pub.table, pub.seats, pub.actions, max_stack=max_stack)
+    sb, bb, blinds = pot.small_blind, pot.big_blind, pot.decisions
     if view.seat == sb and not blinds:
         player = SB
-    elif (
-        view.seat == bb
-        and len(blinds) == 1
-        and blinds[0].seat == sb
-        and blinds[0].action_type is ActionType.RAISE
-        and blinds[0].total_bet >= effective
-    ):
+    elif view.seat == bb and len(blinds) == 1 and pot.is_push(blinds[0]):
         player = BB
     else:
         raise OffTree("not the small blind's first decision or the big blind facing a push")
@@ -109,7 +135,7 @@ def push_fold_spot(view: SeatView, *, max_stack: float = MAX_STACK) -> PushFoldS
     )
     if not others_out:  # cannot happen preflop once the small blind acts; kept as a guard
         raise OffTree("a player other than the blinds has not folded")
-    return PushFoldSpot(player, hand_class(*view.hole_cards), stack, len(pub.seats) == 2)
+    return PushFoldSpot(player, hand_class(*view.hole_cards), pot.stack, len(pub.seats) == 2)
 
 
 def _clean(p: np.ndarray, tol: float = 1e-9) -> np.ndarray:
