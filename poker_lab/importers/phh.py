@@ -18,15 +18,20 @@ Every hand is replayed through PokerKit's rules, action by action. PokerKit's ow
 showdown mucks; here such an action rejects the hand. Only two steps may be left implicit,
 because neither adds information: dealing unknown hole cards and burning cards. A hand is
 accepted only if its actions run to the end of the hand and the converted record passes
-``find_problems``. Recorded finishing stacks must equal the replay's result less a
-non-negative rake taken from the pot winners. When a hand shown at showdown is unknown the
-replay cannot decide the pot, and finishing stacks are then required.
+``find_problems``. Every known card must appear once, checked before the replay: PokerKit
+only warns about a card dealt twice (not at all within one deal). A show must be of the cards
+dealt: PokerKit accepts other cards and pays the pot to them. Recorded finishing stacks must
+equal the replay's result less a non-negative rake taken from the pot winners. When a hand
+shown at showdown is unknown the replay cannot decide the pot, and finishing stacks are then
+required.
 
 Mapping
 -------
 * Amounts: decimal amounts (dollars and cents) are scaled by the smallest power of ten, at
   most ``10**4``, that makes all of them integers. The currency records the unit:
   ``"USD/100"`` means hundredths of a dollar. Without a currency field the unit is ``chips``.
+  The scale is per hand: a file whose split pot gives each winner half of the odd chip (some
+  Pluribus hands) is imported in tenths of a chip, ``"chips/10"``.
 * Seats: PHH lists players in dealing order (small blind first, button last; heads-up the big
   blind first, as in PokerKit). The ``seats`` field gives physical seat numbers (1-based).
   Without it the players sit in seats 0..n-1 and the last one has the button.
@@ -262,8 +267,39 @@ def _pending(state: State) -> str:
     return "more operations"
 
 
+def _check_cards(actions: Sequence[str]) -> None:
+    """Every known card in the deals and shows appears once. PokerKit only warns when a card
+    is dealt twice (not at all within one deal) and may then fail an internal assertion, so
+    this runs before the replay. A show may repeat the player's own dealt cards."""
+    board: list[str] = []
+    per_player: dict[str, tuple[list[str], list[str]]] = {}
+    for action in actions:
+        words = action.partition("#")[0].split()
+        if len(words) == 3 and words[:2] == ["d", "db"]:
+            board += _known(words[2])
+        elif len(words) == 4 and words[:2] == ["d", "dh"]:
+            per_player.setdefault(words[2], ([], []))[0].extend(_known(words[3]))
+        elif len(words) == 3 and words[1] == "sm" and words[2] != "-":
+            per_player.setdefault(words[0], ([], []))[1].extend(_known(words[2]))
+    seen = list(board)
+    for dealt, shown in per_player.values():
+        for cards in (dealt, shown):
+            if len(set(cards)) != len(cards):
+                raise _reject(RejectReason.INCONSISTENT, f"a player holds {cards} twice")
+        seen += dealt + [c for c in shown if c not in dealt]
+    repeated = sorted(c for c, k in Counter(seen).items() if k > 1)
+    if repeated:
+        raise _reject(RejectReason.INCONSISTENT, f"card(s) {repeated} dealt twice")
+
+
+def _known(cards: str) -> list[str]:
+    pairs = [cards[i : i + 2] for i in range(0, len(cards), 2)]
+    return [c for c in pairs if "?" not in c]
+
+
 def _replay(phh: PHH) -> State:
     """Apply every action through PokerKit's rules; return the finished state."""
+    _check_cards(phh.actions)
     try:
         state = phh.create_state()
     except (ValueError, TypeError) as exc:
@@ -280,6 +316,10 @@ def _replay(phh: PHH) -> State:
                 parse_action(state, action, phh.parse_value)
             except (ValueError, IndexError) as exc:
                 raise _reject(RejectReason.ILLEGAL_ACTION, f"action {k} {action!r}: {exc}") from exc
+            except AssertionError as exc:  # PokerKit's own invariants, on input it accepted
+                raise _reject(
+                    RejectReason.INCONSISTENT, f"action {k} {action!r} broke a PokerKit invariant"
+                ) from exc
         while state.can_burn_card():
             state.burn_card("??")
     for w in caught:
@@ -419,11 +459,13 @@ def _same_cards(dealt: Sequence[Any], shown: Sequence[Any]) -> bool:
     other than those dealt; a muck shows nothing and always fits.)"""
     if not shown:
         return True
-    known_dealt = {c for c in dealt if not c.unknown_status}
-    known_shown = {c for c in shown if not c.unknown_status}
-    return len(known_shown - known_dealt) <= len(dealt) - len(known_dealt) and len(
+    known_dealt = Counter(c for c in dealt if not c.unknown_status)
+    known_shown = Counter(c for c in shown if not c.unknown_status)
+    unknown_dealt = len(dealt) - known_dealt.total()
+    unknown_shown = len(shown) - known_shown.total()
+    return (known_shown - known_dealt).total() <= unknown_dealt and (
         known_dealt - known_shown
-    ) <= len(shown) - len(known_shown)
+    ).total() <= unknown_shown
 
 
 def _cards(cards: Sequence[Any]) -> tuple[CardObservation, CardObservation] | None:
@@ -578,7 +620,11 @@ def hand_from_phh(phh: PHH, *, hand_id: str | None = None, allow_rake: bool = Tr
     hole_cards = []
     for seat in sorted(order):
         cards = _cards(showdown.get(seat) or dealt[seat])
-        hole_cards.append(HoleCards(seat, cards, shown=bool(showdown.get(seat)) and bool(cards)))
+        try:
+            hole = HoleCards(seat, cards, shown=bool(showdown.get(seat)) and bool(cards))
+        except ValueError as exc:
+            raise _reject(RejectReason.INCONSISTENT, f"seat {seat}: {exc}") from exc
+        hole_cards.append(hole)
     payouts, rake = _results(phh, state, order, actions, showdown, allow_rake)
     positions = assign_positions(order, order[-1])
     try:

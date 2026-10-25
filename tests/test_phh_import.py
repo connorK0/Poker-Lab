@@ -218,6 +218,22 @@ def test_shown_cards_must_be_the_dealt_cards():
     assert [o.card for o in hand_from_phh(partial).hole_cards_of(0).cards] == ["9h", "9s"]
 
 
+@pytest.mark.parametrize(
+    "subs",
+    [
+        # Found by the fault injection of the first experiment run (see BUILD_LOG Step 32):
+        {'"d dh p1 ????"': '"d dh p1 9h9h"'},  # was accepted: the show "repaired" the deal
+        {'"d dh p2 KcKd"': '"d dh p2 KcKc"'},  # likewise, for the other player
+        {'"d dh p1 ????"': '"d dh p1 9h9h"', '"p1 sm 9h9s"': '"p1 sm"'},  # was a ValueError
+        {'"d db 2c3d4h"': '"d db 2c2c4h"'},  # within one deal: PokerKit does not even warn
+        {'"d db Ts"': '"d db Kc"'},  # board vs hole: PokerKit warns, may then fail an assert
+        {'"p1 sm 9h9s"': '"p1 sm 9hKc"'},  # a show of another player's card
+    ],
+)
+def test_cards_dealt_twice_are_rejected(subs):
+    assert _reason(_phh(SHOWDOWN, **subs)) == RejectReason.INCONSISTENT
+
+
 def test_unknown_hole_cards_may_be_left_implicit():
     text = FOREIGN.replace('  "d dh p2 ????",\n', "")
     assert hand_from_phh(PHH.loads(text)) == hand_from_phh(PHH.loads(FOREIGN))

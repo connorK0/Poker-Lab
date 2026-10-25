@@ -38,6 +38,12 @@ D. **What the imported hands show.** Per-player statistics of the Pluribus hands
    public information; the Phase 1 stats code; 95% Wilson intervals) next to the Phase 1
    bots' measured statistics: a first look at how far the synthetic population is from strong
    human players. Descriptive only. P3.7 fits priors to real data.
+
+Post hoc, after the first run (commit 582ac7c): that run falsified B1 (40 crashes, all from
+card mutations that dealt a card twice; the importer was fixed and B rerun) and C1 (8 of
+10,001 hands disagree). The disagreements are classified here: ``odd_chip`` when the two
+results differ only in who gets a split pot's odd chip (the Pluribus files record half chips;
+PokerKit's own loader gives the whole chip to one winner).
 """
 
 from __future__ import annotations
@@ -513,6 +519,17 @@ def _lenient_net(text: str, scale: int) -> list[int]:
     return [int(Decimal(p) * scale) for p in final.payoffs]
 
 
+def _odd_chip(ours: list[int], theirs: list[int], scale: int) -> bool:
+    """Post hoc: the results differ only in how a split pot's odd chip is shared (at most one
+    chip per player, between players who won something, summing to zero)."""
+    diffs = [a - b for a, b in zip(ours, theirs, strict=True)]
+    return (
+        sum(diffs) == 0
+        and all(abs(d) <= scale for d in diffs)
+        and all(d == 0 or o > 0 for d, o in zip(diffs, ours, strict=True))
+    )
+
+
 def dataset_task(path: str, root: str) -> dict[str, Any]:
     report = import_phh([path], root=root, allow_rake=False)
     agree = fixed = 0
@@ -527,10 +544,18 @@ def dataset_task(path: str, root: str) -> dict[str, Any]:
         if ours == theirs:
             agree += 1
         else:
-            disagreements.append({"hand": hand.hand_id, "importer": ours, "pokerkit": theirs})
+            disagreements.append(
+                {
+                    "hand": hand.hand_id,
+                    "importer": ours,
+                    "pokerkit": theirs,
+                    "odd_chip": _odd_chip(ours, theirs, int(scale or 1)),
+                }
+            )
         (again,) = loads_phh(hand_to_phh(hand).dumps())
         fixed += hand_from_phh(again, allow_rake=False) == hand
     pluribus = [h for h in report.hands if subset_of(h.metadata["import.file"]) == "pluribus"]
+    fractional = sum("/" in h.table.currency for h in pluribus)
     counters = counters_by_player(redact_hole_cards(h) for h in pluribus)
     return {
         "accepted": [(h.hand_id, h.metadata["import.file"]) for h in report.hands],
@@ -540,6 +565,7 @@ def dataset_task(path: str, root: str) -> dict[str, Any]:
         "agree": agree,
         "fixed": fixed,
         "disagreements": disagreements,
+        "fractional": fractional,
         "counters": {k: v.tolist() for k, v in counters.items()},
     }
 
@@ -575,6 +601,12 @@ def summarize_dataset(parts: list[dict[str, Any]], files: list[tuple[Path, str]]
         "cross_check": {"agree": agree, "of": len(accepted), "holds": agree == len(accepted)},
         "fixed_point": {"same": fixed, "of": len(accepted), "holds": fixed == len(accepted)},
         "disagreements": [d for p in parts for d in p["disagreements"]][:20],
+        "disagreement_kinds": {
+            "post_hoc": True,
+            "odd_chip": sum(d["odd_chip"] for p in parts for d in p["disagreements"]),
+            "other": sum(not d["odd_chip"] for p in parts for d in p["disagreements"]),
+        },
+        "fractional_chip_hands": sum(p["fractional"] for p in parts),
     }
 
 
@@ -807,7 +839,10 @@ def markdown_summary(r: dict[str, Any]) -> str:
         "",
         "* Prediction 1 (PokerKit's own loader agrees on every result): "
         f"{pd['cross_check']['agree']:,} of {pd['cross_check']['of']:,}; "
-        f"{_verdict(pd['cross_check']['holds'])}.",
+        f"{_verdict(pd['cross_check']['holds'])}. Post hoc: "
+        f"{pd['disagreement_kinds']['odd_chip']} of the disagreements differ only in who gets "
+        f"a split pot's odd chip, {pd['disagreement_kinds']['other']} otherwise; "
+        f"{pd['fractional_chip_hands']} Pluribus hands record half chips.",
         "* Prediction 2 (export then import reproduces every hand): "
         f"{pd['fixed_point']['same']:,} of {pd['fixed_point']['of']:,}; "
         f"{_verdict(pd['fixed_point']['holds'])}.",
