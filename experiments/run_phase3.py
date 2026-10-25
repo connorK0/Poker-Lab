@@ -29,6 +29,10 @@ is rebuilt):
    leave one player out against the uniform and synthetic priors; how many players a refit
    needs; whether the synthetic-trained classifier and action models transfer to the humans
    (support check, label-free consistency check, next-action log-loss) (P3.7).
+9. ``sequence``: an archetype classifier on raw action sequences (PyTorch: a GRU over each
+   hand's decisions, learned shrunk rates over hands) against Phase 1's classifier on Phase 1's
+   replicates and windows, with order and input ablations, five times the training bots, and
+   P3.7's consistency check on the professionals (P3.8).
 """
 
 from __future__ import annotations
@@ -49,6 +53,7 @@ STEPS = (
     "confirm",
     "import",
     "priors",
+    "sequence",
 )
 
 
@@ -70,6 +75,7 @@ def run(
         phase3_priors,
         phase3_pushfold,
         phase3_recommend,
+        phase3_sequence,
     )
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
@@ -82,6 +88,7 @@ def run(
         "confirm": phase3_confirm,
         "import": phase3_import,
         "priors": phase3_priors,
+        "sequence": phase3_sequence,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

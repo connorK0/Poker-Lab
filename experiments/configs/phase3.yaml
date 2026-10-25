@@ -127,3 +127,25 @@ priors:
   action_window: 100
   action_train_rows: 150000
   workers: 12
+
+sequence:
+  # P3.8: an archetype classifier on raw action sequences (PyTorch) vs the Phase 1 classifier,
+  # on Phase 1's replicates, and on the Pluribus professionals (pre-registered; see
+  # phase3_sequence.py).
+  phase1_config: experiments/configs/phase1.yaml
+  phase1_master_seed: 2026        # the five Phase 1 replicates, re-simulated with every token
+  variants: [seq, bag, counters]  # sequence model; order within a hand dropped; stats counters
+  model: {pool: rates, n_rates: 16, hidden: 64, epochs: 30, patience: 30, lr: 0.002,
+          weight_decay: 0.0001, dropout: 0.1, players_per_batch: 8}   # set on seeds 98 and 99
+  torch_threads: 8                # results are bit-identical for a fixed seed and thread count
+  real_source: pluribus           # or "standin": simulated players (development, quick run)
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  dataset_path: pluribus
+  bot_player: Pluribus            # never scored
+  transfer_models: [lr, seq]
+  extra_per_archetype: 240         # part C: more training bots (Phase 1: 60)
+  scale_variants: [bag, counters]
+  windows_max: 20                 # P3.7's windows per player and sample size
+  consistency_reference: 1000
+  bootstrap: 2000
+  workers: 12
