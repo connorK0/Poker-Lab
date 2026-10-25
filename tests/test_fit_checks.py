@@ -191,3 +191,29 @@ def test_recommender_falls_back_when_the_model_does_not_fit(prior):
     plain = PushFoldRecommender(10.0, prior, draws=500).recommend(actions.observations())
     assert plain.fit is None
     assert plain.advised is plain.best
+
+
+def test_fallback_policy_is_configurable(prior):
+    """With ``fallback_on=("stability",)`` a failed shown-hands check only warns (P3.5b)."""
+    params = PushFoldBotParams(0.85, 0.6, 0.03)
+    actions = ActionLog.from_hand_log(_log(params, 300, 8))
+    shown_fails = FitChecker({0: {"shown_hands": 1.01, "stability": 0.0}}, draws=100)
+    any_check = PushFoldRecommender(10.0, prior, draws=500, checker=shown_fails)
+    stability_only = PushFoldRecommender(
+        10.0, prior, draws=500, checker=shown_fails, fallback_on=("stability",)
+    )
+    strict = any_check.recommend(actions)
+    lenient = stability_only.recommend(actions)
+    assert strict.fit.flagged
+    assert lenient.fit.flagged
+    assert strict.falls_back
+    assert strict.advised.name == "equilibrium"
+    assert not lenient.falls_back
+    assert lenient.advised is lenient.best
+    assert lenient.best.name != "equilibrium"
+    text = lenient.explanation()
+    assert "Model check failed" in text
+    assert "recommendation stands" in text
+    assert "only a failed stability check" in text
+    with pytest.raises(ValueError, match="fallback_on"):
+        PushFoldRecommender(10.0, prior, fallback_on=("vibes",))
