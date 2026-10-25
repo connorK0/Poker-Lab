@@ -58,3 +58,17 @@ fitcheck:
   level: 0.9
   draws: 500
   workers: 4
+
+confirm:
+  stack: 10
+  seeds: 2
+  train_per_archetype: 5
+  test_per_archetype: 1
+  sizes: [10, 100]
+  calibration_bots: 20
+  fit_level: 0.05
+  check_draws: 100
+  ps: [0.25, 0.5]
+  level: 0.9
+  draws: 500
+  workers: 4

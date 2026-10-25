@@ -20,6 +20,8 @@ is rebuilt):
 5. ``fitcheck``: posterior predictive checks of the opponent model, calibrated on simulated
    bots, against well-specified, mildly and badly misspecified, and gear-changing bots: false
    alarms, power, and what falling back to equilibrium on a flag costs or saves (P3.5).
+6. ``confirm``: P3.5's post-hoc rule (fall back only when the stability check fails) on fresh
+   seeds, with pre-registered predictions that decide the recommender's default (P3.5b).
 """
 
 from __future__ import annotations
@@ -31,7 +33,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold", "exploit", "bridge", "recommend", "fitcheck")
+STEPS = ("pushfold", "exploit", "bridge", "recommend", "fitcheck", "confirm")
 
 
 def run(
@@ -45,6 +47,7 @@ def run(
     # Imported here: worker processes re-import this module (Windows spawn).
     from experiments import (
         phase3_bridge,
+        phase3_confirm,
         phase3_exploit,
         phase3_fitcheck,
         phase3_pushfold,
@@ -58,6 +61,7 @@ def run(
         "bridge": phase3_bridge,
         "recommend": phase3_recommend,
         "fitcheck": phase3_fitcheck,
+        "confirm": phase3_confirm,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

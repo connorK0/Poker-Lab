@@ -81,7 +81,8 @@ CONFIG = REPO_ROOT / "experiments" / "configs" / "phase3.yaml"
 POPULATIONS = ("standard", "pairs_first", "connectors_first", "gear_change")
 MISSPECIFIED = POPULATIONS[1:]
 P32_NAME = {"standard": "standard", "pairs_first": "misspecified"}
-RULES = ("lower_bound", "checked")
+# stability_only was found post hoc in P3.5 and is tested on fresh seeds in phase3_confirm (P3.5b)
+RULES = ("lower_bound", "checked", "stability_only")
 TOL = 1e-9
 _RECOMMENDERS: dict[int, PushFoldRecommender] = {}
 
@@ -260,10 +261,12 @@ def _share(k: int, n: int) -> dict[str, float]:
 
 
 def rule_score(b: dict[str, Any], n: str, rule: str) -> dict[str, float]:
+    """The candidate a rule plays: the top pick, or the equilibrium after a fallback."""
     s = b["sizes"][n]
-    if rule == "checked" and s["flagged"]:
-        return s["candidates"]["equilibrium"]
-    return s["candidates"][s["ranked"][0]]
+    fallback = (rule == "checked" and s["flagged"]) or (
+        rule == "stability_only" and s["failed"]["stability"]
+    )
+    return s["candidates"]["equilibrium" if fallback else s["ranked"][0]]
 
 
 def _coverage(bots: list[dict[str, Any]], n: str) -> dict[str, float]:
@@ -361,14 +364,11 @@ def predictions(agg: dict[str, Any], cfg: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def run(
-    seed: int, *, cfg: dict[str, Any], workers: int | None = None, out_dir: Path | None = None
-) -> dict[str, Any]:
-    out_dir = out_dir or RESULTS_ROOT / "phase3" / "fitcheck"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    meta = run_metadata(seed, cfg)
-    t_start = time.perf_counter()
-    seeds = derive_seeds(seed, cfg["seeds"])
+def evaluate(
+    seeds: list[int], cfg: dict[str, Any], workers: int | None = None
+) -> tuple[list[list[dict[str, Any]]], dict[str, Any]]:
+    """Calibrate the checks per seed, then play and check every test bot: the per-seed records
+    and the calibration summary (thresholds and median p-values)."""
     setups = {s: test_bots(s, cfg) for s in seeds}
     with ProcessPoolExecutor(max_workers=workers or cfg.get("workers")) as pool:
         calib_tasks = [
@@ -408,6 +408,18 @@ def run(
         }
         for s in seeds
     }
+    return per_seed, calibration
+
+
+def run(
+    seed: int, *, cfg: dict[str, Any], workers: int | None = None, out_dir: Path | None = None
+) -> dict[str, Any]:
+    out_dir = out_dir or RESULTS_ROOT / "phase3" / "fitcheck"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    meta = run_metadata(seed, cfg)
+    t_start = time.perf_counter()
+    seeds = derive_seeds(seed, cfg["seeds"])
+    per_seed, calibration = evaluate(seeds, cfg, workers)
     agg = aggregate(per_seed, cfg)
     results = {
         "meta": meta,
@@ -434,7 +446,11 @@ POP_LABELS = {
     "connectors_first": "Connectors first",
     "gear_change": "Gear change",
 }
-RULE_LABELS = {"lower_bound": "Lower-bound pick (P3.4)", "checked": "Checked pick"}
+RULE_LABELS = {
+    "lower_bound": "Lower-bound pick (P3.4)",
+    "checked": "Checked pick",
+    "stability_only": "Stability-only fallback (post hoc)",
+}
 
 
 def _fmt(d: dict[str, float]) -> str:

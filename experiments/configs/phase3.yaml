@@ -72,3 +72,19 @@ fitcheck:
   level: 0.9
   draws: 2000
   workers: 12
+
+confirm:
+  # P3.5b: P3.5's post-hoc stability-only fallback, tested on fresh seeds (pre-registered; see
+  # phase3_confirm.py). Identical to `fitcheck` except that the seeds are new.
+  stack: 10
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  sizes: [10, 30, 100, 300, 1000, 3000]
+  calibration_bots: 300
+  fit_level: 0.05
+  check_draws: 400
+  ps: [0.1, 0.25, 0.5, 0.75, 0.9]
+  level: 0.9
+  draws: 2000
+  workers: 12
