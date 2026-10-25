@@ -90,6 +90,11 @@ def test_save_load_round_trip_and_refit(tmp_path):
     assert again.hands_ingested == store.hands_ingested
     assert again.refit_priors(min_players=30)
     assert not ProfileStore().refit_priors(min_players=30)
+    few = ProfileStore()
+    few.ingest_many(_session(6, [f"r{i}" for i in range(6)]))
+    assert not few.refit_priors()  # default: 8 players (P3.7)
+    few.ingest_many(_session(7, [f"t{i}" for i in range(6)]))
+    assert few.refit_priors()
 
 
 def test_halves_split_by_hand_id_and_sum_to_totals():

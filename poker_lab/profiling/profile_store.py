@@ -11,7 +11,9 @@
 * Profiles persist to JSON across sessions (``save`` / ``load``).
 
 Priors default to uniform Beta(1, 1); once enough players are stored, ``refit_priors()``
-fits empirical-Bayes priors to the stored population itself (needs >= ``min_players``).
+fits empirical-Bayes priors to the stored population itself (needs >= ``min_players``,
+default 8: P3.7 found priors refit on fewer players worse than uniform on average for bots,
+while for professionals two players already helped).
 Each player's counters are kept in two halves (a stable hash of the hand id picks the half),
 so a refit can also fit the bet-size priors, whose pseudo-counts need two disjoint samples per
 player (``fit_normal_prior``). Stores saved in format 1 kept totals only; their players have
@@ -39,6 +41,7 @@ from poker_lab.profiling.stats import BINOMIAL_STATS, COUNTERS, N_COUNTERS, hand
 from poker_lab.schema import HandHistory, HandStatus, redact_hole_cards
 
 FORMAT = "poker_lab.profile_store/2"
+MIN_PLAYERS = 8  # set by the pre-registered rule of P3.7 (experiments/phase3_priors.py)
 _FORMAT_V1 = "poker_lab.profile_store/1"
 
 
@@ -157,7 +160,7 @@ class ProfileStore:
             source_hand_ids=frozenset(self._hand_ids),
         )
 
-    def refit_priors(self, min_players: int = 30) -> bool:
+    def refit_priors(self, min_players: int = MIN_PLAYERS) -> bool:
         """Fit empirical-Bayes priors to the stored players (if there are enough of them).
 
         The size priors are refit from the split halves; if any player has none (loaded from
