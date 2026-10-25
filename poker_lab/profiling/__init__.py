@@ -7,6 +7,8 @@
 * ``support``: flags profiles unlike every training archetype (P3.7).
 * ``regression``: continuous bot-parameter regression.
 * ``situations`` / ``action_model``: next-action prediction from public situations + profile.
+* ``sequences`` / ``sequence_model``: every hand as tokens, and a PyTorch classifier on them
+  (P3.8; needs the ``nn`` extra).
 * ``profile_store``: per-player profiles accumulated across sessions from completed hands.
 * ``push_fold``: one opponent's push/fold observations from completed hands (P3.4).
 
@@ -60,6 +62,8 @@ _EXPORTS = {
         "hand_half",
     ),
     "poker_lab.profiling.support": ("SupportCheck",),
+    "poker_lab.profiling.sequences": ("TOKEN_FEATURES", "SequenceRowExtractor", "hand_tokens"),
+    "poker_lab.profiling.sequence_model": ("HandSequences", "SequenceClassifier"),
     "poker_lab.profiling.push_fold": ("PushFoldHistory", "push_fold_observations"),
 }
 _WHERE = {name: module for module, names in _EXPORTS.items() for name in names}
