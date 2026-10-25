@@ -19,7 +19,7 @@ button moves one occupied seat clockwise per hand.
 from __future__ import annotations
 
 import random
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 
 from pokerkit import (
@@ -29,6 +29,7 @@ from pokerkit import (
     CompletionBettingOrRaisingTo,
     HoleCardsShowingOrMucking,
     Mode,
+    Operation,
     State,
 )
 from pokerkit.state import AntePosting
@@ -76,6 +77,41 @@ _POST_ORDER = {
 
 class EngineError(RuntimeError):
     """Internal inconsistency between PokerKit and the recorded hand (a bug, not bad input)."""
+
+
+def forced_posts(
+    operations: Iterable[Operation], order: Sequence[int], stacks: Mapping[int, int]
+) -> list[Action]:
+    """Schema actions for PokerKit's ante and blind posts, in conventional order (antes, SB,
+    BB, straddles). PokerKit posts in player-index order, which heads-up puts the big blind
+    first. ``order`` maps player index to seat; ``stacks`` are the stacks before the posts.
+    Other operations are ignored."""
+    heads_up = len(order) == 2
+    stacks = {s: stacks[s] for s in order}
+    posts: list[Action] = []
+    for op in operations:
+        if isinstance(op, AntePosting):
+            seat = order[op.player_index]
+            stacks[seat] -= op.amount
+            action = Action(seat, "preflop", ActionType.POST_ANTE, op.amount, 0, stacks[seat] == 0)
+        elif isinstance(op, BlindOrStraddlePosting):
+            i = op.player_index
+            if heads_up:
+                kind = ActionType.POST_BIG_BLIND if i == 0 else ActionType.POST_SMALL_BLIND
+            else:
+                kind = (
+                    (ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND)[i]
+                    if i < 2
+                    else ActionType.POST_STRADDLE
+                )
+            seat = order[i]
+            stacks[seat] -= op.amount
+            action = Action(seat, "preflop", kind, op.amount, op.amount, stacks[seat] == 0)
+        else:
+            continue
+        posts.append(action)
+    posts.sort(key=lambda a: _POST_ORDER[a.action_type])
+    return posts
 
 
 @dataclass(frozen=True, slots=True)
@@ -237,36 +273,7 @@ class TableSimulator:
         return self._complete(state, order, hand_id)
 
     def _record_forced_posts(self, state: State, order: tuple[int, ...], hand_id: str) -> None:
-        """Record antes and blinds in conventional order (antes, SB, BB, straddles). PokerKit
-        posts in player-index order, which heads-up puts the big blind first."""
-        heads_up = len(order) == 2
-        stacks = {s: self.stacks[s] for s in order}
-        posts: list[Action] = []
-        for op in state.operations:
-            if isinstance(op, AntePosting):
-                seat = order[op.player_index]
-                stacks[seat] -= op.amount
-                action = Action(
-                    seat, "preflop", ActionType.POST_ANTE, op.amount, 0, stacks[seat] == 0
-                )
-            elif isinstance(op, BlindOrStraddlePosting):
-                i = op.player_index
-                if heads_up:
-                    kind = ActionType.POST_BIG_BLIND if i == 0 else ActionType.POST_SMALL_BLIND
-                else:
-                    kind = (
-                        (ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND)[i]
-                        if i < 2
-                        else ActionType.POST_STRADDLE
-                    )
-                seat = order[i]
-                stacks[seat] -= op.amount
-                action = Action(seat, "preflop", kind, op.amount, op.amount, stacks[seat] == 0)
-            else:
-                continue
-            posts.append(action)
-        posts.sort(key=lambda a: _POST_ORDER[a.action_type])
-        for action in posts:
+        for action in forced_posts(state.operations, order, self.stacks):
             self.store.record_action(hand_id, action)
 
     @staticmethod
