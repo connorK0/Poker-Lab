@@ -64,6 +64,7 @@ $B(a,b)$ the beta function.
   * [Step 30: Checking the model before trusting it](#step-30-checking-the-model-before-trusting-it-p35)
   * [Step 31: Confirming a post-hoc rule on fresh data](#step-31-confirming-a-post-hoc-rule-on-fresh-data-p35b)
   * [Step 32: Importing hand histories from text files](#step-32-importing-hand-histories-from-text-files-p36)
+  * [Step 33: Priors from real players](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2910,6 +2911,241 @@ exactly these statistics, which is what P3.7 (priors fitted to real data) has to
   first run fetches the dataset). Command-line import:
   `python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake`.
 
+## Step 33: Priors from real players, and do the bot-trained models transfer? (P3.7)
+
+**The question.** Phase 1 fit its empirical-Bayes priors, its classifier and its action
+models to bots. P3.6 brought in real hands. Two questions follow. Do priors fit to real players
+estimate a new real player's statistics better than the defaults? And do the models trained on
+bots still mean what they say when they meet real players?
+
+**Which data.** A search for public no-limit hold'em hand histories (October 2026) found only
+one in-scope source of multi-way human play: the Pluribus hands (13 professionals, 10,000
+hands, 6-max, 100 big blinds). The others were heads-up only (the DeepStack study's logs, about
+45,000 hands, in the Science supplement), bot against bot (the Annual Computer Poker
+Competition logs), or collected in ways the project's "no scraping" rule excludes: HandHQ
+(scraped from real-money sites in 2009) and the IRC Poker Database (play-money games logged by
+an observer bot in 1995-2001). The user chose Pluribus only. Thirteen elite professionals are
+a small and unusual population; everything below is about them, not about a home game.
+
+**Empirical Bayes, revisited.** Step 10 models each player's true rate $p_i$ for a binomial
+statistic as a draw from a population prior $\mathrm{Beta}(\alpha, \beta)$. Write the prior as
+a mean $\mu = \alpha/(\alpha+\beta)$ and a concentration $\kappa = \alpha + \beta$ (in
+pseudo-opportunities). The concentration says how alike the players are: the between-player
+standard deviation of the true rate is
+
+$$\mathrm{sd}(p) = \sqrt{\frac{\mu(1-\mu)}{\kappa + 1}}.$$
+
+The posterior mean after $k$ successes in $m$ opportunities, $(\alpha + k)/(\kappa + m)$, gives
+the prior the weight of $\kappa$ extra opportunities. A homogeneous population (large
+$\kappa$) shrinks hard; a varied one (small $\kappa$) lets the data speak sooner.
+
+**Scoring a prior without knowing anyone's true rate.** For a held-out player, observe a window
+of $n$ hands and form the estimate $e$ (the posterior mean). The target is the player's rate
+$r'$ in all their *other* hands. $r'$ is noisy, but its noise is independent of the window, so
+with $p$ the player's true rate and $E[r' \mid p] = p$,
+
+$$E[(e - r')^2] = E[(e - p)^2] + E[(r' - p)^2],$$
+
+because the cross term $E[(e - p)(r' - p)]$ vanishes. The second term is the same for every
+prior, so *differences* in this score between priors are unbiased for differences in mean
+squared error against the true rate. For the RMSE shown, an unbiased estimate of the noise
+term, $r'(1 - r')/(m' - 1)$ with $m'$ held-out opportunities, is subtracted. A test checks the
+whole estimator on simulated players whose true rates are known: the corrected score lands
+within 5% of the true error.
+
+**Opportunities weigh players unequally.** The beta-binomial marginal likelihood
+(Step 10) counts every opportunity: a player with 300 c-bet chances moves the fit more than one
+with 3. That is the maximum-likelihood answer, but when how often a player gets a chance is
+related to how they use it, the fit is pulled toward the players with many chances. Among the
+bots, calling stations rarely raise before the flop, so they get few c-bet chances, and they
+c-bet least. A development run found that a c-bet prior fit to all 300 training bots is worse
+than the uniform prior for estimating held-out bots, for this reason. The rule for how many
+players a refit needs therefore uses the mean error over the ten statistics, and per-statistic
+failures are reported.
+
+**A support check.** A classifier returns probabilities over its five archetypes for any input,
+including a player unlike all of them, and its calibration was measured only on bots.
+`SupportCheck` asks first whether a profile resembles any archetype it was trained on. For each
+training sample size it fits one Gaussian per archetype (mean $\mu_k$, covariance $S_k$) in the
+classifier's feature space (logits of rates, logs of sizes) and scores a profile $x$ by its
+smallest squared Mahalanobis distance,
+
+$$d^2(x) = \min_k\, (x - \mu_k)^\top S_k^{-1} (x - \mu_k).$$
+
+The threshold is *split-conformal* (Vovk, Gammerman and Shafer 2005): 20% of the training
+players are held out (all of a player's windows together), and with $m$ held-out windows of the
+same size,
+
+$$p(x) = \frac{1 + \#\{\text{held-out windows with } d^2 \ge d^2(x)\}}{m + 1}.$$
+
+A profile is flagged when $p(x) \le \alpha$. If a new window and the held-out ones are
+exchangeable (drawn the same way), it is flagged with probability at most $\alpha$, whatever
+the archetypes' true shapes: the Gaussians only order the profiles. One consequence decided
+$\alpha$. The smallest possible p-value is $1/(m+1)$, and Phase 1 bots have only one
+2,000-hand window each, so 60 held-out bots give $m = 60$ at that size: at $\alpha = 1\%$
+nothing could ever be flagged there. The check uses $\alpha = 5\%$, the level of P3.5's checks.
+
+**A label-free calibration check.** Real players have no true archetype, but a calibrated
+classifier still makes a testable promise. Its top probability after $n$ hands should match how
+often its label agrees with the label it gives a later, disjoint block of 1,000 hands of the same
+player. The *gap* is mean top probability minus that agreement rate. It is not zero even for
+bots (the reference label is itself sometimes wrong), and it depends on the archetype: about 0
+for calling stations, about $-0.1$ for TAG bots at 1,000 hands. So each player is compared with
+bots that got the *same reference label*: a player's expected gap is the bots' gap for their
+reference label, averaged over their 2,000-hand chunks. The verdict, fixed in advance, uses the
+95% interval of (gap minus expected gap), averaged over players:
+
+* *transfers* if every interval lies within $\pm 0.10$ (an equivalence test: the data must show
+  the difference is small, not merely fail to show it is large);
+* *fails* if some interval excludes 0;
+* *inconclusive* otherwise.
+
+**A control with the real data's shape.** Thirteen players with 488 to 9,121 hands each, at
+tables that always include Pluribus, are not the population the checks were calibrated on. The
+control replays the real seating (which players sat in which of the 92 sessions, and for how
+many hands) with each professional replaced by a Phase 1 bot and Pluribus by a TAG bot, and runs
+every check on it. A check that fails on the professionals and passes on the control fails
+because of the players, not the pipeline or the amount of data.
+
+**Developed on stand-ins, then run once.** The whole pipeline was built and debugged on
+simulated stand-ins only: the quick configuration and two full-size runs on development seeds
+98 and 99, with 13 Phase 1 bots playing in random sessions as the "players". The real hands were
+loaded once before the plan was committed, to check that the loader reproduces P3.6's
+per-player hand counts. The stand-in runs changed five things before the pre-registration
+(commit `9fce42a`): the support check's $\alpha$ (1% could never flag at 2,000 hands); the
+consistency check's comparison with label-matched bots (the raw gap depends on the archetype);
+its verdict on intervals instead of point estimates (with 8 players, noise alone could decide a
+point estimate); the min-players rule on the mean over statistics (the c-bet prior above); and
+two bounds for the control. The predictions themselves are about the professionals, whose
+statistics P3.6 had already shown, so the ones that depend on how far they sit from the bots
+are not blind. Part A has no predictions for that reason.
+
+**The experiment** (`experiments/phase3_priors.py`; seed 2026; 9 minutes; the five Phase 1
+replicates come from the simulation cache, re-simulated under the current code and identical
+to the old cache bit for bit):
+
+* *A.* Priors fit to the 13 professionals, next to the bots' priors.
+* *B.* Leave one professional out: priors fit to the other twelve against the uniform default
+  and the bots' prior, on windows of 25 to 1,000 hands. *B3* turns the professionals' prior on
+  the bots. *B4* refits on $k$ players to set `refit_priors`' default.
+* *C.* Phase 1's classifier on windows of the professionals' hands: the support check, the
+  labels, the consistency check.
+* *D.* Next-action log-loss on the professionals' decisions (the Phase 5 metric), for models
+  trained on bots and models trained on the other professionals (leave one out).
+* *Control.* Parts A-D on Phase 1 bots replaying the real seating.
+
+**Results** (commit `9fce42a`):
+
+| Prediction | Result | Verdict |
+|---|---|---|
+| B1: the professionals' prior beats uniform, every statistic, 25-200 hands | all 10 at 25, 50, 100 hands; 7 of 10 at 200 | **does not hold** |
+| B2: it beats the bots' prior, same criterion | 28 of 40 statistic-size pairs | **does not hold** |
+| B3: on bots, it is worse than uniform for at least 5 of 10 statistics at 100 and 500 hands | 8 and 8 | holds |
+| C1a: held-out bots flagged at most 7% | at most 5.8% | holds |
+| C1b: professionals flagged at least 80% at 500-2,000 hands | 100% | holds |
+| C3: consistency verdict *fails* | *fails* (overconfident at 25-100 hands) | holds |
+| D1: the bot-trained model predicts worse | by 0.08-0.12 nats per decision | holds |
+| D2: the profile helps by less than 3% | yes, except the bot-trained model at 1,500 hands (3.8%) | **does not hold** |
+| D3: the bot-trained model is worse calibrated | yes at every checkpoint, but the interval excludes 0 only at 0 and 25 hands | **does not hold** |
+| Control C1: flagged at most 25% | 2-6% up to 200 hands, 24-56% at 500-2,000 | **does not hold** |
+| Control C3: not *fails* | *inconclusive* | holds |
+| Control D1: bot-trained model not worse | yes | holds |
+| Control D2: the profile helps by at least 3% | 13-16% | holds |
+| B4 decision: `min_players` | 2 for professionals, 8 for bots: **8** (was 30) | rule fired |
+
+**A. The professionals are alike.** Their priors are concentrated (the concentration is 36 to
+1,551 pseudo-opportunities, against 5 to 56 for the bots), so the between-player spread is
+small:
+
+| | VPIP | PFR | 3-bet | C-bet | Fold to c-bet | WTSD | W\$SD |
+|---|---|---|---|---|---|---|---|
+| Professionals: mean | 26.5% | 17.9% | 8.2% | 51.6% | 45.6% | 30.3% | 51.9% |
+| Professionals: SD between players | 2.9 | 1.6 | 1.5 | 7.3 | 5.0 | 1.2 | 3.3 |
+| Phase 1 bots: mean | 31.9% | 17.8% | 10.0% | 65.3% | 38.9% | 50.7% | 50.1% |
+| Phase 1 bots: SD between players | 17.1 | 12.3 | 9.6 | 19.2 | 15.3 | 11.1 | 6.6 |
+
+(SD in percentage points.) The bots differ from each other 1.2 to 9.5 times as much as the
+professionals do. The professionals also size differently: post-flop bets of 0.64 of the pot
+and opens to 2.4 big blinds, against 0.82 and 4.0 for the bots. Pluribus sits at the
+professionals' center on almost every statistic.
+
+**B. A prior from the right population is worth hundreds of hands.** RMSE against the true
+rate, percentage points, mean over the ten statistics:
+
+| Hands | Uniform | Bots' prior | Professionals' prior (leave one out) |
+|---|---|---|---|
+| 25 | 13.8 | 10.2 | 4.8 |
+| 100 | 10.8 | 8.1 | 4.6 |
+| 200 | 8.5 | 6.9 | 4.4 |
+| 1,000 | 4.9 | 4.5 | 3.1 |
+
+After 25 hands the right prior is better than the default after 1,000. For WTSD the
+professionals differ so little that the prior alone is as good as anything the hands add (the
+corrected error is 0.0: below what the held-out noise lets us resolve). B1 fails only at 200
+hands, where three intervals (VPIP, PFR, fold to c-bet) reach below 0: by then the data carry
+those estimates whatever the prior. B2 fails more widely: the bots' prior is close for W\$SD
+(both centered near 50%) and fold to c-bet.
+
+*B3, the other side.* On the bots, the professionals' prior is the worst of the three: 14.8
+points after 100 hands against 11.1 for uniform, worse for 8 of the 10 statistics at 100 and at
+500 hands. A concentrated prior from one population is confidently wrong about another. A home
+game is not a table of professionals, so these priors are not shipped as a default: refit on
+your own players.
+
+*B4.* A refit helps from 2 professionals on, but needs 8 bots: with a varied population, a
+handful of players gives a prior that is confidently wrong about the rest. The pre-registered
+rule took the larger value, so `ProfileStore.refit_priors` now refits from 8 players (was 30).
+
+**C. The classifier does not transfer.** The support check flags 52% of the professionals'
+25-hand windows, 95% at 100 hands and all of them from 200 hands, while held-out bots stay at
+2.8-5.8%. Pluribus is flagged 77-100%. The classifier still answers: it calls the
+professionals TAG (64% of windows at 2,000 hands) or LAG (33%), with lower confidence than on
+bots (0.71 against 0.91). And the confidence it does give is too high. Compared with bots that
+got the same label, its top probability exceeds its agreement with a later 1,000-hand look by
+0.14, 0.13 and 0.12 at 25, 50 and 100 hands (intervals above 0): the verdict is *fails*. The
+labels are not a description of these players, and their probabilities are not calibrated for
+them.
+
+*The control's surprise.* Bots replaying the professionals' seats were flagged at the nominal
+rate up to 200 hands (2-6%) but 24%, 28% and 56% at 500, 1,000 and 2,000 hands. The
+pre-registered bound of 25% failed. The development stand-ins, seated at random, stayed at
+9-18%. The likely reason, not tested here: statistics depend on the opponents, and in the
+real seating each player meets the same few opponents for thousands of hands, while Phase 1's
+league redraws its tables every 50 hands. So at large samples the support check also reacts
+to the table, not only to the player. At small samples, where the professionals are already
+flagged 52-95%, the control shows the flags come from the players.
+
+**D. Real players need a model trained on real players.** A next-action model trained on bots
+is 0.08 to 0.12 nats per decision worse on the professionals than one trained on the other
+professionals (0.726 against 0.620 with no history), and worse calibrated (error 0.038-0.047
+against 0.013-0.027). Adding the player's profile helps almost nothing: 0.0% to -2.3% for the
+model trained on professionals (it makes the log-loss slightly worse), 1.0% to 3.8% for the
+bot-trained one, against 11-13% on the bots in Phase 1 (13-16% on the control). With players
+this alike, knowing the population is what predicts their actions; for Phase 5 that population
+model has to come from real hands.
+
+**What changed in the library.** `ProfileStore` keeps split halves (format 2, loads format 1),
+so a refit also fits the size priors; `refit_priors` refits from 8 players; `SupportCheck` is
+available next to the classifier. Nothing is shipped from the professionals' data.
+
+**Limitations.** Thirteen elite professionals, in a lab setting, all of whose tables included
+Pluribus; whatever these results say about real players, they say it about this group. The
+consistency check covers the 8 professionals with at least 2,000 hands. The control explains
+less than hoped at large samples, because a fixed table changes the statistics.
+
+**Verification.**
+
+* `tests/test_profile_store.py` (split halves sum to totals and follow the hand id; a refit fits
+  the size priors from halves and keeps them for a format 1 file; the new default),
+  `tests/test_support_check.py` (held-out split by player; false alarms near alpha on new
+  players; shifted players flagged; nearest size in log hands; pooled covariance for small
+  classes), `tests/test_priors_experiment.py` (the corrected held-out error within 5% of the
+  true error on simulated players with known rates; the decision rules; session order; seating
+  blocks).
+* The re-simulated Phase 1 cache is identical to the old one (all counters and decision rows).
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only priors` (9 minutes with the
+  simulation cache).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -2926,13 +3162,15 @@ exactly these statistics, which is what P3.7 (priors fitted to real data) has to
 | Contract tests | every `StrategyProvider` and `ExploitEngine` through the same checks | future implementations inherit the guarantees |
 | Adversarial tests | ten attempts to smuggle opponent cards into the Advisor | a firewall is only as good as its attack tests |
 | Fault injection | 33,540 deliberately damaged hand-history files (Step 32) | measures what a validator catches, and found two bugs its unit tests missed |
+| Estimators against known truth | the held-out prior error, corrected for noise, within 5% of the true error on players with known rates (Step 33) | an evaluation metric is code too, and can be wrong |
+| Simulated controls | the real data's seating replayed by bots, run through every check (Step 33) | separates what the players do from what the pipeline and the data's shape do |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 336 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 348 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2945,6 +3183,9 @@ without PyTorch). The explorer's browser behavior has its own check
   package versions and the simulation fingerprint.
 * Simulations are cached by config plus fingerprint (`experiments/cache/`, git-ignored),
   so analyses can be re-run in minutes and stale data cannot be reused.
+* Real data are analysed once. An experiment on real hands is developed on simulated
+  stand-ins with the same code path (P3.7: `real_source: standin`) and on development seeds,
+  so the pre-registered run is the first time the analysis sees the real data.
 * External data are pinned: the PHH dataset is fetched at a fixed git commit into a cache
   outside the project, and results record that commit and a SHA-256 over every file read.
 
@@ -2956,6 +3197,8 @@ without PyTorch). The explorer's browser behavior has its own check
   `"W$SD"`); use single-quoted here-strings (`@' ... '@`) for commit messages.
 * *Encodings:* Windows PowerShell 5.1's `Set-Content -Encoding utf8` writes a byte-order mark;
   rewrite files with Python when the exact bytes matter.
+* *Line endings:* `Path.write_text` translates `\n` to `\r\n` on Windows; scripts that edit
+  source files use `write_bytes` (or `newline="\n"`).
 * *Exit codes:* git writes some output to stderr, which PowerShell can report as a failure even
   when the commit succeeded; check `git log` rather than the exit code.
 * *Synced folders:* a virtual environment inside OneDrive syncs thousands of files; prefer one
@@ -3026,6 +3269,11 @@ numeric table next to it, so no number depends on reading a color.
 | File keys relative to each folder collided across the Pluribus folders (`100/0` and `101/0` both became `0`) | a fixed-point check on two folders rejected half the hands as duplicates | keys relative to the common parent (or an explicit `root`) | [32](#step-32-importing-hand-histories-from-text-files-p36) |
 | `invert_yaxis()` on every panel of a shared-y figure flipped it back (an even number of panels) | looking at the figure: rows bottom-up, legend over the data | invert once | [32](#step-32-importing-hand-histories-from-text-files-p36) |
 | A pilot run wrote into the committed results folder (the script's default output ignores the config's name) | `git status` before the pre-registration commit | deleted the pilot output; quick runs go through `run_phase3 --quick` | [32](#step-32-importing-hand-histories-from-text-files-p36) |
+| Seating grouped by the players' order: PHH lists players in dealing order, which rotates with the button, so every hand became its own session | loader check (10,000 blocks where 92 session folders were expected) | group a session's hands by the set of players | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
+| A support check at alpha = 1% could never flag a 2,000-hand profile: 60 held-out windows make the smallest p-value 1/61 | reasoning about the conformal p-value's floor during development | alpha = 5% | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
+| Comparing players' consistency gap with all bots mixes miscalibration with archetype mix (the gap is about 0 for calling stations and -0.1 for TAG bots) | per-archetype gaps in a development run | compare each player with bots of the same reference label | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
+| A min-players rule over every statistic would never fire: even 300 bots give a c-bet prior worse than uniform | quick stand-in run | rule on the mean over statistics; per-statistic failures reported | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
+| Patch scripts wrote CRLF line endings (Python's text mode on Windows) | git's line-ending warning | write bytes; normalize before committing | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
 
 ---
 
@@ -3045,7 +3293,9 @@ numeric table next to it, so no number depends on reading a color.
 | Capability | an unforgeable reference whose possession grants a permission |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
+| Concentration (of a Beta prior) | $\kappa = \alpha + \beta$, the prior's weight in pseudo-opportunities; large when the players are alike |
 | Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
+| Conformal p-value | the rank of a new score among held-out scores, $(1 + \#\{\text{held-out} \ge \text{new}\})/(m + 1)$; valid for exchangeable data whatever the model (Vovk et al. 2005) |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Control variate | a term with known zero mean subtracted from an estimator to cut its variance |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
@@ -3060,6 +3310,7 @@ numeric table next to it, so no number depends on reading a color.
 | Effective stack | the smaller of two players' stacks: the most either can win or lose against the other |
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
+| Equivalence test | a test that the difference is small (its interval inside a margin), not merely not shown to be large (Schuirmann 1987) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Fault injection | damaging valid inputs on purpose to measure what a checker catches; mutation testing aimed at data |
 | Fixed point (of a round trip) | data that come back unchanged after export and re-import |
@@ -3071,8 +3322,10 @@ numeric table next to it, so no number depends on reading a color.
 | Importance sampling | estimating averages under a target distribution from draws of an easier proposal, each weighted by target / proposal |
 | Information set | the histories a player cannot tell apart when acting |
 | Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
+| Leave one player out | fit on every player but one, score the one; repeated for each, so no player is in its own training data |
 | Log-loss | mean negative log-probability of the true class |
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
+| Mahalanobis distance | distance scaled by a covariance, $(x - \mu)^\top S^{-1}(x - \mu)$: how many standard deviations away, in every direction at once |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | Mid-p value | a p-value that counts ties with the observed statistic as half, for discrete statistics |
@@ -3101,6 +3354,7 @@ numeric table next to it, so no number depends on reading a color.
 | Stationarity | the data-generating process does not change over time |
 | Stratified sampling | splitting a Monte Carlo estimate into strata (here: combo pairs) sampled equally, removing the variance between strata |
 | Street | betting round: preflop, flop, turn, river |
+| Support check | flags inputs unlike the training data, so a model's output is not trusted where it was never trained |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
@@ -3205,6 +3459,17 @@ Statistics and machine learning
   File Format Specification*). IEEE Conference on Games; arXiv:2312.11753. (PHH, Step 32)
 * Brown, N., Sandholm, T. (2019). *Superhuman AI for multiplayer poker.* Science 365. (The
   Pluribus hands)
+* Kim, J. (2025). *A Dataset of Poker Hand Histories*, v3. Zenodo,
+  doi:10.5281/zenodo.10796885. CC BY 4.0. (The survey in Step 33)
+* Moravcik, M. et al. (2017). *DeepStack: Expert-level artificial intelligence in heads-up
+  no-limit poker.* Science 356. (Its supplement holds about 45,000 hands against 33 players)
+* Vovk, V., Gammerman, A., Shafer, G. (2005). *Algorithmic Learning in a Random World.*
+  Springer. (Conformal prediction; the support check's p-values)
+* Mahalanobis, P. C. (1936). *On the Generalised Distance in Statistics.* Proceedings of the
+  National Institute of Sciences of India 2.
+* Schuirmann, D. J. (1987). *A Comparison of the Two One-Sided Tests Procedure and the Power
+  Approach for Assessing the Equivalence of Average Bioavailability.* Journal of
+  Pharmacokinetics and Biopharmaceutics 15. (Equivalence tests)
 * DeMillo, R. A., Lipton, R. J., Sayward, F. G. (1978). *Hints on Test Data Selection: Help for
   the Practicing Programmer.* Computer 11(4). (Mutation testing)
 * Miller, B. P., Fredriksen, L., So, B. (1990). *An Empirical Study of the Reliability of UNIX
@@ -3261,3 +3526,8 @@ Software design
   `3c1f25c`, cross-checked against `experiments/results/phase3/import/import_summary.md`; the
   first run's numbers (commit `582ac7c`) come from its saved summary, and the mutation totals
   were computed from both runs' `import.json` for this step.
+* 2026-10-25: Step 33 (priors from real players; transfer checks). Results from commit
+  `9fce42a`, cross-checked against `experiments/results/phase3/priors/priors_summary.md`; the
+  between-player SDs, per-statistic errors and consistency rates were computed from
+  `priors.json` for this step. The figures were redrawn from that file after the run with
+  clearer labels (no number changed).

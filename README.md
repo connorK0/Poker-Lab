@@ -522,7 +522,44 @@ bugs;
   play preflop between the Phase 1 TAG and LAG bots (VPIP 27%, PFR 18%), but they reach
   showdown after the flop 30% of the time, where every bot archetype averages 43–70%.
 
-Next: population priors fitted to real data (P3.7); see [PROGRESS.md](PROGRESS.md).
+**Priors from real players, and do the bot-trained models transfer? (P3.7).** A survey of
+public hand histories found one in-scope source of multi-way human play: the 13 professionals
+of the Pluribus hands (data scraped from online sites and play-money games logged by a bot stay
+out). A pre-registered experiment fit priors to them, scored each one leave-one-player-out, and
+ran the Phase 1 classifier and action models on them, with a control of Phase 1 bots replaying
+the professionals' seats (commit `9fce42a`;
+[`priors_summary.md`](experiments/results/phase3/priors/priors_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/priors/priors_estimation-dark.png">
+  <img alt="Estimation error of a player's statistics against hands observed, for a uniform prior, a prior fit to the Phase 1 bots and a prior fit to the other professionals: on the professionals, the professionals' prior is off by under 5 points from 25 hands while the others start at 10 to 14; on the bots, the professionals' prior is the worst of the three" src="experiments/results/phase3/priors/priors_estimation.png">
+</picture>
+
+* **A prior from the right population is worth hundreds of hands.** Fit to the other twelve
+  professionals, it estimates a new professional's statistics to within 4.8 points after 25
+  hands (mean over ten statistics), better than the uniform default does after 1,000 (4.9).
+  The professionals are far more alike than the bots: between-player spreads of 1.2 to 8.2
+  points, against 6.6 to 19.2.
+* **And a liability anywhere else.** On the Phase 1 bots the same prior is worse than uniform
+  for 8 of 10 statistics. So nothing is shipped from these data: `ProfileStore.refit_priors`
+  refits on your own players, now from 8 of them (was 30; by the pre-registered rule, a refit
+  helps from 2 professionals but needs 8 bots).
+* **The bot-trained classifier does not transfer.** A new support check flags every
+  professional's profile as unlike any training archetype from 200 hands (held-out bots: at
+  most 5.8%). The classifier still calls them TAG or LAG, and a label-free consistency check
+  finds its confidence 0.12 to 0.14 too high.
+* **Real players need a model trained on real players.** Predicting the next action, a model
+  trained on bots is 0.08 to 0.12 nats per decision worse than one trained on the other
+  professionals, and a player's own profile adds at most 3.8% (on bots it cut the log-loss by
+  11-13%).
+* **Five of 13 predictions failed.** The professionals' prior beats the defaults clearly up to
+  100 hands but not for every statistic at 200; the profile gain crossed 3% once; the
+  calibration gap was not significant from 100 hands; and the control: bots in the
+  professionals' seats were flagged 24-56% at 500 to 2,000 hands, so at large samples the
+  support check also reacts to who sits at the table.
+
+Next: an optional sequence model over raw action sequences (P3.8); see
+[PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -546,9 +583,10 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 # Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
 # the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
 # model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
-# hand histories imported and checked (1 min; downloads 12 MB of public PHH data once)
-python -m experiments.run_phase3 --seed 2026          # ~43 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only import   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm or import
+# hand histories imported and checked (1 min; downloads 12 MB of public PHH data once),
+# priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache)
+python -m experiments.run_phase3 --seed 2026          # ~52 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import or priors
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
@@ -652,8 +690,8 @@ reference for the home-game phase, not a forecast. Specifically:
 * **Simplified postflop play.** Bots judge strength by equity against a random hand and go to
   showdown more than typical human regulars (WTSD ~44–51% vs ~25–35%; stations ~70%).
 * **No distribution shift.** Test players come from the same archetype mix as training players.
-  A real table's mix (and its priors) will differ, so priors and calibration should be re-fit
-  on real data (Phase 3).
+  P3.7 measured what happens on real players (13 professionals): the classifier is outside
+  its training range and overconfident, and priors must be refit on the players at hand.
 * **Fixed environment.** 6-max, 100 bb stacks reset every hand, no rake, blinds 1/2.
 * **Analysis choices made after seeing results are labeled *post hoc*.** The primary model and
   pre-registered metrics were fixed before the reported run; see PROGRESS.md.
@@ -665,8 +703,8 @@ poker_lab/
   schema/      hand-history model, sealed store, firewalled views, JSONL, validation
   engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker, duplicate matches
   bots/        parameterized bots, archetypes, hand strength, league simulator
-  profiling/   stats, shrinkage, features, classifier, regression, action model, ProfileStore,
-               push/fold observations from completed hands
+  profiling/   stats, shrinkage, features, classifier, support check, regression, action model,
+               ProfileStore, push/fold observations from completed hands
   games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
                TabularPolicy, best response, Leduc bots + fitting, push/fold bots,
                posterior and model-fit checks
@@ -691,7 +729,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 

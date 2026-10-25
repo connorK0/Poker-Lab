@@ -33,7 +33,8 @@ RECOMMEND = "experiments/results/phase3/recommend/recommend.json"
 FITCHECK = "experiments/results/phase3/fitcheck/fitcheck.json"
 CONFIRM = "experiments/results/phase3/confirm/confirm.json"
 IMPORT = "experiments/results/phase3/import/import.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT)
+PRIORS = "experiments/results/phase3/priors/priors.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT, PRIORS)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -65,6 +66,7 @@ def overview(
     rc: dict[str, Any],
     fc: dict[str, Any],
     im: dict[str, Any],
+    pr: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -91,6 +93,9 @@ def overview(
     harsh = fagg["connectors_first"]["300"]["flags"]["either"]["share"]
     gear = fagg["gear_change"]["1000"]["flags"]["either"]["share"]
     rt, pub = im["round_trip"], im["public_data"]
+    est = pr["populations"]["humans"]["estimation"]["25"]["rmse_vs_truth"]
+    sup = pr["populations"]["humans"]["classifier"]["support"]
+    flagged_from = next(int(n) for n, v in sup.items() if v["humans_flagged"] >= 0.999)
     return {
         "tiles": [
             tile(
@@ -166,6 +171,17 @@ def overview(
                 f"all {pub['by_subset']['pluribus']['accepted']:,} Pluribus hands; mixed games "
                 "and big-blind antes rejected by name",
             ),
+            tile(
+                "A new professional's stats after 25 hands",
+                f"{100 * np.mean(est['human']):.1f} vs {100 * np.mean(est['uniform']):.1f} pp",
+                "error with a prior fit to the other professionals vs the uniform default",
+            ),
+            tile(
+                "Professionals unlike every training archetype",
+                f"100% from {flagged_from:,} hands",
+                f"of profiles flagged (held-out bots: at most "
+                f"{max(v['bots_flagged'] for v in sup.values()):.0%})",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -181,7 +197,10 @@ def overview(
             "found in that analysis was confirmed on fresh seeds (P3.5b). Completed hand "
             "histories can now come from text files in the open PHH format: each hand is "
             "replayed through PokerKit's rules and rejected with a reason if it does not "
-            "replay exactly (P3.6)."
+            "replay exactly (P3.6). Priors fit to the 13 professionals of the Pluribus hands "
+            "estimate a new professional's statistics far better than the defaults and much "
+            "worse for anyone else, and the bot-trained classifier and action models do not "
+            "transfer to these players (P3.7)."
         ),
     }
 
@@ -2053,6 +2072,536 @@ def import_pluribus(im: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+PRIOR_STATS = (
+    ("vpip", "VPIP"),
+    ("pfr", "PFR"),
+    ("three_bet", "3-bet"),
+    ("fold_to_3bet", "Fold to 3-bet"),
+    ("cbet", "C-bet"),
+    ("fold_to_cbet", "Fold to c-bet"),
+    ("aggr_share", "Aggression share"),
+    ("fold_to_bet", "Fold to a bet"),
+    ("wtsd", "WTSD"),
+    ("wsd", "W$SD"),
+)
+PRIOR_STAT_LABEL = dict(PRIOR_STATS)
+PRIOR_KINDS = (
+    ("human", "Prior fit to the other players", "c1"),
+    ("synthetic", "Prior fit to the Phase 1 bots", "c4"),
+    ("uniform", "Uniform Beta(1, 1) (the default)", "c2"),
+)
+PRIOR_POPS = (
+    ("humans", "The professionals, one left out at a time"),
+    ("reverse", "The Phase 1 held-out bots"),
+    ("control", "Control: bots in the professionals' seats"),
+)
+ACTION_MODELS = (
+    ("syn_sit", "Trained on bots: situation only", "c4", False),
+    ("syn_prof", "Trained on bots: + profile", "c2", True),
+    ("hum_sit", "Trained on the other players: situation only", "c1", False),
+    ("hum_prof", "Trained on the other players: + profile", "c3", True),
+)
+WINDOW_HANDS = axis("Hands observed", scale="log", fmt="int")
+
+
+def _verdict(holds: bool) -> str:
+    return "holds" if holds else "does not hold"
+
+
+def _between_sd(mu: Any, kappa: Any) -> float:
+    mu, kappa = np.asarray(mu, dtype=float), np.asarray(kappa, dtype=float)
+    return float(np.mean(np.sqrt(mu * (1 - mu) / (kappa + 1))))
+
+
+def priors_fit(pr: dict[str, Any]) -> dict[str, Any]:
+    hp, syn = pr["populations"]["humans"]["priors"], pr["synthetic_priors"]
+    human = hp["human"]
+    rows = [label for _, label in PRIOR_STATS]
+    bot = hp.get("bot") or {}
+    centers = [
+        dot_series(
+            "Fit to the 13 professionals (95% bootstrap over players)",
+            "c1",
+            [(human[s]["mean"], *human[s]["mean_ci"]) for s, _ in PRIOR_STATS],
+        ),
+        dot_series(
+            "Fit to the Phase 1 training bots (mean of 5 replicates)",
+            "c4",
+            [(float(np.mean(syn[s]["mean"])),) for s, _ in PRIOR_STATS],
+        ),
+    ]
+    if bot:
+        centers.append(
+            dot_series(
+                "Pluribus's own rate (not used in any fit)",
+                "c7",
+                [(bot[s],) if bot.get(s) is not None else None for s, _ in PRIOR_STATS],
+            )
+        )
+    mean_view = view(
+        dots_chart(
+            "Where each population is centered: prior means",
+            rows,
+            axis("Prior mean", fmt="pct", lo=0, hi=1),
+            centers,
+            subtitle="Beta-binomial priors fit by maximum marginal likelihood (empirical "
+            "Bayes, Step 10).",
+        )
+    )
+    spread_view = view(
+        dots_chart(
+            "How different the players are: between-player spread",
+            rows,
+            axis("Between-player SD of the true rate", fmt="pct", lo=0),
+            [
+                dot_series(
+                    "Professionals (95% bootstrap over players)",
+                    "c1",
+                    [(human[s]["between_sd"], *human[s]["between_sd_ci"]) for s, _ in PRIOR_STATS],
+                ),
+                dot_series(
+                    "Phase 1 training bots (mean of 5 replicates)",
+                    "c4",
+                    [
+                        (_between_sd(syn[s]["mean"], syn[s]["concentration"]),)
+                        for s, _ in PRIOR_STATS
+                    ],
+                ),
+            ],
+            subtitle="For a prior with mean mu and concentration kappa = alpha + beta, "
+            "SD = sqrt(mu (1 - mu) / (kappa + 1)): how far a typical player's true rate sits "
+            "from the population's center.",
+        )
+    )
+    ratio = {
+        s: _between_sd(syn[s]["mean"], syn[s]["concentration"]) / human[s]["between_sd"]
+        for s, _ in PRIOR_STATS
+    }
+    lo, hi = min(ratio, key=ratio.get), max(ratio, key=ratio.get)
+    gap = max(
+        (s for s, _ in PRIOR_STATS),
+        key=lambda s: abs(human[s]["mean"] - float(np.mean(syn[s]["mean"]))),
+    )
+    takeaways = [
+        f"The professionals are far more alike than the bots: the bots differ from each other "
+        f"{ratio[lo]:.1f} times as much as the professionals do ({PRIOR_STAT_LABEL[lo]}) to "
+        f"{ratio[hi]:.1f} times as much ({PRIOR_STAT_LABEL[hi]}). The professionals' WTSD varies "
+        f"by about {100 * human['wtsd']['between_sd']:.1f} points from player to player.",
+        f"The centers differ most for {PRIOR_STAT_LABEL[gap]}: {human[gap]['mean']:.0%} for "
+        f"the professionals against {float(np.mean(syn[gap]['mean'])):.0%} for the bots. "
+        f"Bet sizes too: they bet {human['bet_size']['mean']:.2f} of the pot after the flop "
+        f"and open to {human['open_size']['mean']:.1f} big blinds; the bots "
+        f"{float(np.mean(syn['bet_size']['mean'])):.2f} and "
+        f"{float(np.mean(syn['open_size']['mean'])):.1f}.",
+        "Pluribus sits at the professionals' center on almost every statistic.",
+    ]
+    return section(
+        "priors-fit",
+        "Priors fit to real players",
+        "Empirical-Bayes priors for every binomial statistic, fit to the 13 professionals of "
+        "the Pluribus hands, next to the priors Phase 1 fit to its bots.",
+        sources=[PRIORS],
+        controls=[control("measure", "Show", [("spread", "Spread"), ("mean", "Center")])],
+        views={"mean": mean_view, "spread": spread_view},
+        takeaways=takeaways,
+        method="EmpiricalBayesShrinker.fit on each population's counter totals (public "
+        "information only); the professionals' bet-size priors use split halves (hand_half). "
+        "Intervals: 1,000 refits on players resampled with replacement.",
+    )
+
+
+def _rmse(block: dict[str, Any], prior: str, stat: str) -> float:
+    v = np.asarray(block["rmse_vs_truth"][prior], dtype=float)
+    if stat == "all":
+        return float(np.nanmean(v))
+    return float(v[[s for s, _ in PRIOR_STATS].index(stat)])
+
+
+def priors_estimation(pr: dict[str, Any]) -> dict[str, Any]:
+    pops = {"humans": pr["populations"]["humans"]["estimation"], "reverse": pr["reverse"]}
+    if "control" in pr["populations"]:
+        pops["control"] = pr["populations"]["control"]["estimation"]
+    pop_opts = [(k, label) for k, label in PRIOR_POPS if k in pops]
+    stat_opts = [("all", "Mean of the 10 statistics"), *PRIOR_STATS]
+    views = {}
+    for pop, pop_label in pop_opts:
+        for stat, stat_label in stat_opts:
+            views[f"{pop}|{stat}"] = view(
+                line_chart(
+                    f"{stat_label}: estimation error. {pop_label}",
+                    WINDOW_HANDS,
+                    axis("RMSE against the true rate (percentage points)", fmt="num", lo=0),
+                    [
+                        series(
+                            label,
+                            color,
+                            [(int(n), 100 * _rmse(b, key, stat)) for n, b in pops[pop].items()],
+                        )
+                        for key, label, color in PRIOR_KINDS
+                    ],
+                    subtitle="The posterior mean after n hands against the player's rate in all "
+                    "their other hands, corrected for that rate's own binomial noise.",
+                )
+            )
+    h, rev, pred = pops["humans"], pr["reverse"], pr["predictions"]
+    n0 = next(iter(h))
+    r100 = "100" if "100" in rev else next(iter(rev))
+    worse = {n: len(v) for n, v in pred["B3"]["worse_than_uniform"].items()}
+    b1 = pred["B1"]["failures"]
+    takeaways = [
+        f"After {int(n0):,} hands of a new professional, a prior fit to the other twelve is off "
+        f"by {100 * _rmse(h[n0], 'human', 'all'):.1f} points on average, against "
+        f"{100 * _rmse(h[n0], 'uniform', 'all'):.1f} with the uniform default and "
+        f"{100 * _rmse(h[n0], 'synthetic', 'all'):.1f} with the bots' prior.",
+        "Pre-registered B1, the professionals' prior beats uniform for every statistic up to "
+        f"200 hands: {_verdict(pred['B1']['holds'])}"
+        + (
+            f"; it does at 25, 50 and 100 hands, and at 200 hands {len(b1)} intervals reach "
+            f"below 0 ({', '.join(PRIOR_STAT_LABEL[f.split(' at ')[0]] for f in b1)})."
+            if b1
+            else "."
+        )
+        + " B2, it beats the bots' prior: "
+        + _verdict(pred["B2"]["holds"])
+        + f" ({len(pred['B2']['failures'])} of 40 statistic-size pairs are not clearly better).",
+        f"Turned on the bots, the professionals' prior is off by "
+        f"{100 * _rmse(rev[r100], 'human', 'all'):.1f} points after {int(r100):,} hands, against "
+        f"{100 * _rmse(rev[r100], 'uniform', 'all'):.1f} for uniform; it is worse than the "
+        "default for "
+        + " and ".join(f"{v} of 10 statistics at {int(n):,} hands" for n, v in worse.items())
+        + f" (B3 {_verdict(pred['B3']['holds'])}). A confident prior from one population is a "
+        "liability on another.",
+    ]
+    return section(
+        "priors-estimation",
+        "Which prior estimates a new player best?",
+        "Leave one professional out, fit the prior to the other twelve, watch n of the left-out "
+        "player's hands and estimate their statistics; score against everything else they "
+        "played. The same priors are also turned on the Phase 1 bots.",
+        sources=[PRIORS],
+        controls=[
+            control("pop", "Players", pop_opts),
+            control("stat", "Statistic", stat_opts),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="Disjoint windows of n hands (at most 20 per player; a player needs 2n hands). "
+        "Differences in squared error against the held-out rate are unbiased for differences "
+        "against the true rate, because the held-out rate's noise is independent of the "
+        "window; the RMSE shown subtracts an unbiased estimate of that noise. Bots: windows "
+        "from the first half of each bot's 2,000 hands, the target from the second half.",
+    )
+
+
+def priors_refit_size(pr: dict[str, Any]) -> dict[str, Any]:
+    mp = pr["min_players"]
+    palette = ("c1", "c2", "c3", "c4", "c5", "c6")
+    opts = [("human", "Professionals"), ("synthetic", "Phase 1 bots")]
+    views = {}
+    for who, label in opts:
+        d = mp[who]
+        ns = sorted({int(n) for k in d for n in d[k]})
+        views[who] = view(
+            line_chart(
+                f"{label}: a prior refit on k players against the uniform default",
+                axis("Players the prior is fit to", scale="log", fmt="int"),
+                axis("Mean squared error saved, x 10^4 (mean of 10 statistics)", fmt="num"),
+                [
+                    series(
+                        f"{n:,} hands observed",
+                        palette[j % len(palette)],
+                        [
+                            (int(k), 1e4 * float(np.nanmean(np.asarray(d[k][str(n)], float))))
+                            for k in d
+                            if str(n) in d[k]
+                        ],
+                    )
+                    for j, n in enumerate(ns)
+                ],
+                refs=[ref(0, "no better than the default")],
+                subtitle="Positive: the refit beats the uniform prior. Mean over 20 random "
+                "subsets of k players (one at the largest k).",
+            )
+        )
+    takeaways = [
+        f"The pre-registered rule set the default min_players of ProfileStore.refit_priors to "
+        f"{mp['default']} (was 30): the smallest k from which a refit is no worse than uniform "
+        f"on average at every sample size is {mp['k_human']} for the professionals and "
+        f"{mp['k_synthetic']} for the bots.",
+        "The professionals are so alike that a prior fit to two of them already helps. The bots "
+        "are varied, and two or three of them make a prior that is confidently wrong about the "
+        "rest.",
+        "Even with all 300 training bots, the c-bet prior is worse than uniform: the fit weighs "
+        "players by their opportunities, and the bots that c-bet least get the fewest chances.",
+    ]
+    return section(
+        "priors-refit-size",
+        "How many players does a refit need?",
+        "ProfileStore.refit_priors replaces the uniform default with priors fit to the players "
+        "it has stored. Fit to too few, those priors are worse than the default.",
+        sources=[PRIORS],
+        controls=[control("pop", "Players", opts)],
+        views=views,
+        takeaways=takeaways,
+        method="Priors fit to k players (professionals: subsets of the other twelve; bots: "
+        "subsets of each replicate's 300 training bots), scored as in the previous section.",
+    )
+
+
+def priors_support(pr: dict[str, Any]) -> dict[str, Any]:
+    hc = pr["populations"]["humans"]["classifier"]
+    cc = pr["populations"].get("control", {}).get("classifier")
+    sup = hc["support"]
+    ns = list(sup)
+    groups = [
+        ("Phase 1 held-out bots", "c4", [sup[n]["bots_flagged"] for n in ns]),
+        ("Professionals", "c1", [sup[n]["humans_flagged"] for n in ns]),
+    ]
+    if cc:
+        control_rates = [cc["support"][n]["humans_flagged"] for n in ns]
+        groups.append(("Control: bots in the professionals' seats", "c3", control_rates))
+    if all("bot_flagged" in sup[n] for n in ns):
+        groups.append(("Pluribus", "c7", [sup[n]["bot_flagged"] for n in ns]))
+    alpha = pr["config"]["support_alpha"]
+    trend = view(
+        line_chart(
+            "Profiles flagged as unlike every training archetype",
+            axis("Hands in the window", scale="log", fmt="int"),
+            axis("Windows flagged", fmt="pct", lo=0, hi=1),
+            [
+                series(label, color, [(int(n), v) for n, v in zip(ns, vals, strict=True)])
+                for label, color, vals in groups
+            ],
+            refs=[ref(alpha, f"alpha = {alpha:.0%}")],
+            subtitle="Conformal p-value of the smallest Mahalanobis distance to an archetype, "
+            "against held-out training bots of the same sample size.",
+        )
+    )
+    n_show = "100" if "100" in sup else ns[0]
+    by_player = sup[n_show]["humans_by_player"]
+    players = sorted(by_player, key=lambda p: (-by_player[p], p))
+    per_player = view(
+        dots_chart(
+            f"Each professional at {int(n_show):,} hands",
+            players,
+            axis("Windows flagged", fmt="pct", lo=0, hi=1),
+            [dot_series("Share of windows flagged", "c1", [(by_player[p],) for p in players])],
+            refs=[ref(alpha, "alpha", axis_name="x")],
+            subtitle="Each player's windows of this size (at most 20), averaged over the five "
+            "classifier replicates.",
+        )
+    )
+    pred = pr["predictions"]
+    all_from = next((n for n in ns if (sup[n]["humans_flagged"] or 0) >= 0.999), None)
+    takeaways = [
+        f"Held-out bots are flagged at most {max(groups[0][2]):.1%} of the time "
+        f"(calibrated to {alpha:.0%}); the professionals {sup[ns[0]]['humans_flagged']:.0%} "
+        f"after {int(ns[0]):,} hands"
+        + (f" and every window from {int(all_from):,} hands" if all_from else "")
+        + f". Pre-registered: {_verdict(pred['C1a']['holds'])} (bots) and "
+        f"{_verdict(pred['C1b']['holds'])} (professionals, at least 80% from 500 hands).",
+        "A flagged profile is one the classifier was never trained to label: its archetype "
+        "probabilities are not calibrated for that player, however confident they look.",
+    ]
+    if cc:
+        cp = pr["control_predictions"]["C1"]
+        small = [v for n, v in zip(ns, control_rates, strict=True) if int(n) <= 200]
+        takeaways.append(
+            f"The control, Phase 1 bots replaying the professionals' seats and hand counts, is "
+            f"flagged {min(small):.0%} to {max(small):.0%} of the time up to 200 hands but "
+            f"{control_rates[-1]:.0%} at {int(ns[-1]):,}: the pre-registered bound of 25% "
+            f"{_verdict(cp['holds'])}. Statistics depend on the table, and these players meet "
+            "the same few opponents for thousands of hands, while Phase 1's league redraws its "
+            "tables every 50 hands. At small samples the flags come from the players; at large "
+            "ones the table matters too."
+        )
+    return section(
+        "priors-support",
+        "Do the professionals look like any training archetype?",
+        "The archetype classifier returns probabilities for any input. A support check asks "
+        "first whether a profile resembles any archetype it was trained on.",
+        sources=[PRIORS],
+        controls=[control("view", "Show", [("trend", "By sample size"), ("players", "By player")])],
+        views={"trend": trend, "players": per_player},
+        takeaways=takeaways,
+        method="poker_lab.profiling.SupportCheck, fit per replicate to Phase 1's training "
+        "windows (one Gaussian per archetype in the classifier's logit/log feature space; "
+        "thresholds from 20% of the training players held out). Players weigh equally; shares "
+        "are averaged over the five replicates.",
+    )
+
+
+def priors_classifier(pr: dict[str, Any]) -> dict[str, Any]:
+    hc = pr["populations"]["humans"]["classifier"]
+    cc = pr["populations"].get("control", {}).get("classifier")
+    cons = hc["consistency"]
+    ns = list(cons)
+
+    def pts(block: dict[str, Any]) -> list[tuple]:
+        return [
+            (
+                int(n),
+                block[n]["difference"]["value"],
+                block[n]["difference"]["lower"],
+                block[n]["difference"]["upper"],
+            )
+            for n in ns
+            if n in block
+        ]
+
+    ser = [series("Professionals", "c1", pts(cons))]
+    if cc:
+        ser.append(
+            series("Control: bots in the professionals' seats", "c3", pts(cc["consistency"]))
+        )
+    ref_n = pr["config"]["consistency_reference"]
+    consistency = view(
+        line_chart(
+            "Overconfidence compared with bots of the same label",
+            axis("Hands in the window", scale="log", fmt="int"),
+            axis("Gap minus the matched bots' gap", fmt="signed"),
+            ser,
+            refs=[ref(0.10, "+0.10 margin"), ref(-0.10, "-0.10 margin"), ref(0, "as for bots")],
+            subtitle=f"Gap = mean top probability - share of windows whose label matches the "
+            f"label of a later {ref_n:,}-hand block of the same player. Bands: 95% intervals "
+            "over players.",
+        )
+    )
+    labels = hc["labels"]
+    sizes = [n for n in labels if labels[n]["humans"] is not None]
+    names = list(ARCHETYPE_LABELS.values())
+    palette = ("c1", "c2", "c3", "c4", "c5")
+    label_view = view(
+        line_chart(
+            "What the classifier calls the professionals",
+            axis("Hands in the window", scale="log", fmt="int"),
+            axis("Share of windows", fmt="pct", lo=0, hi=1),
+            [
+                series(name, palette[k], [(int(n), labels[n]["humans"][k]) for n in sizes])
+                for k, name in enumerate(names)
+            ],
+            subtitle="Predicted archetype of each window (players weigh equally). Mean top "
+            "probability "
+            + ", ".join(
+                f"{labels[n]['humans_top_prob']:.2f} at {int(n):,}" for n in (sizes[0], sizes[-1])
+            )
+            + " hands; on held-out bots "
+            + ", ".join(f"{hc['support'][n]['bots_top_prob']:.2f}" for n in (sizes[0], sizes[-1]))
+            + ".",
+        )
+    )
+    pred = pr["predictions"]["C3"]
+    cp = pr.get("control_predictions", {}).get("C3")
+    top = labels[sizes[-1]]["humans"]
+    order = np.argsort(top)[::-1]
+    lead = [n for n in ns if cons[n]["difference"]["lower"] > 0]
+    takeaways = [
+        f"Pre-set verdict: calibration {pred['verdict']} on the professionals (predicted: "
+        "fails)"
+        + (f"; {cp['verdict']} on the control." if cp else ".")
+        + (
+            f" After {', '.join(f'{int(n):,}' for n in lead)} hands the classifier is "
+            f"{min(cons[n]['difference']['value'] for n in lead):.2f} to "
+            f"{max(cons[n]['difference']['value'] for n in lead):.2f} more confident than its "
+            "agreement with a longer look justifies, compared with bots it labels the same way."
+            if lead
+            else ""
+        ),
+        f"It calls them {names[order[0]]} ({top[order[0]]:.0%} of windows at "
+        f"{int(sizes[-1]):,} hands) or {names[order[1]]} ({top[order[1]]:.0%}), never calling "
+        f"station or maniac after 50 hands, with lower confidence than on bots "
+        f"({labels[sizes[-1]]['humans_top_prob']:.2f} against "
+        f"{hc['support'][sizes[-1]]['bots_top_prob']:.2f}).",
+        "Together with the support check: on these players the archetype probabilities are "
+        "neither in their training range nor calibrated. Their profile statistics, with real "
+        "priors, are what can be used.",
+    ]
+    return section(
+        "priors-classifier",
+        "Does the classifier's confidence mean the same on real players?",
+        "Real players have no true archetype, but a calibrated classifier makes a testable "
+        "promise: its confidence after n hands should match how often a longer look at the "
+        "same player gives the same label.",
+        sources=[PRIORS],
+        controls=[
+            control("view", "Show", [("consistency", "Consistency check"), ("labels", "Labels")])
+        ],
+        views={"consistency": consistency, "labels": label_view},
+        takeaways=takeaways,
+        method="Phase 1's primary classifier (logistic, shrunk stats, one temperature), "
+        f"retrained per replicate. Windows from the first half of each {2 * ref_n:,}-hand "
+        "chunk, the reference label from the second half (8 professionals have a chunk). Each "
+        "player is compared with held-out bots whose own reference block got the same label. "
+        "Verdict: transfers if every 95% interval lies within +-0.10, fails if one excludes 0, "
+        "otherwise inconclusive.",
+    )
+
+
+def priors_action(pr: dict[str, Any]) -> dict[str, Any]:
+    pops = [
+        (k, label)
+        for k, label in (("humans", "Professionals"), ("control", "Control: bots in their seats"))
+        if k in pr["populations"]
+    ]
+    metrics = (("log_loss", "Log-loss per decision (nats)"), ("ece", "Calibration error"))
+    views = {}
+    for pop, label in pops:
+        by = pr["populations"][pop]["action"]["by_checkpoint"]
+        for metric, metric_label in metrics:
+            views[f"{pop}|{metric}"] = view(
+                line_chart(
+                    f"{label}: predicting the next action",
+                    axis("Hands observed before the predicted 100", fmt="int"),
+                    axis(metric_label, fmt="num"),
+                    [
+                        series(name, color, [(int(c), by[c][metric][key]) for c in by], dash=dash)
+                        for key, name, color, dash in ACTION_MODELS
+                    ],
+                    subtitle="Fold / check-call / bet-raise. Every model predicts players it "
+                    "never saw. Calibration error: top label, 10 bins.",
+                )
+            )
+    by = pr["populations"]["humans"]["action"]["by_checkpoint"]
+    pred = pr["predictions"]
+    c0 = next(iter(by))
+    d1 = [v["syn_minus_hum_log_loss"]["value"] for v in by.values()]
+    red = pred["D2"]["reductions"]
+    ece = [(v["ece"]["syn_sit"], v["ece"]["hum_sit"]) for v in by.values()]
+    takeaways = [
+        f"A model trained on bots predicts the professionals' decisions worse than one trained "
+        f"on the other professionals, by {min(d1):.2f} to {max(d1):.2f} nats per decision "
+        f"({by[c0]['log_loss']['syn_sit']:.3f} against {by[c0]['log_loss']['hum_sit']:.3f} "
+        f"with no history; D1 {_verdict(pred['D1']['holds'])}).",
+        "Knowing the player barely helps. Adding the profile changes the log-loss (+ = worse) by "
+        + ", ".join(f"{-v['human']:+.1%}" for v in red.values())
+        + " for the model trained on professionals and "
+        + ", ".join(f"{-v['synthetic']:+.1%}" for v in red.values())
+        + f" for the bot-trained one (D2, under 3%: {_verdict(pred['D2']['holds'])}, by the "
+        "bot-trained model at 1,500 hands). On bots the profile cut the log-loss by 11-13%.",
+        f"The bot-trained model is also worse calibrated (error {min(e[0] for e in ece):.3f} "
+        f"to {max(e[0] for e in ece):.3f} against {min(e[1] for e in ece):.3f} to "
+        f"{max(e[1] for e in ece):.3f}); D3 {_verdict(pred['D3']['holds'])}: the interval "
+        "excludes 0 only with no or little history.",
+        "For these players the population model is what matters, and it has to come from real "
+        "players. This is the metric Phase 5 will use on live hands.",
+    ]
+    return section(
+        "priors-action",
+        "Predicting real players' next action",
+        "The metric Phase 5 will use on live data, run now on the professionals: a model trained "
+        "on bots against one trained on the other professionals, each with and without the "
+        "player's profile.",
+        sources=[PRIORS],
+        controls=[control("pop", "Players", pops), control("metric", "Metric", list(metrics))],
+        views=views,
+        takeaways=takeaways,
+        method="Phase 1's next-action learner. Bot-trained: per replicate on its training bots' "
+        "decisions, as in Phase 1. Trained on the other players: leave one player out, on all "
+        "their decisions, profiles from the hands before each 100-hand block, with their "
+        "leave-one-out prior. Means weigh players equally; intervals: bootstrap over players.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
@@ -2061,7 +2610,8 @@ def build(load) -> dict[str, Any]:
     fc = load(FITCHECK)
     cf = load(CONFIRM)
     im = load(IMPORT)
-    head = overview(r, ex, br, rc, fc, im)
+    pr = load(PRIORS)
+    head = overview(r, ex, br, rc, fc, im, pr)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -2077,6 +2627,7 @@ def build(load) -> dict[str, Any]:
             provenance(FITCHECK, fc),
             provenance(CONFIRM, cf),
             provenance(IMPORT, im),
+            provenance(PRIORS, pr),
         ],
         "sections": [
             charts(r),
@@ -2097,5 +2648,11 @@ def build(load) -> dict[str, Any]:
             import_faults(im),
             import_public_data(im),
             import_pluribus(im),
+            priors_fit(pr),
+            priors_estimation(pr),
+            priors_refit_size(pr),
+            priors_support(pr),
+            priors_classifier(pr),
+            priors_action(pr),
         ],
     }

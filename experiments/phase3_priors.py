@@ -1226,12 +1226,16 @@ STAT_LABELS = {
     "wtsd": "WTSD",
     "wsd": "W$SD",
 }
-PRIOR_LABELS = {"uniform": "Uniform Beta(1, 1)", "synthetic": "Synthetic", "human": "Human"}
+PRIOR_LABELS = {
+    "uniform": "Uniform Beta(1, 1) prior",
+    "synthetic": "Prior fit to the Phase 1 bots",
+    "human": "Prior fit to the other players",
+}
 MODEL_LABELS = {
-    "syn_sit": "Synthetic, situation",
-    "syn_prof": "Synthetic, + profile",
-    "hum_sit": "Human, situation",
-    "hum_prof": "Human, + profile",
+    "syn_sit": "Trained on bots: situation",
+    "syn_prof": "Trained on bots: + profile",
+    "hum_sit": "Trained on the other players: situation",
+    "hum_prof": "Trained on the other players: + profile",
 }
 
 
@@ -1471,7 +1475,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         s = theme["series"]
         colors = {"uniform": s[1], "synthetic": s[3], "human": s[0]}
         panels = (
-            (hum["estimation"], "Leave-one-out on the players"),
+            (hum["estimation"], "The professionals, one left out at a time"),
             (r["reverse"], "On the synthetic held-out bots"),
         )
         for ax, (block, name) in zip(axes, panels, strict=True):
@@ -1479,7 +1483,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
             ns = [int(n) for n in block]
             for prior, color in colors.items():
                 y = [mean_rmse(block[str(n)], prior) for n in ns]
-                line(ax, theme, ns, y, color, PRIOR_LABELS[prior] + " prior")
+                line(ax, theme, ns, y, color, PRIOR_LABELS[prior])
             ax.set_xscale("log")
             ax.set_xticks(ns, [f"{n:,}" for n in ns])
             ax.minorticks_off()
@@ -1491,8 +1495,8 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
             fig,
             theme,
             "Which prior estimates a player's stats best?",
-            "Noise-corrected RMSE of the posterior mean against each player's rate in other "
-            "hands; the human prior is fit without the player scored.",
+            "Noise-corrected RMSE of the posterior mean against each player's rate in their "
+            "other hands; the players' prior is always fit without the player scored.",
         )
         return fig
 
