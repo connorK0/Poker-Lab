@@ -480,9 +480,13 @@ commit `c4c15d0`;
   cuts that to 1% by 1,000 hands. Against connectors-first bots, the model's recommendation
   still earns +0.091 bb/hand after 300 hands (the oracle: +0.110) and loses to none of them,
   even though its intervals are wrong. Falling back there throws the gain away.
-* **Post hoc,** falling back only when the *stability* check fails keeps most of the gain and all
-  of the safety. That rule was found after seeing the results, so it awaits confirmation on
-  fresh seeds.
+* **Confirmed on fresh seeds (P3.5b).** Falling back only when the *stability* check fails
+  kept most of the gain and all of the safety. That rule was found after seeing the results, so
+  it was retested on new seeds with written predictions
+  ([`confirm_summary.md`](experiments/results/phase3/confirm/confirm_summary.md)). All three
+  held: it loses to 0.7% of gear-changers after 1,000 hands, earns +0.028 to +0.080 bb/hand
+  more than falling back on either check against wrong hand orders, and loses to at most 2%
+  of those bots. It is now the recommender's default.
 
 Next: batch import of hand histories (P3.6); see [PROGRESS.md](PROGRESS.md).
 
@@ -507,9 +511,9 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 
 # Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
 # the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
-# model-fit checks evaluated (7 min)
-python -m experiments.run_phase3 --seed 2026          # ~35 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only fitcheck   # one step: pushfold, exploit, bridge, recommend or fitcheck
+# model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min)
+python -m experiments.run_phase3 --seed 2026          # ~42 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only confirm   # one step: pushfold, exploit, bridge, recommend, fitcheck or confirm
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
@@ -650,7 +654,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -658,7 +662,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (300 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (301 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working

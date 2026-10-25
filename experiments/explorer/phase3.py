@@ -31,7 +31,8 @@ EXPLOIT = "experiments/results/phase3/exploit/exploit.json"
 BRIDGE = "experiments/results/phase3/bridge/bridge.json"
 RECOMMEND = "experiments/results/phase3/recommend/recommend.json"
 FITCHECK = "experiments/results/phase3/fitcheck/fitcheck.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK)
+CONFIRM = "experiments/results/phase3/confirm/confirm.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -162,7 +163,8 @@ def overview(
             "firewall, checked against the exact values (P3.3), and exploit recommendations "
             "are ranked by how confidently they beat equilibrium play, with posterior intervals "
             "checked against the truth (P3.4). Before the model is trusted, posterior predictive "
-            "checks ask whether the opponent plays the way it assumes (P3.5)."
+            "checks ask whether the opponent plays the way it assumes (P3.5), and a fallback rule "
+            "found in that analysis was confirmed on fresh seeds (P3.5b)."
         ),
     }
 
@@ -1530,7 +1532,8 @@ def fitcheck_consequences(fc: dict[str, Any]) -> dict[str, Any]:
         f"{mean_gain('connectors_first', '1000', 'stability_only'):+.3f} (connectors first) "
         "bb/hand after 1,000 hands, while matching the full fallback against gear-changers "
         f"({lose('gear_change', '1000', 'stability_only'):.0%} lost to). This rule was chosen "
-        "after seeing these results, so it needs fresh seeds before it becomes the default.",
+        "after seeing these results, so it was tested on fresh seeds before becoming the "
+        "default (next section).",
         "Pre-registered: pooled over the three misspecified populations, flagged bots have "
         "lower coverage than unflagged ones ("
         + ", ".join(
@@ -1618,12 +1621,146 @@ def fitcheck_examples(fc: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _short(pop: str) -> str:
+    """Population name inside a sentence: "connectors first"."""
+    return FIT_POP_LABEL[pop].split(" (")[0].lower()
+
+
+# in the confirmation the stability-only rule is the pre-registered hypothesis, not post hoc
+UNDER_TEST = "Equilibrium only when stability fails (under test)"
+CONFIRM_RULES = [
+    (rule, UNDER_TEST if rule == "stability_only" else lab, c) for rule, lab, c in FIT_RULES
+]
+
+
+def confirm_fallback(cf: dict[str, Any]) -> dict[str, Any]:
+    sizes = _fit_sizes(cf)
+    agg = cf["aggregate"]
+    pred = cf["predictions"]
+    views = {}
+    for pop, plabel in FIT_POPS:
+        a = agg[pop]
+        gains = line_chart(
+            "True gain of the three rules",
+            HANDS_SEEN,
+            axis("bb/hand above equilibrium", fmt="signed"),
+            [
+                series(
+                    label,
+                    color,
+                    [
+                        (int(n), x["mean"], x["lower"], x["upper"])
+                        for n in sizes
+                        for x in [a[n]["rules"][rule]["gain"]]
+                    ],
+                    dash=rule == "stability_only",
+                )
+                for rule, label, color in CONFIRM_RULES
+            ],
+            refs=[
+                ref(a[sizes[-1]]["oracle_gain"]["mean"], "Oracle best response"),
+                ref(0.0, "Equilibrium"),
+            ],
+            subtitle=f"{plabel}. Fresh seeds; 95% t-intervals across seeds.",
+        )
+        losses = line_chart(
+            "Bots the rule does worse than equilibrium against",
+            HANDS_SEEN,
+            axis("Share of bots", fmt="pct", lo=0),
+            [
+                series(
+                    label,
+                    color,
+                    _share_pts([(n, a[n]["rules"][rule]["loses"]) for n in sizes]),
+                    dash=rule == "stability_only",
+                )
+                for rule, label, color in CONFIRM_RULES
+            ],
+            refs=[ref(0.05, "5%"), ref(0.10, "10%")],
+            subtitle=f"{plabel}. Pooled over 150 bots; 95% Wilson intervals.",
+        )
+        diff = line_chart(
+            "Stability only minus any check",
+            HANDS_SEEN,
+            axis("Difference in true gain (bb/hand)", fmt="signed"),
+            [
+                series(
+                    "Paired difference, 95% interval",
+                    "c5",
+                    [
+                        (int(n), d["mean"], d["lower"], d["upper"])
+                        for n in sizes
+                        for d in [cf["differences"][pop][n]["checked"]]
+                    ],
+                )
+            ],
+            refs=[ref(0.0, "No difference")],
+            subtitle=f"{plabel}. Per-seed mean difference over the same bots.",
+        )
+        views[pop] = view(gains, losses, diff)
+
+    def verdict(holds: bool) -> str:
+        return "holds" if holds else "does NOT hold"
+
+    gear = pred["gear_safety"]["by_size"]
+    kept = pred["gain_kept"]["by_population"]
+    safe = pred["order_safety"]["by_population"]
+    takeaways = [
+        "Prediction 1 (safety against gear-changers, at most 10% lost to): "
+        + ", ".join(f"{v['value']:.1%} after {int(n):,} hands" for n, v in gear.items())
+        + f"; {verdict(pred['gear_safety']['holds'])}.",
+        "Prediction 2 (gain kept against wrong hand orders): stability only minus any check "
+        + "; ".join(
+            _short(pop)
+            + " "
+            + ", ".join(
+                f"{v['mean']:+.3f} [{v['lower']:+.3f}, {v['upper']:+.3f}] at {int(n):,}"
+                for n, v in by_n.items()
+            )
+            for pop, by_n in kept.items()
+        )
+        + f"; {verdict(pred['gain_kept']['holds'])}.",
+        "Prediction 3 (at most 5% of wrong-order bots lost to, from 100 hands): at most "
+        + ", ".join(
+            f"{max(v['value'] for v in by_n.values()):.1%} ({_short(pop)})"
+            for pop, by_n in safe.items()
+        )
+        + f"; {verdict(pred['order_safety']['holds'])}.",
+        "What the rule still costs: against connectors-first bots after 1,000 hands it earns "
+        f"{agg['connectors_first']['1000']['rules']['stability_only']['gain']['mean']:+.3f} "
+        "bb/hand, against "
+        f"{agg['connectors_first']['1000']['rules']['lower_bound']['gain']['mean']:+.3f} for "
+        "trusting the model, because the stability check fires on some of them too; and after "
+        "100 hands it still loses to "
+        f"{agg['gear_change']['100']['rules']['stability_only']['loses']['share']:.0%} of "
+        "gear-changers, before the stability check has the data to see the change.",
+        f"Pre-registered decision: {pred['decision']}.",
+    ]
+    return section(
+        "confirm-fallback",
+        "Confirming the fallback rule on fresh seeds",
+        "P3.5 found after the fact that falling back to equilibrium only when the stability check "
+        "fails kept the gain against wrong hand orders and the safety against gear-changers. A "
+        "rule found by looking at data is tested on new data: the same experiment on seeds never "
+        "used before, with predictions written first.",
+        sources=[CONFIRM],
+        controls=[control("pop", "Bots", FIT_POPS)],
+        defaults={"pop": "connectors_first"},
+        views=views,
+        takeaways=takeaways,
+        method="Pre-registered in experiments/phase3_confirm.py. Fresh replicate seeds from "
+        "SeedSequence([2026, 35]): new training populations, priors, test bots, hands and "
+        "calibration bots; everything else as in P3.5.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
     br = load(BRIDGE)
     rc = load(RECOMMEND)
     fc = load(FITCHECK)
+    cf = load(CONFIRM)
     head = overview(r, ex, br, rc, fc)
     return {
         "id": "phase3",
@@ -1638,6 +1775,7 @@ def build(load) -> dict[str, Any]:
             provenance(BRIDGE, br),
             provenance(RECOMMEND, rc),
             provenance(FITCHECK, fc),
+            provenance(CONFIRM, cf),
         ],
         "sections": [
             charts(r),
@@ -1654,5 +1792,6 @@ def build(load) -> dict[str, Any]:
             fitcheck_flags(fc),
             fitcheck_consequences(fc),
             fitcheck_examples(fc),
+            confirm_fallback(cf),
         ],
     }

@@ -62,6 +62,7 @@ $B(a,b)$ the beta function.
   * [Step 28: Playing the solved game in real hands](#step-28-playing-the-solved-game-in-real-hands-behind-the-firewall-p33)
   * [Step 29: Ranked exploit recommendations with confidence](#step-29-ranked-exploit-recommendations-with-confidence-p34)
   * [Step 30: Checking the model before trusting it](#step-30-checking-the-model-before-trusting-it-p35)
+  * [Step 31: Confirming a post-hoc rule on fresh data](#step-31-confirming-a-post-hoc-rule-on-fresh-data-p35b)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2611,6 +2612,82 @@ still gets right under a wrong order, and on stationarity, which a gear change b
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only fitcheck` (7 minutes);
   smoke test with `--quick`.
 
+## Step 31: Confirming a post-hoc rule on fresh data (P3.5b)
+
+**The question.** Step 30 ended with a rule nobody had planned: fall back to the equilibrium only
+when the *stability* check fails, and treat a failed shown-hands check as a warning about the
+intervals. It looked better than the pre-registered rule on every population. But it was chosen
+*after* looking at the results, among several rules one could have tried (fall back on either
+check, on shown hands only, on stability only, on both, never). Picking the best-looking of
+several options on the same data overstates how good it is. Statisticians call this the garden
+of forking paths (Gelman and Loken 2013): each choice made after seeing the data is a
+comparison that was never counted. The cure is cheap here because data come from a simulator:
+run the experiment again on data the choice never saw.
+
+**Exploratory, then confirmatory.** The project already pre-registers each experiment. P3.5b
+adds the other half of that discipline: a finding that came out of one experiment's analysis
+becomes the *hypothesis* of the next, with its own written predictions.
+
+1. *Make the policy a parameter.* `PushFoldRecommender(fallback_on=...)` names the checks whose
+   failure means playing the equilibrium. The default stays as pre-registered in P3.5 (either
+   check). A failed check outside `fallback_on` adds one sentence to the explanation: the
+   intervals are unreliable, the recommendation stands.
+2. *Fresh seeds.* The replicate seeds come from `SeedSequence([2026, 35])` instead of
+   `SeedSequence(2026)`. That gives new training populations and priors, new test bots in all
+   four populations, new hands and new calibration bots, while every other setting is P3.5's.
+   The code asserts that no seed is shared with the earlier experiments.
+3. *Predictions with numbers, and a decision rule.* (1) Against gear-changers, stability only
+   loses to the equilibrium against at most 10% of bots at 1,000 and 3,000 hands. (2) Against
+   pairs-first and connectors-first bots at 300, 1,000 and 3,000 hands, it earns more than the
+   any-check fallback, judged by a paired comparison: per seed, the mean over the same bots of
+   (stability-only gain minus any-check gain), with the 95% t-interval across seeds above zero.
+   (3) Against those bots it loses to the equilibrium against at most 5% from 100 hands. If all
+   three hold, the default becomes stability only; if any fails, it stays.
+
+The paired comparison matters. Both rules are scored on the *same* bots and hands, so most of
+the variation between bots (some are easy to exploit, some hard) cancels in the difference, and
+a small, consistent advantage shows up with five seeds where comparing two separate averages
+would drown it.
+
+**Results** (`experiments/phase3_confirm.py`, pre-registered at commit `7f50502`; 5 fresh seeds,
+600 bots, 7 minutes). Paired differences are stability only minus any check, in bb/hand, with
+95% t-intervals across seeds:
+
+| Prediction | Result | Verdict |
+|---|---|---|
+| Gear-changers lost to, at most 10% (1,000 / 3,000 hands) | 0.7% / 0.0% | holds |
+| Pairs-first: gain kept at 300 / 1,000 / 3,000 hands | +0.028 [+0.023, +0.032], +0.053 [+0.042, +0.065], +0.074 [+0.065, +0.083] | holds |
+| Connectors-first: gain kept at 300 / 1,000 / 3,000 hands | +0.080 [+0.070, +0.089], +0.069 [+0.054, +0.084], +0.052 [+0.044, +0.061] | holds |
+| Wrong-order bots lost to from 100 hands, at most 5% | at most 2.0% (each population) | holds |
+
+All three hold, so the decision rule applies: `PushFoldRecommender` now falls back on the
+stability check alone (`DEFAULT_FALLBACK = ("stability",)`). A failed shown-hands check still
+appears in the report and the explanation, as a warning that the intervals are unreliable.
+
+What the rule does not fix, measured on the same fresh seeds:
+
+* Against connectors-first bots it still gives up part of the gain once enough hands are seen
+  (+0.069 vs +0.102 for trusting the model after 1,000 hands; +0.052 vs +0.105 after 3,000).
+  A wrong hand order also distorts the action residuals, so the stability check fires on some
+  of these bots.
+* Against gear-changers it cannot act before the stability check has the data: after 100
+  hands it still loses to 23% of them (trusting the model: 27%).
+
+The fresh seeds also replicate Step 30's flag rates. False alarms are 4-8% (Step 30: 2-9%);
+connectors-first bots are flagged 77% after 100 hands and 94% after 300 (76%, 97%); gear-change
+bots 31% after 100 hands and 91% after 1,000 (44%, 88%). The checks behave the same on data
+they have never seen.
+
+**Verification.**
+
+* `tests/test_fit_checks.py`: under the default policy a failed shown-hands check only warns
+  (the recommendation stands and the explanation says why), while `fallback_on=CHECKS` falls
+  back; an unknown check name is rejected. The fallback test of Step 30 still passes, since it
+  fails both checks.
+* `phase3_fitcheck.run` was split into `evaluate` and `run` for reuse; its quick-configuration
+  records are identical to before.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only confirm` (7 minutes).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -2631,7 +2708,7 @@ still gets right under a wrong order, and on stationarity, which a gear change b
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 300 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 301 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2737,6 +2814,7 @@ numeric table next to it, so no number depends on reading a color.
 | Capability | an unforgeable reference whose possession grants a permission |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
+| Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Control variate | a term with known zero mean subtracted from an estimator to cut its variance |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
@@ -2753,6 +2831,7 @@ numeric table next to it, so no number depends on reading a color.
 | Equity | probability of winning (ties count half) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
+| Garden of forking paths | the unplanned choices made after seeing data, each an uncounted comparison that makes the chosen result look better than it is |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
@@ -2771,6 +2850,7 @@ numeric table next to it, so no number depends on reading a color.
 | Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Perfect recall | players never forget their own actions or observations |
+| Paired comparison | two methods scored on the same units, so variation between units cancels in the difference |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
@@ -2880,6 +2960,9 @@ Statistics and machine learning
 * Hjort, N. L., Dahl, F. A., Steinbakk, G. H. (2006). *Post-Processing Posterior Predictive
   p Values.* JASA 101. (Calibrating them)
 * Page, E. S. (1954). *Continuous Inspection Schemes.* Biometrika 41. (CUSUM)
+* Gelman, A., Loken, E. (2013). *The garden of forking paths: Why multiple comparisons can be a
+  problem, even when there is no "fishing expedition" or "p-hacking".* Working paper,
+  Columbia University. (Step 31)
 * Lancaster, H. O. (1961). *Significance Tests in Discrete Distributions.* JASA 56. (Mid-p)
 * Owen, A. B. (2013). *Monte Carlo theory, methods and examples*, chapter 9 (importance
   sampling). statweb.stanford.edu/~owen/mc.
@@ -2926,3 +3009,6 @@ Software design
   `experiments/results/phase3/fitcheck/fitcheck_summary.md`; the post-hoc stability-only
   rule and the within-population coverage split were computed from `fitcheck.json` for this
   step.
+* 2026-10-24: Step 31 (the post-hoc fallback rule confirmed on fresh seeds). Results from
+  commit `7f50502`, cross-checked against
+  `experiments/results/phase3/confirm/confirm_summary.md`.
