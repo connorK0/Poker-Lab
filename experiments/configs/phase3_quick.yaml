@@ -80,3 +80,24 @@ import:
   dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
   dataset_paths: [pluribus/100, wsop, dwan-ivey-2009.phh]
   workers: 4
+
+priors:
+  real_source: standin
+  standin: {players: 13, sessions: 36, session_hands: 60}
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  dataset_path: pluribus
+  bot_player: Pluribus
+  phase1_config: experiments/configs/phase1_quick.yaml
+  phase1_master_seed: 2026
+  estimate_sizes: [25, 50, 100, 200]
+  windows_max: 6
+  prior_bootstrap: 50
+  bootstrap: 200
+  min_players_grid: [2, 5, 12, 30, 60]
+  subset_draws: 4
+  support_alpha: 0.05
+  consistency_reference: 200
+  action_checkpoints: [0, 25, 100, 250]   # phase1_quick's
+  action_window: 50
+  action_train_rows: 20000
+  workers: 4

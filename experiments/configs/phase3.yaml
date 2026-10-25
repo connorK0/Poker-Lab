@@ -105,3 +105,25 @@ import:
     - dwan-ivey-2009.phh
     - phua-xuan-2019.phh
   workers: 12
+
+priors:
+  # P3.7: population priors fit to real players, and checks that the synthetic-trained models
+  # transfer to them (pre-registered; see phase3_priors.py).
+  real_source: pluribus           # or "standin": a simulated stand-in (development, quick run)
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  dataset_path: pluribus          # relative to the PHH dataset's data/ folder
+  bot_player: Pluribus            # never fit or scored; reported as an extra row
+  phase1_config: experiments/configs/phase1.yaml
+  phase1_master_seed: 2026        # the five Phase 1 replicates (experiments/cache)
+  estimate_sizes: [25, 50, 100, 200, 500, 1000]
+  windows_max: 20                 # disjoint windows per player and sample size
+  prior_bootstrap: 1000           # part A: refits per bootstrap over players
+  bootstrap: 2000                 # every other bootstrap over players
+  min_players_grid: [2, 3, 5, 8, 12, 30, 100, 300]
+  subset_draws: 20
+  support_alpha: 0.05
+  consistency_reference: 1000
+  action_checkpoints: [0, 25, 100, 500, 1500]   # Phase 1's
+  action_window: 100
+  action_train_rows: 150000
+  workers: 12

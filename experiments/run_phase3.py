@@ -25,6 +25,10 @@ is rebuilt):
 7. ``import``: completed hand histories imported from PHH files: round trips at scale, fault
    injection with and without recorded finishing stacks, and the public PHH dataset's
    Pluribus, WSOP and historical hands at a pinned commit (P3.6).
+8. ``priors``: population priors fit to the 13 professionals of the Pluribus hands, checked
+   leave one player out against the uniform and synthetic priors; how many players a refit
+   needs; whether the synthetic-trained classifier and action models transfer to the humans
+   (support check, label-free consistency check, next-action log-loss) (P3.7).
 """
 
 from __future__ import annotations
@@ -36,7 +40,16 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold", "exploit", "bridge", "recommend", "fitcheck", "confirm", "import")
+STEPS = (
+    "pushfold",
+    "exploit",
+    "bridge",
+    "recommend",
+    "fitcheck",
+    "confirm",
+    "import",
+    "priors",
+)
 
 
 def run(
@@ -54,6 +67,7 @@ def run(
         phase3_exploit,
         phase3_fitcheck,
         phase3_import,
+        phase3_priors,
         phase3_pushfold,
         phase3_recommend,
     )
@@ -67,6 +81,7 @@ def run(
         "fitcheck": phase3_fitcheck,
         "confirm": phase3_confirm,
         "import": phase3_import,
+        "priors": phase3_priors,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):
