@@ -88,3 +88,20 @@ confirm:
   level: 0.9
   draws: 2000
   workers: 12
+
+import:
+  # P3.6: PHH import (pre-registered; see phase3_import.py). Dataset paths are relative to the
+  # PHH dataset's data/ folder at dataset_commit (fetched by experiments/datasets.py).
+  round_trip_tables: 400
+  round_trip_hands: 25
+  mutation_hands: 1000
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  dataset_paths:
+    - pluribus
+    - wsop
+    - alice-carol-wikipedia.phh
+    - antonius-blom-2009.phh
+    - arieh-yockey-2019.phh
+    - dwan-ivey-2009.phh
+    - phua-xuan-2019.phh
+  workers: 12

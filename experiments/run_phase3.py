@@ -22,6 +22,9 @@ is rebuilt):
    alarms, power, and what falling back to equilibrium on a flag costs or saves (P3.5).
 6. ``confirm``: P3.5's post-hoc rule (fall back only when the stability check fails) on fresh
    seeds, with pre-registered predictions that decide the recommender's default (P3.5b).
+7. ``import``: completed hand histories imported from PHH files: round trips at scale, fault
+   injection with and without recorded finishing stacks, and the public PHH dataset's
+   Pluribus, WSOP and historical hands at a pinned commit (P3.6).
 """
 
 from __future__ import annotations
@@ -33,7 +36,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("pushfold", "exploit", "bridge", "recommend", "fitcheck", "confirm")
+STEPS = ("pushfold", "exploit", "bridge", "recommend", "fitcheck", "confirm", "import")
 
 
 def run(
@@ -50,6 +53,7 @@ def run(
         phase3_confirm,
         phase3_exploit,
         phase3_fitcheck,
+        phase3_import,
         phase3_pushfold,
         phase3_recommend,
     )
@@ -62,6 +66,7 @@ def run(
         "recommend": phase3_recommend,
         "fitcheck": phase3_fitcheck,
         "confirm": phase3_confirm,
+        "import": phase3_import,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

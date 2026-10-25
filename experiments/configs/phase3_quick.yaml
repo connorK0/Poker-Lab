@@ -72,3 +72,11 @@ confirm:
   level: 0.9
   draws: 500
   workers: 4
+
+import:
+  round_trip_tables: 12
+  round_trip_hands: 5
+  mutation_hands: 30
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  dataset_paths: [pluribus/100, wsop, dwan-ivey-2009.phh]
+  workers: 4
