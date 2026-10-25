@@ -488,7 +488,41 @@ commit `c4c15d0`;
   more than falling back on either check against wrong hand orders, and loses to at most 2%
   of those bots. It is now the recommender's default.
 
-Next: batch import of hand histories (P3.6); see [PROGRESS.md](PROGRESS.md).
+**Importing real hand histories (P3.6).** Completed hands can now come from text files in the
+open PHH format (Kim 2024), the format of public research data such as the 10,000 hands Pluribus
+played against professionals. The importer (`poker_lab/importers/`) replays every hand through
+PokerKit's rules and rejects, with a reason, anything that does not replay exactly. It never
+invents a missing action, as PokerKit's own loader does, and it never approximates what the
+schema cannot hold (straddles, big-blind antes, other variants). It works in batches and
+offline: there is no folder watching, and online sites' own formats are not read. A
+pre-registered experiment measured it (commit `582ac7c`, rerun at `3c1f25c` after it found two
+bugs;
+[`import_summary.md`](experiments/results/phase3/import/import_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/import/import_faults-dark.png">
+  <img alt="For nine kinds of deliberate damage to hand-history files, the share rejected, accepted with a changed record, and accepted with a wrong result, with and without recorded finishing stacks: structural damage is always rejected; with finishing stacks no wrong result gets through; without them up to 35% of changed bet amounts do" src="experiments/results/phase3/import/import_faults.png">
+</picture>
+
+* **Nothing is lost on the way in.** 20,000 of 20,000 simulated hands and their redacted copies
+  came back identical after export to PHH and import (2 to 9 players, antes, side pots,
+  amounts in cents). 10,001 public hands survive import, export and import unchanged.
+* **Damage is caught, or it is harmless.** 33,540 deliberately damaged files: every dropped,
+  swapped, misattributed or cut-short action was rejected. With the file's finishing stacks
+  as a checksum, no damage produced a wrong result. Without them up to 35% of changed bet
+  amounts did. Some changes no check can see, such as the size of a bet nobody called or a
+  folded player's card, so imported data is only as good as its source.
+* **The experiment found bugs the unit tests had missed.** Its first run crashed on 40 files
+  that dealt a card twice: PokerKit only warns about a repeated card, then fails an internal
+  assertion. It also found 8 cases where a show "repaired" a repeated card into an accepted
+  hand. Both are fixed and covered by regression tests. A second prediction failed for a
+  different reason. PokerKit's own loader disagrees on 8 of the 10,001 public hands. In each
+  one the file splits an odd chip into halves and PokerKit gives it to one winner (post hoc).
+* **Real players are not the bots.** All 10,000 Pluribus hands import. The 13 professionals
+  play preflop between the Phase 1 TAG and LAG bots (VPIP 27%, PFR 18%), but they reach
+  showdown after the flop 30% of the time, where every bot archetype averages 43–70%.
+
+Next: population priors fitted to real data (P3.7); see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -511,9 +545,11 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 
 # Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
 # the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
-# model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min)
-python -m experiments.run_phase3 --seed 2026          # ~42 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only confirm   # one step: pushfold, exploit, bridge, recommend, fitcheck or confirm
+# model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
+# hand histories imported and checked (1 min; downloads 12 MB of public PHH data once)
+python -m experiments.run_phase3 --seed 2026          # ~43 min on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only import   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm or import
+python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
@@ -641,6 +677,7 @@ poker_lab/
   evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
+  importers/   PHH text files -> HandHistory, strictly replayed through PokerKit; exporter; CLI
 experiments/   run_phase1/2/3.py (one command each), configs/, results/, references/
   explorer/    builds results/explorer.html (one section per quantified result, all phases)
 tests/         unit, contract, firewall, differential and end-to-end tests
@@ -654,7 +691,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 

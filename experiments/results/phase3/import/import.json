@@ -1,0 +1,2431 @@
+{
+ "meta": {
+  "seed": 2026,
+  "config": {
+   "round_trip_tables": 400,
+   "round_trip_hands": 25,
+   "mutation_hands": 1000,
+   "dataset_commit": "e47fbd5816372360bade4de5d712346fe1bb70f6",
+   "dataset_paths": [
+    "pluribus",
+    "wsop",
+    "alice-carol-wikipedia.phh",
+    "antonius-blom-2009.phh",
+    "arieh-yockey-2019.phh",
+    "dwan-ivey-2009.phh",
+    "phua-xuan-2019.phh"
+   ],
+   "workers": 12
+  },
+  "git": {
+   "commit": "3c1f25c4bc7366ee550e95d42dfcd4a891ff834a",
+   "dirty": false
+  },
+  "timestamp_utc": "2026-10-25T03:25:53+00:00",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "packages": {
+   "numpy": "2.4.6",
+   "pandas": "2.3.3",
+   "scipy": "1.18.0",
+   "scikit-learn": "1.9.0",
+   "matplotlib": "3.11.0",
+   "pokerkit": "0.7.7",
+   "phevaluator": "0.6.0",
+   "torch": "2.14.1"
+  }
+ },
+ "dataset": {
+  "url": "https://github.com/uoftcprg/phh-dataset.git",
+  "commit": "e47fbd5816372360bade4de5d712346fe1bb70f6",
+  "paths": [
+   "pluribus",
+   "wsop",
+   "alice-carol-wikipedia.phh",
+   "antonius-blom-2009.phh",
+   "arieh-yockey-2019.phh",
+   "dwan-ivey-2009.phh",
+   "phua-xuan-2019.phh"
+  ],
+  "files": 10088,
+  "content_sha256": "ebd84f50be142b5d1623babaedecb17d9b6d0f966ae5c52a08f5ae54b3ebc184"
+ },
+ "round_trip": {
+  "tables": 400,
+  "hands": 10000,
+  "checked": 20000,
+  "identical": 20000,
+  "share": 1.0,
+  "by_players": {
+   "2": {
+    "checked": 2500,
+    "identical": 2500
+   },
+   "3": {
+    "checked": 2800,
+    "identical": 2800
+   },
+   "4": {
+    "checked": 2050,
+    "identical": 2050
+   },
+   "5": {
+    "checked": 2050,
+    "identical": 2050
+   },
+   "6": {
+    "checked": 2800,
+    "identical": 2800
+   },
+   "7": {
+    "checked": 2800,
+    "identical": 2800
+   },
+   "8": {
+    "checked": 2550,
+    "identical": 2550
+   },
+   "9": {
+    "checked": 2450,
+    "identical": 2450
+   }
+  },
+  "features": {
+   "heads_up": 1250,
+   "antes": 4350,
+   "showdown": 8201,
+   "all_in": 8453,
+   "side_pot": 5643,
+   "cents": 3025
+  },
+  "failures": [],
+  "n_failures": 0,
+  "ms_per_round_trip": 6.484830045053968,
+  "holds": true
+ },
+ "faults": {
+  "simulated": {
+   "with_finishing": {
+    "drop": {
+     "rejected": 994,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 6,
+     "crash": 0,
+     "effective": 994,
+     "reasons": {
+      "illegal_action": 935,
+      "incomplete": 59
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9961502312950253,
+      "upper": 0.9999999999999999
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     }
+    },
+    "swap": {
+     "rejected": 968,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 32,
+     "crash": 0,
+     "effective": 968,
+     "reasons": {
+      "illegal_action": 968
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9960472371436431,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.0039527628563568815
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.0039527628563568815
+     }
+    },
+    "truncate": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "incomplete": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "wrong_player": {
+     "rejected": 994,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 6,
+     "crash": 0,
+     "effective": 994,
+     "reasons": {
+      "illegal_action": 994
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9961502312950253,
+      "upper": 0.9999999999999999
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     }
+    },
+    "delimiter": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "parse": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "amount": {
+     "rejected": 726,
+     "record_changed": 198,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 76,
+     "crash": 0,
+     "effective": 924,
+     "reasons": {
+      "illegal_action": 597,
+      "result_mismatch": 129
+     },
+     "changed_fields": {
+      "actions": 198
+     },
+     "rejected_share": {
+      "value": 0.7857142857142857,
+      "lower": 0.7581026808851785,
+      "upper": 0.810960056051689
+     },
+     "record_changed_share": {
+      "value": 0.21428571428571427,
+      "lower": 0.18903994394831097,
+      "upper": 0.24189731911482154
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.004140210360481951
+     }
+    },
+    "card": {
+     "rejected": 567,
+     "record_changed": 433,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "inconsistent": 495,
+      "result_mismatch": 72
+     },
+     "changed_fields": {
+      "board": 137,
+      "hole_cards": 296
+     },
+     "rejected_share": {
+      "value": 0.567,
+      "lower": 0.5360910862439573,
+      "upper": 0.5973961281189782
+     },
+     "record_changed_share": {
+      "value": 0.433,
+      "lower": 0.4026038718810217,
+      "upper": 0.46390891375604265
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "stack": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "result_mismatch": 814,
+      "illegal_action": 186
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "finishing": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "result_mismatch": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    }
+   },
+   "without_finishing": {
+    "drop": {
+     "rejected": 994,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 6,
+     "crash": 0,
+     "effective": 994,
+     "reasons": {
+      "illegal_action": 935,
+      "incomplete": 59
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9961502312950253,
+      "upper": 0.9999999999999999
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     }
+    },
+    "swap": {
+     "rejected": 968,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 32,
+     "crash": 0,
+     "effective": 968,
+     "reasons": {
+      "illegal_action": 968
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9960472371436431,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.0039527628563568815
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.0039527628563568815
+     }
+    },
+    "truncate": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "incomplete": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "wrong_player": {
+     "rejected": 994,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 6,
+     "crash": 0,
+     "effective": 994,
+     "reasons": {
+      "illegal_action": 994
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.9961502312950253,
+      "upper": 0.9999999999999999
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.003849768704974616
+     }
+    },
+    "delimiter": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "parse": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "amount": {
+     "rejected": 597,
+     "record_changed": 198,
+     "result_changed": 129,
+     "unchanged": 0,
+     "not_applicable": 76,
+     "crash": 0,
+     "effective": 924,
+     "reasons": {
+      "illegal_action": 597
+     },
+     "changed_fields": {
+      "actions": 327
+     },
+     "rejected_share": {
+      "value": 0.6461038961038961,
+      "lower": 0.6147249782424506,
+      "upper": 0.6762730122366292
+     },
+     "record_changed_share": {
+      "value": 0.21428571428571427,
+      "lower": 0.18903994394831097,
+      "upper": 0.24189731911482154
+     },
+     "result_changed_share": {
+      "value": 0.1396103896103896,
+      "lower": 0.1187519612281527,
+      "upper": 0.16345299559011678
+     }
+    },
+    "card": {
+     "rejected": 495,
+     "record_changed": 433,
+     "result_changed": 72,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "inconsistent": 495
+     },
+     "changed_fields": {
+      "board": 209,
+      "hole_cards": 296
+     },
+     "rejected_share": {
+      "value": 0.495,
+      "lower": 0.4640902748007247,
+      "upper": 0.525947992784131
+     },
+     "record_changed_share": {
+      "value": 0.433,
+      "lower": 0.4026038718810217,
+      "upper": 0.46390891375604265
+     },
+     "result_changed_share": {
+      "value": 0.072,
+      "lower": 0.05756392168091441,
+      "upper": 0.08971178358272076
+     }
+    },
+    "stack": {
+     "rejected": 186,
+     "record_changed": 671,
+     "result_changed": 143,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 186
+     },
+     "changed_fields": {
+      "seats": 814
+     },
+     "rejected_share": {
+      "value": 0.186,
+      "lower": 0.1631011791493255,
+      "upper": 0.21130202517960314
+     },
+     "record_changed_share": {
+      "value": 0.671,
+      "lower": 0.6412729638759754,
+      "upper": 0.6994182847219649
+     },
+     "result_changed_share": {
+      "value": 0.143,
+      "lower": 0.12266731749770252,
+      "upper": 0.16606498806098383
+     }
+    },
+    "finishing": {
+     "rejected": 0,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 1000,
+     "crash": 0,
+     "effective": 0,
+     "reasons": {},
+     "changed_fields": {},
+     "rejected_share": null,
+     "record_changed_share": null,
+     "result_changed_share": null
+    }
+   }
+  },
+  "pluribus": {
+   "with_finishing": {
+    "drop": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 905,
+      "incomplete": 95
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "swap": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "truncate": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "incomplete": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "wrong_player": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "delimiter": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "parse": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "amount": {
+     "rejected": 461,
+     "record_changed": 429,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 110,
+     "crash": 0,
+     "effective": 890,
+     "reasons": {
+      "result_mismatch": 314,
+      "illegal_action": 147
+     },
+     "changed_fields": {
+      "actions": 429
+     },
+     "rejected_share": {
+      "value": 0.5179775280898876,
+      "lower": 0.48514296193291057,
+      "upper": 0.5506575703474111
+     },
+     "record_changed_share": {
+      "value": 0.4820224719101124,
+      "lower": 0.44934242965258897,
+      "upper": 0.5148570380670895
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 0.0,
+      "upper": 0.004297695953555817
+     }
+    },
+    "card": {
+     "rejected": 293,
+     "record_changed": 707,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "inconsistent": 291,
+      "result_mismatch": 2
+     },
+     "changed_fields": {
+      "hole_cards": 609,
+      "board": 98
+     },
+     "rejected_share": {
+      "value": 0.293,
+      "lower": 0.26562577020883094,
+      "upper": 0.3219585078041889
+     },
+     "record_changed_share": {
+      "value": 0.707,
+      "lower": 0.6780414921958111,
+      "upper": 0.7343742297911691
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "stack": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "result_mismatch": 997,
+      "illegal_action": 3
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "finishing": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "result_mismatch": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    }
+   },
+   "without_finishing": {
+    "drop": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 905,
+      "incomplete": 95
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "swap": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "truncate": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "incomplete": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "wrong_player": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "delimiter": {
+     "rejected": 1000,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "parse": 1000
+     },
+     "changed_fields": {},
+     "rejected_share": {
+      "value": 1.0,
+      "lower": 0.996173241514445,
+      "upper": 1.0
+     },
+     "record_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     },
+     "result_changed_share": {
+      "value": 0.0,
+      "lower": 2.168404344971009e-19,
+      "upper": 0.0038267584855551234
+     }
+    },
+    "amount": {
+     "rejected": 147,
+     "record_changed": 429,
+     "result_changed": 314,
+     "unchanged": 0,
+     "not_applicable": 110,
+     "crash": 0,
+     "effective": 890,
+     "reasons": {
+      "illegal_action": 147
+     },
+     "changed_fields": {
+      "actions": 743
+     },
+     "rejected_share": {
+      "value": 0.1651685393258427,
+      "lower": 0.14222166666314315,
+      "upper": 0.19099341961586727
+     },
+     "record_changed_share": {
+      "value": 0.4820224719101124,
+      "lower": 0.44934242965258897,
+      "upper": 0.5148570380670895
+     },
+     "result_changed_share": {
+      "value": 0.35280898876404493,
+      "lower": 0.3221092596524273,
+      "upper": 0.3847738823024397
+     }
+    },
+    "card": {
+     "rejected": 291,
+     "record_changed": 707,
+     "result_changed": 2,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "inconsistent": 291
+     },
+     "changed_fields": {
+      "hole_cards": 609,
+      "board": 100
+     },
+     "rejected_share": {
+      "value": 0.291,
+      "lower": 0.2636897827038124,
+      "upper": 0.3199098023431496
+     },
+     "record_changed_share": {
+      "value": 0.707,
+      "lower": 0.6780414921958111,
+      "upper": 0.7343742297911691
+     },
+     "result_changed_share": {
+      "value": 0.002,
+      "lower": 0.000548643588120728,
+      "upper": 0.007262807863492177
+     }
+    },
+    "stack": {
+     "rejected": 3,
+     "record_changed": 996,
+     "result_changed": 1,
+     "unchanged": 0,
+     "not_applicable": 0,
+     "crash": 0,
+     "effective": 1000,
+     "reasons": {
+      "illegal_action": 3
+     },
+     "changed_fields": {
+      "seats": 997
+     },
+     "rejected_share": {
+      "value": 0.003,
+      "lower": 0.0010207838811386186,
+      "upper": 0.008783014053503173
+     },
+     "record_changed_share": {
+      "value": 0.996,
+      "lower": 0.9897604437227377,
+      "upper": 0.9984434118595916
+     },
+     "result_changed_share": {
+      "value": 0.001,
+      "lower": 0.00017654637062607809,
+      "upper": 0.0056425585979579355
+     }
+    },
+    "finishing": {
+     "rejected": 0,
+     "record_changed": 0,
+     "result_changed": 0,
+     "unchanged": 0,
+     "not_applicable": 1000,
+     "crash": 0,
+     "effective": 0,
+     "reasons": {},
+     "changed_fields": {},
+     "rejected_share": null,
+     "record_changed_share": null,
+     "result_changed_share": null
+    }
+   }
+  }
+ },
+ "fault_hands": {
+  "simulated": 1000,
+  "pluribus": 1000
+ },
+ "crashes": [],
+ "fault_predictions": {
+  "no_crashes": {
+   "crashes": 0,
+   "holds": true
+  },
+  "structural_rejected": {
+   "bound": 0.99,
+   "values": {
+    "simulated/with_finishing/drop": 1.0,
+    "simulated/with_finishing/swap": 1.0,
+    "simulated/with_finishing/truncate": 1.0,
+    "simulated/with_finishing/wrong_player": 1.0,
+    "simulated/with_finishing/delimiter": 1.0,
+    "simulated/without_finishing/drop": 1.0,
+    "simulated/without_finishing/swap": 1.0,
+    "simulated/without_finishing/truncate": 1.0,
+    "simulated/without_finishing/wrong_player": 1.0,
+    "simulated/without_finishing/delimiter": 1.0,
+    "pluribus/with_finishing/drop": 1.0,
+    "pluribus/with_finishing/swap": 1.0,
+    "pluribus/with_finishing/truncate": 1.0,
+    "pluribus/with_finishing/wrong_player": 1.0,
+    "pluribus/with_finishing/delimiter": 1.0,
+    "pluribus/without_finishing/drop": 1.0,
+    "pluribus/without_finishing/swap": 1.0,
+    "pluribus/without_finishing/truncate": 1.0,
+    "pluribus/without_finishing/wrong_player": 1.0,
+    "pluribus/without_finishing/delimiter": 1.0
+   },
+   "minimum": 1.0,
+   "holds": true
+  },
+  "no_silent_with_finishing": {
+   "values": {
+    "simulated/drop": 0,
+    "simulated/swap": 0,
+    "simulated/truncate": 0,
+    "simulated/wrong_player": 0,
+    "simulated/delimiter": 0,
+    "simulated/amount": 0,
+    "simulated/card": 0,
+    "simulated/stack": 0,
+    "simulated/finishing": 0,
+    "pluribus/drop": 0,
+    "pluribus/swap": 0,
+    "pluribus/truncate": 0,
+    "pluribus/wrong_player": 0,
+    "pluribus/delimiter": 0,
+    "pluribus/amount": 0,
+    "pluribus/card": 0,
+    "pluribus/stack": 0,
+    "pluribus/finishing": 0
+   },
+   "total": 0,
+   "holds": true
+  }
+ },
+ "public_data": {
+  "files": 10088,
+  "accepted": 10001,
+  "rejected": 87,
+  "by_subset": {
+   "historical": {
+    "files": 5,
+    "accepted": 1,
+    "rejected": {
+     "unsupported": 4
+    }
+   },
+   "pluribus": {
+    "files": 10000,
+    "accepted": 10000,
+    "rejected": {}
+   },
+   "wsop": {
+    "files": 83,
+    "accepted": 0,
+    "rejected": {
+     "unsupported": 83
+    }
+   }
+  },
+  "rejection_kinds": [
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'FO/8'",
+    "count": 14
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'F7S'",
+    "count": 13
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "antes differ by seat (big-blind ante)",
+    "count": 11
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'FR'",
+    "count": 10
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'PO'",
+    "count": 7
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'FT'",
+    "count": 7
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'N2L1D'",
+    "count": 7
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'F7S/8'",
+    "count": 7
+   },
+   {
+    "subset": "wsop",
+    "reason": "unsupported",
+    "kind": "variant 'F2L3D'",
+    "count": 7
+   },
+   {
+    "subset": "historical",
+    "reason": "unsupported",
+    "kind": "variant 'FB'",
+    "count": 1
+   },
+   {
+    "subset": "historical",
+    "reason": "unsupported",
+    "kind": "variant 'PO'",
+    "count": 1
+   },
+   {
+    "subset": "historical",
+    "reason": "unsupported",
+    "kind": "variant 'F2L3D'",
+    "count": 1
+   },
+   {
+    "subset": "historical",
+    "reason": "unsupported",
+    "kind": "variant 'NS'",
+    "count": 1
+   }
+  ],
+  "players": {
+   "6": 10000,
+   "3": 1
+  },
+  "cross_check": {
+   "agree": 9993,
+   "of": 10001,
+   "holds": false
+  },
+  "fixed_point": {
+   "same": 10001,
+   "of": 10001,
+   "holds": true
+  },
+  "disagreements": [
+   {
+    "hand": "pluribus/102/0:0",
+    "importer": [
+     1125,
+     -2250,
+     0,
+     0,
+     1125,
+     0
+    ],
+    "pokerkit": [
+     1130,
+     -2250,
+     0,
+     0,
+     1120,
+     0
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/32/23:23",
+    "importer": [
+     -500,
+     -7250,
+     3875,
+     0,
+     0,
+     3875
+    ],
+    "pokerkit": [
+     -500,
+     -7250,
+     3880,
+     0,
+     0,
+     3870
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/41b/204:204",
+    "importer": [
+     1625,
+     -1000,
+     0,
+     1625,
+     0,
+     -2250
+    ],
+    "pokerkit": [
+     1630,
+     -1000,
+     0,
+     1620,
+     0,
+     -2250
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/60/88:88",
+    "importer": [
+     -500,
+     1375,
+     0,
+     0,
+     -2250,
+     1375
+    ],
+    "pokerkit": [
+     -500,
+     1380,
+     0,
+     0,
+     -2250,
+     1370
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/75b/76:76",
+    "importer": [
+     -2250,
+     -1000,
+     1625,
+     0,
+     0,
+     1625
+    ],
+    "pokerkit": [
+     -2250,
+     -1000,
+     1630,
+     0,
+     0,
+     1620
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/88/128:128",
+    "importer": [
+     -500,
+     -5250,
+     0,
+     2875,
+     0,
+     2875
+    ],
+    "pokerkit": [
+     -500,
+     -5250,
+     0,
+     2880,
+     0,
+     2870
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/91/43:43",
+    "importer": [
+     -500,
+     -1000,
+     0,
+     1875,
+     1875,
+     -2250
+    ],
+    "pokerkit": [
+     -500,
+     -1000,
+     0,
+     1880,
+     1870,
+     -2250
+    ],
+    "odd_chip": true
+   },
+   {
+    "hand": "pluribus/91/53:53",
+    "importer": [
+     1125,
+     -2250,
+     0,
+     1125,
+     0,
+     0
+    ],
+    "pokerkit": [
+     1130,
+     -2250,
+     0,
+     1120,
+     0,
+     0
+    ],
+    "odd_chip": true
+   }
+  ],
+  "disagreement_kinds": {
+   "post_hoc": true,
+   "odd_chip": 8,
+   "other": 0
+  },
+  "fractional_chip_hands": 8
+ },
+ "pluribus_stats": {
+  "All humans": {
+   "hands": 50000,
+   "vpip": {
+    "value": 26.776223349013378,
+    "lower": 26.38641997478842,
+    "upper": 27.169659859182083,
+    "n": 49107
+   },
+   "pfr": {
+    "value": 17.84877919644857,
+    "lower": 17.512619455130405,
+    "upper": 18.189968686273712,
+    "n": 49107
+   },
+   "three_bet": {
+    "value": 7.924993831729584,
+    "lower": 7.561001639001397,
+    "upper": 8.304934583126425,
+    "n": 20265
+   },
+   "cbet": {
+    "value": 51.86296574143536,
+    "lower": 50.31331486396754,
+    "upper": 53.409040905873475,
+    "n": 3999
+   },
+   "fold_to_cbet": {
+    "value": 46.15726343847179,
+    "lower": 44.10613942025373,
+    "upper": 48.22148080673638,
+    "n": 2251
+   },
+   "wtsd": {
+    "value": 30.124720179085386,
+    "lower": 29.204585055772224,
+    "upper": 31.061126236610225,
+    "n": 9381
+   },
+   "wsd": {
+    "value": 52.26468506723284,
+    "lower": 50.42129773235868,
+    "upper": 54.10192386371415,
+    "n": 2826
+   },
+   "af": {
+    "value": 2.253662022150768
+   }
+  },
+  "Pluribus": {
+   "hands": 10000,
+   "vpip": {
+    "value": 26.8530757498729,
+    "lower": 25.986334674400208,
+    "upper": 27.737891708797008,
+    "n": 9835
+   },
+   "pfr": {
+    "value": 17.95627859684799,
+    "lower": 17.210271432645126,
+    "upper": 18.727307942117026,
+    "n": 9835
+   },
+   "three_bet": {
+    "value": 7.259439707673569,
+    "lower": 6.505025027030142,
+    "upper": 8.09377282955249,
+    "n": 4105
+   },
+   "cbet": {
+    "value": 53.65269461077844,
+    "lower": 50.26137341938145,
+    "upper": 57.01056090844235,
+    "n": 835
+   },
+   "fold_to_cbet": {
+    "value": 45.01216545012166,
+    "lower": 40.270669023884196,
+    "upper": 49.84603721937455,
+    "n": 411
+   },
+   "wtsd": {
+    "value": 30.638297872340424,
+    "lower": 28.595705340091175,
+    "upper": 32.75985371763673,
+    "n": 1880
+   },
+   "wsd": {
+    "value": 48.78472222222222,
+    "lower": 44.72425777988803,
+    "upper": 52.86128913349174,
+    "n": 576
+   },
+   "af": {
+    "value": 2.3327433628318586
+   }
+  },
+  "MrBlue": {
+   "hands": 9121,
+   "vpip": {
+    "value": 32.090053763440864,
+    "lower": 31.12960524031518,
+    "upper": 33.06590791624901,
+    "n": 8928
+   },
+   "pfr": {
+    "value": 19.22043010752688,
+    "lower": 18.416395465085245,
+    "upper": 20.050940466270855,
+    "n": 8928
+   },
+   "three_bet": {
+    "value": 5.874164810690423,
+    "lower": 5.151304750953755,
+    "upper": 6.691304654866789,
+    "n": 3592
+   },
+   "cbet": {
+    "value": 46.70487106017192,
+    "lower": 43.03178280398475,
+    "upper": 50.41403043177167,
+    "n": 698
+   },
+   "fold_to_cbet": {
+    "value": 51.52542372881356,
+    "lower": 47.49596433844246,
+    "upper": 55.53514770882787,
+    "n": 590
+   },
+   "wtsd": {
+    "value": 28.240963855421686,
+    "lower": 26.34560067822281,
+    "upper": 30.216743402010078,
+    "n": 2075
+   },
+   "wsd": {
+    "value": 55.80204778156996,
+    "lower": 51.75627764197501,
+    "upper": 59.77224396041565,
+    "n": 586
+   },
+   "af": {
+    "value": 1.9322834645669291
+   }
+  },
+  "MrOrange": {
+   "hands": 7512,
+   "vpip": {
+    "value": 21.119524067063278,
+    "lower": 20.20443706106707,
+    "upper": 22.064596353051176,
+    "n": 7396
+   },
+   "pfr": {
+    "value": 14.548404542996215,
+    "lower": 13.763247913757123,
+    "upper": 15.370368945708254,
+    "n": 7396
+   },
+   "three_bet": {
+    "value": 7.413455258001306,
+    "lower": 6.53790219837293,
+    "upper": 8.39572907285423,
+    "n": 3062
+   },
+   "cbet": {
+    "value": 46.00389863547758,
+    "lower": 41.73666956506603,
+    "upper": 50.33053028891783,
+    "n": 513
+   },
+   "fold_to_cbet": {
+    "value": 40.3921568627451,
+    "lower": 34.55538359528507,
+    "upper": 46.514109590525045,
+    "n": 255
+   },
+   "wtsd": {
+    "value": 30.927835051546392,
+    "lower": 28.33899470093811,
+    "upper": 33.64214609120687,
+    "n": 1164
+   },
+   "wsd": {
+    "value": 54.166666666666664,
+    "lower": 49.002735514245764,
+    "upper": 59.24261401168178,
+    "n": 360
+   },
+   "af": {
+    "value": 1.9943977591036415
+   }
+  },
+  "Bill": {
+   "hands": 6713,
+   "vpip": {
+    "value": 27.88621576637918,
+    "lower": 26.818154081165318,
+    "upper": 28.97996964216865,
+    "n": 6609
+   },
+   "pfr": {
+    "value": 20.21485852625208,
+    "lower": 19.264061978396718,
+    "upper": 21.20025998491694,
+    "n": 6609
+   },
+   "three_bet": {
+    "value": 10.664206642066421,
+    "lower": 9.557283471248704,
+    "upper": 11.882489914538343,
+    "n": 2710
+   },
+   "cbet": {
+    "value": 54.516129032258064,
+    "lower": 50.58069207672795,
+    "upper": 58.39594761404574,
+    "n": 620
+   },
+   "fold_to_cbet": {
+    "value": 38.489208633093526,
+    "lower": 32.96337751545261,
+    "upper": 44.32882063460152,
+    "n": 278
+   },
+   "wtsd": {
+    "value": 32.413249211356465,
+    "lower": 29.89350752101335,
+    "upper": 35.03922863829142,
+    "n": 1268
+   },
+   "wsd": {
+    "value": 46.47201946472019,
+    "lower": 41.705108320841475,
+    "upper": 51.30426926585373,
+    "n": 411
+   },
+   "af": {
+    "value": 2.125
+   }
+  },
+  "MrPink": {
+   "hands": 6055,
+   "vpip": {
+    "value": 26.743990586653222,
+    "lower": 25.63449833415257,
+    "upper": 27.883497749886182,
+    "n": 5949
+   },
+   "pfr": {
+    "value": 17.700453857791228,
+    "lower": 16.751508396769708,
+    "upper": 18.691086092193398,
+    "n": 5949
+   },
+   "three_bet": {
+    "value": 9.265944645006016,
+    "lower": 8.18956987566126,
+    "upper": 10.467660329123943,
+    "n": 2493
+   },
+   "cbet": {
+    "value": 59.50413223140496,
+    "lower": 55.072652197584404,
+    "upper": 63.785933586084006,
+    "n": 484
+   },
+   "fold_to_cbet": {
+    "value": 47.76119402985074,
+    "lower": 41.85496206867562,
+    "upper": 53.73070023167453,
+    "n": 268
+   },
+   "wtsd": {
+    "value": 30.87843833185448,
+    "lower": 28.249949851136424,
+    "upper": 33.63683837738578,
+    "n": 1127
+   },
+   "wsd": {
+    "value": 47.41379310344828,
+    "lower": 42.22444849443716,
+    "upper": 52.65961091677247,
+    "n": 348
+   },
+   "af": {
+    "value": 3.0424028268551235
+   }
+  },
+  "Eddie": {
+   "hands": 5510,
+   "vpip": {
+    "value": 27.72441817510159,
+    "lower": 26.548147011409668,
+    "upper": 28.932277834299608,
+    "n": 5414
+   },
+   "pfr": {
+    "value": 17.934983376431475,
+    "lower": 16.93590437247098,
+    "upper": 18.97953305054004,
+    "n": 5414
+   },
+   "three_bet": {
+    "value": 6.236178681999116,
+    "lower": 5.3117671985527215,
+    "upper": 7.309048166136519,
+    "n": 2261
+   },
+   "cbet": {
+    "value": 61.01010101010102,
+    "lower": 56.64447534558425,
+    "upper": 65.20615436303817,
+    "n": 495
+   },
+   "fold_to_cbet": {
+    "value": 40.17094017094017,
+    "lower": 34.09726376001539,
+    "upper": 46.5621216019459,
+    "n": 234
+   },
+   "wtsd": {
+    "value": 29.072907290729074,
+    "lower": 26.478460760800814,
+    "upper": 31.811572649699716,
+    "n": 1111
+   },
+   "wsd": {
+    "value": 56.656346749226,
+    "lower": 51.20516525788622,
+    "upper": 61.951060441005254,
+    "n": 323
+   },
+   "af": {
+    "value": 2.971830985915493
+   }
+  },
+  "MrWhite": {
+   "hands": 4483,
+   "vpip": {
+    "value": 26.41380876674994,
+    "lower": 25.132545078187896,
+    "upper": 27.73619278296898,
+    "n": 4403
+   },
+   "pfr": {
+    "value": 17.351805587099705,
+    "lower": 16.26182164574373,
+    "upper": 18.49870861464434,
+    "n": 4403
+   },
+   "three_bet": {
+    "value": 6.997742663656885,
+    "lower": 5.900612447408387,
+    "upper": 8.280915839916187,
+    "n": 1772
+   },
+   "cbet": {
+    "value": 50.282485875706215,
+    "lower": 45.09902216185037,
+    "upper": 55.459884569245354,
+    "n": 354
+   },
+   "fold_to_cbet": {
+    "value": 51.61290322580645,
+    "lower": 44.99378152192024,
+    "upper": 58.17591317099675,
+    "n": 217
+   },
+   "wtsd": {
+    "value": 26.872770511296075,
+    "lower": 23.98687104251685,
+    "upper": 29.968987072803237,
+    "n": 841
+   },
+   "wsd": {
+    "value": 54.86725663716814,
+    "lower": 48.35205497347863,
+    "upper": 61.21976036083092,
+    "n": 226
+   },
+   "af": {
+    "value": 1.9156626506024097
+   }
+  },
+  "MrBlonde": {
+   "hands": 2560,
+   "vpip": {
+    "value": 23.046251993620416,
+    "lower": 21.440058423294296,
+    "upper": 24.73488843681677,
+    "n": 2508
+   },
+   "pfr": {
+    "value": 17.22488038277512,
+    "lower": 15.797495953890978,
+    "upper": 18.752513393758875,
+    "n": 2508
+   },
+   "three_bet": {
+    "value": 9.884836852207293,
+    "lower": 8.217357021860494,
+    "upper": 11.847009049199105,
+    "n": 1042
+   },
+   "cbet": {
+    "value": 41.42011834319527,
+    "lower": 34.26481768160373,
+    "upper": 48.95680044296636,
+    "n": 169
+   },
+   "fold_to_cbet": {
+    "value": 49.46236559139785,
+    "lower": 39.52589398360086,
+    "upper": 59.441490427809605,
+    "n": 93
+   },
+   "wtsd": {
+    "value": 30.919220055710305,
+    "lower": 26.361592006397128,
+    "upper": 35.88087046046737,
+    "n": 359
+   },
+   "wsd": {
+    "value": 61.261261261261254,
+    "lower": 51.96688348455415,
+    "upper": 69.8022583016307,
+    "n": 111
+   },
+   "af": {
+    "value": 1.7017543859649122
+   }
+  },
+  "Budd": {
+   "hands": 2509,
+   "vpip": {
+    "value": 25.51640340218712,
+    "lower": 23.83575233175007,
+    "upper": 27.273123019418776,
+    "n": 2469
+   },
+   "pfr": {
+    "value": 18.388011340623734,
+    "lower": 16.90948698790205,
+    "upper": 19.964751575517784,
+    "n": 2469
+   },
+   "three_bet": {
+    "value": 8.51262862488307,
+    "lower": 6.98467685076806,
+    "upper": 10.337683064831934,
+    "n": 1069
+   },
+   "cbet": {
+    "value": 54.50000000000001,
+    "lower": 47.578611372488105,
+    "upper": 61.25178069011651,
+    "n": 200
+   },
+   "fold_to_cbet": {
+    "value": 50.54945054945055,
+    "lower": 40.46497531484993,
+    "upper": 60.58941588962382,
+    "n": 91
+   },
+   "wtsd": {
+    "value": 32.38095238095238,
+    "lower": 28.083005884256867,
+    "upper": 36.99827700586,
+    "n": 420
+   },
+   "wsd": {
+    "value": 50.73529411764706,
+    "lower": 42.42891392120461,
+    "upper": 59.001277108598934,
+    "n": 136
+   },
+   "af": {
+    "value": 2.8598130841121496
+   }
+  },
+  "Joe": {
+   "hands": 1535,
+   "vpip": {
+    "value": 22.74819197896121,
+    "lower": 20.71164024065131,
+    "upper": 24.922052022599125,
+    "n": 1521
+   },
+   "pfr": {
+    "value": 17.554240631163708,
+    "lower": 15.724769331888039,
+    "upper": 19.547189973091672,
+    "n": 1521
+   },
+   "three_bet": {
+    "value": 9.389671361502346,
+    "lower": 7.3645155515469245,
+    "upper": 11.900181384441591,
+    "n": 639
+   },
+   "cbet": {
+    "value": 48.760330578512395,
+    "lower": 40.03029997040413,
+    "upper": 57.56665217326731,
+    "n": 121
+   },
+   "fold_to_cbet": {
+    "value": 33.33333333333333,
+    "lower": 21.358874934330036,
+    "upper": 47.92951169009959,
+    "n": 45
+   },
+   "wtsd": {
+    "value": 31.779661016949152,
+    "lower": 26.171524820176128,
+    "upper": 37.97145512046301,
+    "n": 236
+   },
+   "wsd": {
+    "value": 48.0,
+    "lower": 37.06911114274907,
+    "upper": 59.12578422718215,
+    "n": 75
+   },
+   "af": {
+    "value": 2.5205479452054793
+   }
+  },
+  "MrBrown": {
+   "hands": 1378,
+   "vpip": {
+    "value": 25.945144551519643,
+    "lower": 23.676684307271127,
+    "upper": 28.35021464911141,
+    "n": 1349
+   },
+   "pfr": {
+    "value": 15.789473684210526,
+    "lower": 13.941105015869809,
+    "upper": 17.83212724413187,
+    "n": 1349
+   },
+   "three_bet": {
+    "value": 9.010600706713781,
+    "lower": 6.91978875547329,
+    "upper": 11.654054404295493,
+    "n": 566
+   },
+   "cbet": {
+    "value": 36.11111111111111,
+    "lower": 27.6735447828849,
+    "upper": 45.50277076563056,
+    "n": 108
+   },
+   "fold_to_cbet": {
+    "value": 46.666666666666664,
+    "lower": 34.62790604143849,
+    "upper": 59.10657297284211,
+    "n": 60
+   },
+   "wtsd": {
+    "value": 33.46303501945525,
+    "lower": 27.975103281387693,
+    "upper": 39.43805243998475,
+    "n": 257
+   },
+   "wsd": {
+    "value": 54.65116279069767,
+    "lower": 44.15616959142949,
+    "upper": 64.74840531754033,
+    "n": 86
+   },
+   "af": {
+    "value": 1.7912087912087913
+   }
+  },
+  "Hattori": {
+   "hands": 1365,
+   "vpip": {
+    "value": 27.06766917293233,
+    "lower": 24.74838680989967,
+    "upper": 29.519041604019403,
+    "n": 1330
+   },
+   "pfr": {
+    "value": 18.49624060150376,
+    "lower": 16.501338385215565,
+    "upper": 20.6726042555454,
+    "n": 1330
+   },
+   "three_bet": {
+    "value": 5.7251908396946565,
+    "lower": 4.0394528410095765,
+    "upper": 8.055364220789437,
+    "n": 524
+   },
+   "cbet": {
+    "value": 43.65079365079365,
+    "lower": 35.30593659376036,
+    "upper": 52.37134295521994,
+    "n": 126
+   },
+   "fold_to_cbet": {
+    "value": 45.28301886792453,
+    "lower": 32.65757915292224,
+    "upper": 58.54602451289419,
+    "n": 53
+   },
+   "wtsd": {
+    "value": 33.840304182509506,
+    "lower": 28.390960681948442,
+    "upper": 39.75491875685484,
+    "n": 263
+   },
+   "wsd": {
+    "value": 41.57303370786517,
+    "lower": 31.890529285727986,
+    "upper": 51.95289563398414,
+    "n": 89
+   },
+   "af": {
+    "value": 1.9529411764705882
+   }
+  },
+  "ORen": {
+   "hands": 771,
+   "vpip": {
+    "value": 27.116402116402117,
+    "lower": 24.069026825779936,
+    "upper": 30.39515830344339,
+    "n": 756
+   },
+   "pfr": {
+    "value": 16.666666666666664,
+    "lower": 14.17998937729044,
+    "upper": 19.49038433695395,
+    "n": 756
+   },
+   "three_bet": {
+    "value": 7.5075075075075075,
+    "lower": 5.136606366680321,
+    "upper": 10.8476073964345,
+    "n": 333
+   },
+   "cbet": {
+    "value": 62.71186440677966,
+    "lower": 49.95359106706382,
+    "upper": 73.91600120767886,
+    "n": 59
+   },
+   "fold_to_cbet": {
+    "value": 73.07692307692307,
+    "lower": 53.91695962082381,
+    "upper": 86.29555167798162,
+    "n": 26
+   },
+   "wtsd": {
+    "value": 29.80132450331126,
+    "lower": 23.080810438343928,
+    "upper": 37.5240556843411,
+    "n": 151
+   },
+   "wsd": {
+    "value": 48.888888888888886,
+    "lower": 34.9570237528785,
+    "upper": 62.99553535541681,
+    "n": 45
+   },
+   "af": {
+    "value": 5.130434782608695
+   }
+  },
+  "Gogo": {
+   "hands": 488,
+   "vpip": {
+    "value": 32.631578947368425,
+    "lower": 28.569086511658178,
+    "upper": 36.972744305087055,
+    "n": 475
+   },
+   "pfr": {
+    "value": 23.36842105263158,
+    "lower": 19.785778004190885,
+    "upper": 27.37836258148514,
+    "n": 475
+   },
+   "three_bet": {
+    "value": 11.386138613861387,
+    "lower": 7.708019486523379,
+    "upper": 16.505498580364396,
+    "n": 202
+   },
+   "cbet": {
+    "value": 71.15384615384616,
+    "lower": 57.72721196331574,
+    "upper": 81.67003958529008,
+    "n": 52
+   },
+   "fold_to_cbet": {
+    "value": 31.70731707317073,
+    "lower": 19.564613898988576,
+    "upper": 46.98419964434429,
+    "n": 41
+   },
+   "wtsd": {
+    "value": 27.522935779816514,
+    "lower": 20.012023356731106,
+    "upper": 36.564220417411036,
+    "n": 109
+   },
+   "wsd": {
+    "value": 43.333333333333336,
+    "lower": 27.37748557646652,
+    "upper": 60.80269299918639,
+    "n": 30
+   },
+   "af": {
+    "value": 2.0714285714285716
+   }
+  }
+ },
+ "phase1_bots": {
+  "source": "experiments/results/phase1/bot_sanity/bot_sanity.json",
+  "git": {
+   "commit": "348c4d555f56f833377a3c8a9f3e07974a162b39",
+   "dirty": false
+  },
+  "per_archetype": {
+   "nit": {
+    "vpip": {
+     "estimate": 10.914603213896926,
+     "lower": 9.46996128778876,
+     "upper": 12.359245140005093
+    },
+    "pfr": {
+     "estimate": 6.80961883532788,
+     "lower": 5.936863365079081,
+     "upper": 7.682374305576679
+    },
+    "three_bet": {
+     "estimate": 2.2712584767883692,
+     "lower": 1.9282466406676848,
+     "upper": 2.6142703129090537
+    },
+    "af": {
+     "estimate": 2.338082402799959,
+     "lower": 2.133577226307662,
+     "upper": 2.5425875792922565
+    },
+    "cbet": {
+     "estimate": 56.80587599727742,
+     "lower": 54.23091961268644,
+     "upper": 59.380832381868395
+    },
+    "fold_to_cbet": {
+     "estimate": 53.97332289254776,
+     "lower": 50.34824605840444,
+     "upper": 57.598399726691085
+    },
+    "wtsd": {
+     "estimate": 44.33411643154529,
+     "lower": 43.04368401003932,
+     "upper": 45.62454885305126
+    },
+    "wsd": {
+     "estimate": 59.89217677682029,
+     "lower": 58.501811480895334,
+     "upper": 61.28254207274525
+    }
+   },
+   "tag": {
+    "vpip": {
+     "estimate": 19.796885942085897,
+     "lower": 18.078674570270287,
+     "upper": 21.515097313901506
+    },
+    "pfr": {
+     "estimate": 14.36284969846586,
+     "lower": 13.082790146662141,
+     "upper": 15.642909250269579
+    },
+    "three_bet": {
+     "estimate": 5.4114187523641535,
+     "lower": 5.021086471046346,
+     "upper": 5.801751033681961
+    },
+    "af": {
+     "estimate": 2.9702309602407473,
+     "lower": 2.806544024329502,
+     "upper": 3.1339178961519925
+    },
+    "cbet": {
+     "estimate": 70.10080027586021,
+     "lower": 68.1406735279277,
+     "upper": 72.06092702379271
+    },
+    "fold_to_cbet": {
+     "estimate": 49.43957913663539,
+     "lower": 47.04771073859777,
+     "upper": 51.831447534673
+    },
+    "wtsd": {
+     "estimate": 43.45183929596565,
+     "lower": 42.522061448304804,
+     "upper": 44.38161714362649
+    },
+    "wsd": {
+     "estimate": 54.8538241162231,
+     "lower": 53.69816208223189,
+     "upper": 56.009486150214315
+    }
+   },
+   "lag": {
+    "vpip": {
+     "estimate": 29.353781641661563,
+     "lower": 27.361378301390236,
+     "upper": 31.34618498193289
+    },
+    "pfr": {
+     "estimate": 21.812217926636652,
+     "lower": 20.332750285176452,
+     "upper": 23.291685568096852
+    },
+    "three_bet": {
+     "estimate": 12.521312014758916,
+     "lower": 11.565905422783743,
+     "upper": 13.476718606734089
+    },
+    "af": {
+     "estimate": 3.5126184209993117,
+     "lower": 3.21142739539438,
+     "upper": 3.8138094466042434
+    },
+    "cbet": {
+     "estimate": 79.22380114074936,
+     "lower": 77.27844864430128,
+     "upper": 81.16915363719744
+    },
+    "fold_to_cbet": {
+     "estimate": 41.11221457008308,
+     "lower": 38.60610569172946,
+     "upper": 43.618323448436705
+    },
+    "wtsd": {
+     "estimate": 47.17975009568156,
+     "lower": 45.86724204133507,
+     "upper": 48.49225815002806
+    },
+    "wsd": {
+     "estimate": 50.230504156461116,
+     "lower": 49.372812640687876,
+     "upper": 51.088195672234356
+    }
+   },
+   "calling_station": {
+    "vpip": {
+     "estimate": 44.07597101381934,
+     "lower": 41.86043282879741,
+     "upper": 46.291509198841275
+    },
+    "pfr": {
+     "estimate": 5.696359467880611,
+     "lower": 5.124670908893255,
+     "upper": 6.268048026867967
+    },
+    "three_bet": {
+     "estimate": 2.5819987625147034,
+     "lower": 1.9416952131136846,
+     "upper": 3.222302311915722
+    },
+    "af": {
+     "estimate": 0.3313018942072069,
+     "lower": 0.30500714648695904,
+     "upper": 0.3575966419274548
+    },
+    "cbet": {
+     "estimate": 29.334403879674678,
+     "lower": 26.55110017198216,
+     "upper": 32.1177075873672
+    },
+    "fold_to_cbet": {
+     "estimate": 19.008206721905832,
+     "lower": 17.365073543748,
+     "upper": 20.651339900063665
+    },
+    "wtsd": {
+     "estimate": 69.95438020084963,
+     "lower": 68.35589803200845,
+     "upper": 71.5528623696908
+    },
+    "wsd": {
+     "estimate": 47.350826669299664,
+     "lower": 46.62381510903332,
+     "upper": 48.077838229566005
+    }
+   },
+   "maniac": {
+    "vpip": {
+     "estimate": 54.5786985736352,
+     "lower": 52.77751174383325,
+     "upper": 56.37988540343715
+    },
+    "pfr": {
+     "estimate": 38.83851899347902,
+     "lower": 37.33723588352462,
+     "upper": 40.33980210343342
+    },
+    "three_bet": {
+     "estimate": 27.935130633952006,
+     "lower": 26.349597491066437,
+     "upper": 29.520663776837576
+    },
+    "af": {
+     "estimate": 3.616328420300268,
+     "lower": 3.3312858777778134,
+     "upper": 3.901370962822723
+    },
+    "cbet": {
+     "estimate": 85.75863187694685,
+     "lower": 84.35847425997723,
+     "upper": 87.15878949391647
+    },
+    "fold_to_cbet": {
+     "estimate": 33.131037096214506,
+     "lower": 30.38625208083837,
+     "upper": 35.87582211159064
+    },
+    "wtsd": {
+     "estimate": 51.035178115113325,
+     "lower": 49.59369807044083,
+     "upper": 52.47665815978582
+    },
+    "wsd": {
+     "estimate": 41.84810271599641,
+     "lower": 40.87975103249028,
+     "upper": 42.81645439950254
+    }
+   }
+  }
+ },
+ "seconds": {
+  "round_trip": 20.6,
+  "public_data": 10.9,
+  "faults": 5.7
+ },
+ "elapsed_seconds": 39.5
+}

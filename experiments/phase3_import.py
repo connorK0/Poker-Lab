@@ -906,11 +906,11 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
                     )
                     left += np.array(widths)
             ax.set_yticks(y, [OPERATOR_LABELS[op] for op in OPERATORS])
-            ax.invert_yaxis()
             ax.set_xlim(0, 100)
             ax.set_xlabel("Share of effective mutations (%)")
             ax.set_title(SOURCE_LABELS[source], loc="left", fontsize=10, color=theme["ink"])
-        legend(axes[1], theme, loc="lower right")
+        axes[0].invert_yaxis()  # shared y: once flips both panels
+        legend(axes[1], theme, loc="upper left", bbox_to_anchor=(1.02, 1.0))
         title(
             fig,
             theme,
@@ -955,9 +955,9 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
                 label="Pluribus hands (95% Wilson)",
             )
             ax.set_yticks(y, [f"{p} ({stats[p]['hands']:,})" for p in players])
-            ax.invert_yaxis()
             ax.set_xlabel(f"{STAT_LABELS[name]} (%)")
-        legend(axes[0], theme, loc="lower right")
+        axes[0].invert_yaxis()  # shared y: once flips every panel
+        legend(axes[-1], theme, loc="upper left", bbox_to_anchor=(1.02, 1.0))
         title(
             fig,
             theme,

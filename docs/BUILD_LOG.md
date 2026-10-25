@@ -63,6 +63,7 @@ $B(a,b)$ the beta function.
   * [Step 29: Ranked exploit recommendations with confidence](#step-29-ranked-exploit-recommendations-with-confidence-p34)
   * [Step 30: Checking the model before trusting it](#step-30-checking-the-model-before-trusting-it-p35)
   * [Step 31: Confirming a post-hoc rule on fresh data](#step-31-confirming-a-post-hoc-rule-on-fresh-data-p35b)
+  * [Step 32: Importing hand histories from text files](#step-32-importing-hand-histories-from-text-files-p36)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -2690,6 +2691,227 @@ they have never seen.
 
 ---
 
+## Step 32: Importing hand histories from text files (P3.6)
+
+**The question.** Everything so far ran on hands this project simulated. Real hands arrive as
+text files written by someone else, with their own conventions and their own mistakes. P3.6
+adds a batch importer for completed hands. Two questions matter. Does a hand survive the
+trip into the schema exactly? And when a file is wrong, does the importer notice, or does a
+wrong hand slip into the profiles?
+
+**Which format.** PHH (Poker Hand History; Kim 2024) is an open, TOML-based text format from the
+University of Toronto group that also wrote PokerKit. Public research data uses it, for example
+the 10,000 hands that the Pluribus AI played against professionals (Brown and Sandholm 2019). A
+hand looks like this:
+
+```toml
+variant = 'NT'                      # no-limit Texas hold'em
+antes = [0, 0, 0, 0, 0, 0]
+blinds_or_straddles = [50, 100, 0, 0, 0, 0]
+min_bet = 100
+starting_stacks = [10000, 10000, 10000, 10000, 10000, 10000]
+actions = ['d dh p1 TcQc', ..., 'p3 f', 'p4 cbr 210', 'p5 f', 'p6 f', 'p1 cc', 'p2 f',
+           'd db 7d5h9d', 'p1 cc', 'p4 cc', ..., 'p1 cbr 230', 'p4 f']
+players = ['MrBlue', 'MrBlonde', 'MrWhite', 'MrPink', 'MrBrown', 'Pluribus']
+finishing_stacks = [10310, 9900, 10000, 9790, 10000, 10000]
+```
+
+`d dh` deals hole cards (`????` when unknown), `d db` deals the board, `f` folds, `cc` checks or
+calls, `cbr` bets or raises *to* an amount, and `sm` shows or mucks at showdown. Players are
+listed in dealing order: small blind first and button last (heads-up, big blind first).
+Online poker sites have their own formats, and PokerKit can parse several of them. Those
+parsers are deliberately not used: a batch importer for an online site's files is one step from
+a HUD, and this project is offline research only. Watching a folder for new hands is also left
+out, since that is how real-time HUDs work. The importer reads the files it is given, once.
+
+**Parse, don't repair.** PokerKit's own loader replays a PHH file, and when the next action
+does not apply it "repairs" the hand: it inserts the fold, check or showdown muck that would
+make the action legal. That suits a viewer and is wrong for data: a hand with a missing action
+would be imported with an invented one. The importer drives PokerKit's state machine itself and
+applies the file's actions one by one. An action that does not apply rejects the hand. Only two
+steps may stay implicit, because neither adds information: dealing *unknown* hole cards, and
+burning cards. A hand is accepted only if:
+
+* every action applies, in order, under PokerKit's rules (betting order, minimum raises,
+  all-ins, side pots);
+* the actions run to the end of the hand, so an in-progress or truncated hand is rejected. This
+  keeps the information firewall simple: an import never produces a hand in progress;
+* every known card appears once, and a show at showdown is of the cards that were dealt;
+* the converted record passes the schema's own `find_problems` (chip conservation, positions,
+  uncalled bets recomputed independently);
+* the file's finishing stacks, when it has them, agree with the replay.
+
+Every rejection carries a typed reason: `parse`, `unsupported`, `illegal_action`,
+`incomplete`, `result_mismatch`, `unknown_result`, `inconsistent` or `duplicate`. A batch
+import returns the accepted hands and a list of rejections (file, position in the file,
+reason, detail), so nothing is dropped silently.
+
+**The mapping, with its small pieces of arithmetic.**
+
+* *Results.* PokerKit reports each player's payoff $\pi_i$ (final stack minus starting stack).
+  The schema needs pot awards $w_i$, which exclude uncalled bets $u_i$. With contributions
+  $c_i$ (everything a seat put in), $w_i = \pi_i + c_i - u_i$, and the uncalled bets are
+  recomputed from the actions by the schema's own function (on each street, the excess of the
+  largest bet over the second largest goes back to its owner).
+* *Finishing stacks as a checksum.* A recorded finishing stack $f_i$ gives
+  $\hat w_i = f_i - s_i + c_i - u_i$. The importer requires $0 \le \hat w_i \le w_i$ for every
+  seat: the record may pay winners *less* than the replay (the difference is the rake,
+  $\text{rake} = \sum_i c_i - \sum_i \hat w_i - \sum_i u_i \ge 0$) but never more, and a seat the
+  replay pays nothing must receive nothing. With `allow_rake=False` (tournaments, research data)
+  the rake must be zero, so the record must equal the replay exactly.
+* *Units.* Amounts may be decimals (dollars and cents). The importer finds the smallest $k \le 4$
+  with $10^k x \in \mathbb{Z}$ for every amount $x$ in the hand, multiplies through, and records
+  the unit in the currency: `USD/100` means hundredths of a dollar.
+* *Seats.* PHH lists players in dealing order, which is exactly PokerKit's player order and the
+  schema's `seat_order_from_button` order (Step 4). With a `seats` field, player $k$ sits at
+  physical seat `seats[k] - 1` and the last player has the button. The importer checks that
+  these seat numbers really go clockwise from the button.
+
+Schema v1 cannot hold straddles, antes that differ by seat (the big-blind ante of modern
+tournaments), a minimum bet other than the big blind, more than one runout, or variants other
+than no-limit hold'em. Such hands are rejected as `unsupported`, never approximated.
+
+**Two PokerKit behaviors the importer has to guard against.** Probing PokerKit with hand-made
+files turned up two places where it is more lenient than a data importer can be. It only *warns*
+when a card is dealt twice (and not at all when the repeat is inside one deal). And it accepts a
+show of cards other than those dealt and pays the pot to the shown cards: a player dealt `9h9s`
+who "shows" `AhAs` wins with aces. The importer checks both itself.
+
+**An exporter, for round trips.** `hand_to_phh` writes a schema hand as PHH. Where a board deal
+or a showdown decision goes is PokerKit's business (after an all-in, PokerKit asks for the
+showdown *before* dealing the rest of the board), so the exporter drives a PokerKit state and
+writes each step where the state asks for it. It records finishing stacks, so a re-import
+checks the result. Metadata that PHH has no field for travels in a user-defined field
+(`_poker_lab_metadata`, JSON). Two properties then become testable:
+
+1. *Round trip:* for a simulated hand $h$, `import(export(h))` equals $h$ up to card provenance
+   (`as_imported(h)`: cards become `source=imported`, the hand `source="imported"`, and every seat
+   gets a hole-card entry).
+2. *Fixed point:* for a hand $g$ imported from someone else's file, `import(export(g)) == g`. The
+   export is not the original text (comments and formatting are gone), but nothing the schema
+   holds is lost.
+
+**The experiment** (`experiments/phase3_import.py`, pre-registered at commit `582ac7c`; one seed,
+40 seconds). The pipeline was first debugged on the quick configuration with a different seed,
+and that output was discarded.
+
+* *A. Round trip at scale.* 400 tables with random setups (2 to 9 players, gaps between seat
+  numbers, antes, stacks from 1 to 400 big blinds, amounts in chips or cents) played 25 hands
+  each between random, calling, all-in and Phase 1 archetype bots. Every hand and its redacted
+  copy was exported and imported. Prediction: all identical.
+* *B. Fault injection.* This is a version of mutation testing (DeMillo, Lipton and Sayward 1978)
+  aimed at data rather than code, and a cousin of fuzzing (Miller, Fredriksen and So 1990):
+  damage valid inputs on purpose and see what the checks catch. 1,000 simulated and 1,000
+  Pluribus hands each got one random mutation per operator, and each damaged hand was imported
+  twice, with and without its finishing stacks. *Structural* operators: drop a decision, swap
+  two adjacent decisions of different players, cut the actions short, give a decision to another
+  player, delete a TOML delimiter. *Value* operators: change a bet amount (times 0.5 to 2), a
+  card, a starting stack (times 0.5 to 1.5), or move chips between two finishing stacks.
+  Outcomes: rejected; *unchanged* (the mutation had no effect, left out of the rates); *record
+  changed* (accepted, every player's result the same); *result changed* (accepted, a result
+  wrong: a silent error). Predictions: (1) nothing raises except typed rejections; (2) every
+  structural operator is rejected at least 99% of the time; (3) with finishing stacks, no
+  silent errors.
+* *C. Public research data.* The PHH dataset (MIT license) at a pinned commit: Pluribus (10,000
+  hands), the 2023 WSOP Event #43 final table (83), five historical hands. Its HandHQ subset,
+  scraped from online sites in 2009, is never fetched: a sparse git clone downloads only the
+  three subsets (12 MB) into a local cache outside the project, and the results record the
+  commit and a SHA-256 over every file used. Predictions: (1) PokerKit's own loader, with its
+  standard evaluator, replays every accepted hand to the same result; (2) export and re-import
+  reproduce every accepted hand. The import counts themselves had been seen in a development
+  run, so they were reported, not predicted.
+* *D. Descriptive.* Per-player statistics of the Pluribus hands, next to the Phase 1 bots.
+
+**The first run falsified prediction B1.** 40 of the 33,540 damaged imports crashed instead of
+being rejected, all from the card operator when it dealt a card twice. Inside one deal (`9h9h`)
+PokerKit says nothing and the schema's `HoleCards` raised `ValueError`; between the board and a
+hand PokerKit warns, carries on, and later fails an internal assertion while pushing chips.
+Diagnosing those crashes found a worse bug in the importer's own check that a show matches the
+deal. It compared *sets* of cards, so in a deal of `9h9h` the duplicate collapsed and its slot
+counted as an unknown card, which the show `9h9s` then "filled". Eight damaged hands were
+accepted this way. Their records equaled the originals, so the run counted them as unchanged
+and the fault stayed invisible. The fix (commit `3c1f25c`):
+* all known cards in the deals and shows are checked for repeats before the replay;
+* the show-versus-deal check counts multisets;
+* a PokerKit assertion on input it accepted is a typed rejection.
+
+Regression tests cover each case, and the experiment was rerun with the same seed. Both runs
+are reported.
+
+**Results of the rerun** (commit `3c1f25c`):
+
+| Prediction | Result | Verdict |
+|---|---|---|
+| A: all round trips identical | 20,000 of 20,000 (10,000 hands, each also redacted; 8,453 with an all-in, 5,643 with side pots, 3,025 in cents) | holds |
+| B1: no crashes | 0 (first run: 40) | holds after the fix |
+| B2: structural operators rejected ≥ 99% | 100% for every operator, source and condition | holds |
+| B3: no silent errors with finishing stacks | 0 of 7,814 effective value mutations | holds |
+| C1: PokerKit's own loader agrees on every accepted hand | 9,993 of 10,001 | **does not hold** |
+| C2: export and re-import reproduce every accepted hand | 10,001 of 10,001 | holds |
+
+Without finishing stacks the value operators tell the story of what a file alone can and cannot
+prove (shares of effective mutations, Pluribus / simulated hands):
+
+| Operator | Rejected | Accepted, record changed | Accepted, a result wrong |
+|---|---|---|---|
+| Change a bet amount | 16.5% / 64.6% | 48.2% / 21.4% | 35.3% / 14.0% |
+| Change a card | 29.1% / 49.5% | 70.7% / 43.3% | 0.2% / 7.2% |
+| Change a starting stack | 0.3% / 18.6% | 99.6% / 67.1% | 0.1% / 14.3% |
+
+With finishing stacks the "result wrong" column is zero everywhere and the rejections take
+its place. The "record changed" column cannot shrink, because no check can see those changes:
+the size of a bet nobody called, a folded player's hole card, a starting stack deeper than
+anything bet. Those changes do matter to a profiler (a bet size is a tell), so imported data is
+only as good as its source. The checks guarantee consistency, not truth.
+
+**Why C1 failed, post hoc.** All 8 disagreements are split pots with an odd chip. The Pluribus
+files record half chips: a 1,349-chip pot split two ways gives each winner 674.5, so a
+finishing stack reads `10112.5`. The importer scales those 8 hands to tenths of a chip and
+reproduces the file exactly. PokerKit's own loader works in whole chips and gives the odd chip
+to one winner (675 and 674). Both are consistent with the rules; they disagree on a
+convention. The prediction is reported as failed, with this explanation labeled post hoc.
+
+**What the data cover.** 10,001 of 10,088 files were imported: all 10,000 Pluribus hands, the
+Dwan–Ivey hand of the five historical ones (the others are badugi, pot-limit Omaha, triple-draw
+lowball and short-deck), and none of the 83 WSOP hands. That event is a mixed-game championship
+(72 hands in other variants), and its 11 hold'em hands use a big-blind ante.
+
+**What the real hands show (descriptive).** Imported hands go straight into the Phase 1 stats
+code (redacted to public information):
+
+| | VPIP | PFR | 3-bet | C-bet | Fold to c-bet | WTSD | W\$SD | AF |
+|---|---|---|---|---|---|---|---|---|
+| 13 professionals (50,000 player-hands) | 26.8 | 17.8 | 7.9 | 51.9 | 46.2 | 30.1 | 52.3 | 2.25 |
+| Pluribus (10,000) | 26.9 | 18.0 | 7.3 | 53.7 | 45.0 | 30.6 | 48.8 | 2.33 |
+| Phase 1 TAG bots | 19.8 | 14.4 | 5.4 | 70.1 | 49.4 | 43.5 | 54.9 | 2.97 |
+| Phase 1 LAG bots | 29.4 | 21.8 | 12.5 | 79.2 | 41.1 | 47.2 | 50.2 | 3.51 |
+
+Preflop the professionals sit between the TAG and LAG bots. After the flop they differ more:
+they c-bet about 52% of the time against 70–79% for those bots, and they reach showdown after
+seeing the flop 30% of the time, while every Phase 1 archetype averages 43–70%. Phase 1 logged
+that its bots go to showdown too often (Decisions Log, 2026-10-20); real data now put a number on
+it. A classifier trained on the bots would meet real players outside its training range on
+exactly these statistics, which is what P3.7 (priors fitted to real data) has to deal with.
+
+**Verification.**
+
+* `tests/test_phh_import.py` (35 tests): round trips of simulated hands covering heads-up play,
+  antes, gaps between seats, short stacks and all-ins, each also redacted; file round trips
+  through `.phh` and `.phhs`; a capture-style hand with camera cards, a muck and metadata; a
+  hand-written foreign file in dollars and cents with physical seats, comments and a
+  user-defined field (mapping checked field by field, then the fixed point); one test per
+  rejection reason; a hand PokerKit's loader repairs but the importer refuses; shows of other
+  cards; cards dealt twice (6 cases, 4 of them found by the experiment); rake and unknown
+  results; the batch report; the command-line tool; imported push/fold hands giving the
+  profiler exactly the observations of the originals.
+* The simulator's mapping of PokerKit's blind and ante posts became one function shared with
+  the importer (`engine.simulator.forced_posts`); the engine tests are unchanged.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only import` (40 seconds; the
+  first run fetches the dataset). Command-line import:
+  `python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake`.
+
+---
+
 # Part C: cross-cutting engineering
 
 ## C.1 Testing strategy
@@ -2703,12 +2925,14 @@ they have never seen.
 | Statistical recovery | simulate from a known prior, check recovery and 95% coverage | tests the estimator, not one number |
 | Contract tests | every `StrategyProvider` and `ExploitEngine` through the same checks | future implementations inherit the guarantees |
 | Adversarial tests | ten attempts to smuggle opponent cards into the Advisor | a firewall is only as good as its attack tests |
+| Fault injection | 33,540 deliberately damaged hand-history files (Step 32) | measures what a validator catches, and found two bugs its unit tests missed |
+| Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 301 tests and runs in about a minute (the Deep CFR tests skip
+players). The suite has 336 tests and runs in about a minute (the Deep CFR tests skip
 without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -2721,6 +2945,8 @@ without PyTorch). The explorer's browser behavior has its own check
   package versions and the simulation fingerprint.
 * Simulations are cached by config plus fingerprint (`experiments/cache/`, git-ignored),
   so analyses can be re-run in minutes and stale data cannot be reused.
+* External data are pinned: the PHH dataset is fetched at a fixed git commit into a cache
+  outside the project, and results record that commit and a SHA-256 over every file read.
 
 ## C.3 Platform lessons (Windows, PowerShell, OneDrive)
 
@@ -2795,6 +3021,11 @@ numeric table next to it, so no number depends on reading a color.
 | A 2.5% threshold estimated from 120 calibration bots (about the third-smallest p-value) gave 10-15% false alarms in a pilot | a second pilot that varied the calibration | 300 calibration bots per seed, decided on development seeds before the pre-registration | [30](#step-30-checking-the-model-before-trusting-it-p35) |
 | A test assumed the first hand always gives the opponent a decision (it does not when the hero folds its small blind) | the test failed against correct code | the order test compares a forward and a reversed history instead | [30](#step-30-checking-the-model-before-trusting-it-p35) |
 | A takeaway said Bayes and mode best responses differ "until 100 hands", though the interval already included zero at 30 | re-reading the sentence against the table | the sentence is now computed from the intervals | [29](#step-29-ranked-exploit-recommendations-with-confidence-p34) |
+| A card dealt twice crashed the importer (PokerKit only warns, then fails an assertion) | the pre-registered fault injection: 40 crashes falsified its first prediction | every known card checked for repeats before the replay; assertions become typed rejections | [32](#step-32-importing-hand-histories-from-text-files-p36) |
+| The show-versus-deal check compared sets, so a deal of `9h9h` "repaired" by a show of `9h9s` was accepted | diagnosing those crashes; the 8 cases had been counted as unchanged | multisets | [32](#step-32-importing-hand-histories-from-text-files-p36) |
+| File keys relative to each folder collided across the Pluribus folders (`100/0` and `101/0` both became `0`) | a fixed-point check on two folders rejected half the hands as duplicates | keys relative to the common parent (or an explicit `root`) | [32](#step-32-importing-hand-histories-from-text-files-p36) |
+| `invert_yaxis()` on every panel of a shared-y figure flipped it back (an even number of panels) | looking at the figure: rows bottom-up, legend over the data | invert once | [32](#step-32-importing-hand-histories-from-text-files-p36) |
+| A pilot run wrote into the committed results folder (the script's default output ignores the config's name) | `git status` before the pre-registration commit | deleted the pilot output; quick runs go through `run_phase3 --quick` | [32](#step-32-importing-hand-histories-from-text-files-p36) |
 
 ---
 
@@ -2830,6 +3061,8 @@ numeric table next to it, so no number depends on reading a color.
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
+| Fault injection | damaging valid inputs on purpose to measure what a checker catches; mutation testing aimed at data |
+| Fixed point (of a round trip) | data that come back unchanged after export and re-import |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
 | Garden of forking paths | the unplanned choices made after seeing data, each an uncounted comparison that makes the chosen result look better than it is |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
@@ -2847,12 +3080,14 @@ numeric table next to it, so no number depends on reading a color.
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
+| Odd chip | the chip left over when a pot does not split evenly; rules give it to one winner, some records split it in halves |
 | Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Perfect recall | players never forget their own actions or observations |
 | Paired comparison | two methods scored on the same units, so variation between units cancels in the difference |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
+| PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
@@ -2964,6 +3199,16 @@ Statistics and machine learning
   problem, even when there is no "fishing expedition" or "p-hacking".* Working paper,
   Columbia University. (Step 31)
 * Lancaster, H. O. (1961). *Significance Tests in Discrete Distributions.* JASA 56. (Mid-p)
+* Wilson, E. B. (1927). *Probable Inference, the Law of Succession, and Statistical
+  Inference.* JASA 22. (Wilson intervals)
+* Kim, J. (2024). *Recording and Describing Poker Hands* (first version: *Poker Hand History
+  File Format Specification*). IEEE Conference on Games; arXiv:2312.11753. (PHH, Step 32)
+* Brown, N., Sandholm, T. (2019). *Superhuman AI for multiplayer poker.* Science 365. (The
+  Pluribus hands)
+* DeMillo, R. A., Lipton, R. J., Sayward, F. G. (1978). *Hints on Test Data Selection: Help for
+  the Practicing Programmer.* Computer 11(4). (Mutation testing)
+* Miller, B. P., Fredriksen, L., So, B. (1990). *An Empirical Study of the Reliability of UNIX
+  Utilities.* CACM 33(12). (Fuzzing)
 * Owen, A. B. (2013). *Monte Carlo theory, methods and examples*, chapter 9 (importance
   sampling). statweb.stanford.edu/~owen/mc.
 
@@ -3012,3 +3257,7 @@ Software design
 * 2026-10-24: Step 31 (the post-hoc fallback rule confirmed on fresh seeds). Results from
   commit `7f50502`, cross-checked against
   `experiments/results/phase3/confirm/confirm_summary.md`.
+* 2026-10-24: Step 32 (importing PHH hand histories). Results from the rerun at commit
+  `3c1f25c`, cross-checked against `experiments/results/phase3/import/import_summary.md`; the
+  first run's numbers (commit `582ac7c`) come from its saved summary, and the mutation totals
+  were computed from both runs' `import.json` for this step.

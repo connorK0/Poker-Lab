@@ -32,7 +32,8 @@ BRIDGE = "experiments/results/phase3/bridge/bridge.json"
 RECOMMEND = "experiments/results/phase3/recommend/recommend.json"
 FITCHECK = "experiments/results/phase3/fitcheck/fitcheck.json"
 CONFIRM = "experiments/results/phase3/confirm/confirm.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM)
+IMPORT = "experiments/results/phase3/import/import.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -63,6 +64,7 @@ def overview(
     br: dict[str, Any],
     rc: dict[str, Any],
     fc: dict[str, Any],
+    im: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -88,6 +90,7 @@ def overview(
     false_alarm = max(fagg["standard"][n]["flags"]["either"]["share"] for n in fsizes)
     harsh = fagg["connectors_first"]["300"]["flags"]["either"]["share"]
     gear = fagg["gear_change"]["1000"]["flags"]["either"]["share"]
+    rt, pub = im["round_trip"], im["public_data"]
     return {
         "tiles": [
             tile(
@@ -152,6 +155,17 @@ def overview(
                 f"{harsh:.0%} / {gear:.0%}",
                 "of connectors-first bots by 300 hands / gear-changers by 1,000",
             ),
+            tile(
+                "Simulated hands exported to PHH and imported back",
+                f"{rt['identical']:,}/{rt['checked']:,}",
+                "identical (each hand and its redacted copy)",
+            ),
+            tile(
+                "Public research hands imported",
+                f"{pub['accepted']:,}/{pub['files']:,}",
+                f"all {pub['by_subset']['pluribus']['accepted']:,} Pluribus hands; mixed games "
+                "and big-blind antes rejected by name",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -164,7 +178,10 @@ def overview(
             "are ranked by how confidently they beat equilibrium play, with posterior intervals "
             "checked against the truth (P3.4). Before the model is trusted, posterior predictive "
             "checks ask whether the opponent plays the way it assumes (P3.5), and a fallback rule "
-            "found in that analysis was confirmed on fresh seeds (P3.5b)."
+            "found in that analysis was confirmed on fresh seeds (P3.5b). Completed hand "
+            "histories can now come from text files in the open PHH format: each hand is "
+            "replayed through PokerKit's rules and rejected with a reason if it does not "
+            "replay exactly (P3.6)."
         ),
     }
 
@@ -1754,6 +1771,288 @@ def confirm_fallback(cf: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+IMPORT_OPS = (
+    ("drop", "Drop a decision"),
+    ("swap", "Swap two decisions"),
+    ("truncate", "Cut the actions short"),
+    ("wrong_player", "Decision by another player"),
+    ("delimiter", "Delete a TOML delimiter"),
+    ("amount", "Change a bet amount"),
+    ("card", "Change a card"),
+    ("stack", "Change a starting stack"),
+    ("finishing", "Move chips between finishing stacks"),
+)
+IMPORT_STRUCTURAL = ("drop", "swap", "truncate", "wrong_player", "delimiter")
+IMPORT_SOURCES = (("simulated", "Simulated hands"), ("pluribus", "Pluribus hands"))
+IMPORT_CONDITIONS = (
+    ("with_finishing", "With finishing stacks", "c1"),
+    ("without_finishing", "Without finishing stacks", "c2"),
+)
+IMPORT_SUBSETS = (
+    ("pluribus", "Pluribus vs professionals"),
+    ("wsop", "WSOP 2023 Event #43 final table"),
+    ("historical", "Historical hands"),
+)
+IMPORT_STATS = (
+    ("vpip", "VPIP"),
+    ("pfr", "PFR"),
+    ("three_bet", "3-bet"),
+    ("cbet", "C-bet"),
+    ("fold_to_cbet", "Fold to c-bet"),
+    ("wtsd", "WTSD"),
+    ("wsd", "W$SD"),
+)
+
+
+def _wilson_point(block: dict[str, Any], outcome: str) -> tuple | None:
+    s = block[f"{outcome}_share"]
+    return None if s is None else (s["value"], s["lower"], s["upper"])
+
+
+def import_faults(im: dict[str, Any]) -> dict[str, Any]:
+    rows = [label for _, label in IMPORT_OPS]
+    rt, fp = im["round_trip"], im["fault_predictions"]
+    outcomes = (
+        (
+            "rejected",
+            "Rejected",
+            "Mutations the importer rejects",
+            "one random mutation per operator, each imported with its finishing stacks and "
+            "without them. 95% Wilson intervals; mutations that change nothing are left out.",
+        ),
+        (
+            "result_changed",
+            "Silent errors",
+            "Accepted with some player's result changed (silent errors)",
+            "the import succeeds but a player's net result differs from the true one. With "
+            "finishing stacks recorded, the pre-registered prediction was none.",
+        ),
+    )
+    views = {}
+    for source, slabel in IMPORT_SOURCES:
+        f = im["faults"][source]
+        n = im["fault_hands"][source]
+        for outcome, _, title, subtitle in outcomes:
+            views[f"{source}|{outcome}"] = view(
+                dots_chart(
+                    title,
+                    rows,
+                    axis("Share of effective mutations", fmt="pct", lo=0, hi=1),
+                    [
+                        dot_series(
+                            clabel,
+                            color,
+                            [_wilson_point(f[cond][op], outcome) for op, _ in IMPORT_OPS],
+                        )
+                        for cond, clabel, color in IMPORT_CONDITIONS
+                    ],
+                    subtitle=f"{slabel} ({n:,}): {subtitle}",
+                ),
+                notes=[
+                    "The rest of each row was accepted with a changed record and every result "
+                    "intact: the size of a bet nobody called, a folded player's card, a stack "
+                    "deeper than anything bet. No check can see those from the file alone. The "
+                    "last operator only exists when finishing stacks are recorded.",
+                ],
+            )
+    silent = [
+        (f["without_finishing"][op]["result_changed_share"]["value"], src, op)
+        for src, f in im["faults"].items()
+        for op, _ in IMPORT_OPS
+        if f["without_finishing"][op]["result_changed_share"] is not None
+    ]
+    worst, worst_src, worst_op = max(silent)
+    feats = rt["features"]
+    takeaways = [
+        f"Round trip: {rt['identical']:,} of {rt['checked']:,} simulated hands and redacted "
+        f"copies came back identical after export to PHH and import ({rt['hands']:,} hands at "
+        f"{rt['tables']} tables of 2 to 9 players; {feats.get('all_in', 0):,} with an all-in, "
+        f"{feats.get('side_pot', 0):,} with side pots, {feats.get('cents', 0):,} in cents).",
+        (
+            "Structural damage was always caught: every dropped, swapped, misattributed or "
+            "cut-short action and every broken delimiter was rejected"
+            if fp["structural_rejected"]["minimum"] == 1
+            else "Structural damage was caught in at least "
+            f"{fp['structural_rejected']['minimum']:.1%} of cases"
+        )
+        + " (over operators, sources and conditions; pre-registered bound 99%).",
+        "Finishing stacks act as a checksum. With them, "
+        f"{fp['no_silent_with_finishing']['total']} mutations slipped through with a changed "
+        "result; without them up to "
+        f"{worst:.0%} did ({dict(IMPORT_OPS)[worst_op]}, {dict(IMPORT_SOURCES)[worst_src]}).",
+        f"No import crashed in this run ({fp['no_crashes']['crashes']} errors other than typed "
+        "rejections). The first pre-registered run did crash, see the method note.",
+    ]
+    return section(
+        "import-faults",
+        "What the hand-history importer catches",
+        "Hands imported from text files are replayed through PokerKit's rules and rejected, "
+        "with a reason, unless they replay exactly. To measure what that catches, valid files "
+        "were damaged on purpose: one random mutation per hand, nine kinds, and each damaged "
+        "hand imported with and without the finishing stacks the file records.",
+        sources=[IMPORT],
+        controls=[
+            control("source", "Hands", IMPORT_SOURCES),
+            control("outcome", "Outcome", [(o, label) for o, label, _, _ in outcomes]),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="Pre-registered in experiments/phase3_import.py (commit 582ac7c). Its first run "
+        "falsified the no-crash prediction: 40 of 36,000 mutated imports crashed, all from "
+        "cards dealt twice, and diagnosing them showed that a repeated hole card could be "
+        "'repaired' by a show. The importer was fixed (commit 3c1f25c) and the experiment "
+        "rerun with the same seed; these are the rerun's numbers. Rake not allowed.",
+    )
+
+
+def import_public_data(im: dict[str, Any]) -> dict[str, Any]:
+    pd = im["public_data"]
+    groups = (
+        ("accepted", "Imported"),
+        ("variant", "Not no-limit hold'em"),
+        ("bb_ante", "Big-blind ante"),
+        ("other", "Other reason"),
+    )
+
+    def group(kind: str) -> str:
+        if kind.startswith("variant"):
+            return "variant"
+        return "bb_ante" if kind.startswith("antes differ") else "other"
+
+    counts = {sub: dict.fromkeys([g for g, _ in groups], 0) for sub, _ in IMPORT_SUBSETS}
+    for sub, _ in IMPORT_SUBSETS:
+        counts[sub]["accepted"] = pd["by_subset"][sub]["accepted"]
+    for k in pd["rejection_kinds"]:
+        counts[k["subset"]][group(k["kind"])] += k["count"]
+    used = [(g, label) for g, label in groups if any(counts[s][g] for s, _ in IMPORT_SUBSETS)]
+    files = {sub: pd["by_subset"][sub]["files"] for sub, _ in IMPORT_SUBSETS}
+    chart = heatmap(
+        "Where the public hands go",
+        [f"{label} ({files[sub]:,} files)" for sub, label in IMPORT_SUBSETS],
+        [label for _, label in used],
+        [[counts[sub][g] / files[sub] for g, _ in used] for sub, _ in IMPORT_SUBSETS],
+        counts=[[counts[sub][g] for g, _ in used] for sub, _ in IMPORT_SUBSETS],
+        fmt="pct",
+        vmax=1.0,
+        subtitle="Share of each subset's files. Schema v1 holds no-limit hold'em with uniform "
+        "antes; anything else is rejected by name, never approximated.",
+    )
+    cc, fx, kinds = pd["cross_check"], pd["fixed_point"], pd["disagreement_kinds"]
+    by = pd["by_subset"]
+    takeaways = [
+        f"{pd['accepted']:,} of {pd['files']:,} files imported: all "
+        f"{by['pluribus']['accepted']:,} Pluribus hands, {by['historical']['accepted']} of "
+        f"{by['historical']['files']} historical hands and {by['wsop']['accepted']} of the "
+        f"{by['wsop']['files']} WSOP hands. The WSOP event is a mixed-game championship and "
+        "its hold'em hands use a big-blind ante, which schema v1 cannot hold.",
+        f"Pre-registered: PokerKit's own loader replays every imported hand to the same result. "
+        f"It does for {cc['agree']:,} of {cc['of']:,}, so the prediction does not hold."
+        if not cc["holds"]
+        else f"PokerKit's own loader replays all {cc['of']:,} imported hands to the same result.",
+        f"Post hoc: the {kinds['odd_chip']} disagreements are all split pots with an odd chip. "
+        "The Pluribus files give each winner half a chip; the importer keeps that (those "
+        "hands are in tenths of a chip) and PokerKit's whole-chip replay cannot."
+        if kinds["odd_chip"] and not kinds["other"]
+        else f"Disagreements: {kinds['odd_chip']} odd-chip splits, {kinds['other']} other.",
+        f"Exported and imported again, {fx['same']:,} of {fx['of']:,} hands come back "
+        "identical (pre-registered: all).",
+    ]
+    return section(
+        "import-public-data",
+        "Importing public research hands",
+        "The open PHH dataset collects hand histories from research and broadcasts. Its Pluribus "
+        "subset is the 10,000 hands that the Pluribus AI played against professionals, "
+        "published with the paper. The subset scraped from online sites is never fetched.",
+        sources=[IMPORT],
+        views={"": view(chart)},
+        takeaways=takeaways,
+        method=f"Dataset {im['dataset']['url']} at commit {im['dataset']['commit'][:7]} "
+        f"({im['dataset']['files']:,} files, SHA-256 {im['dataset']['content_sha256'][:12]}...), "
+        "fetched by a sparse clone (experiments/datasets.py). Imported without rake; the "
+        "cross-check reads each file with PokerKit's own loader and standard evaluator.",
+    )
+
+
+def import_pluribus(im: dict[str, Any]) -> dict[str, Any]:
+    stats = im["pluribus_stats"]
+    bots = im["phase1_bots"]["per_archetype"]
+    players = list(stats)
+    rows = [f"{pid} ({stats[pid]['hands']:,} hands)" for pid in players]
+    views = {}
+    for name, label in IMPORT_STATS:
+        means = [bots[a][name]["estimate"] / 100 for a in bots]
+        tag = bots["tag"][name]["estimate"] / 100
+        views[name] = view(
+            dots_chart(
+                f"{label} of each player in the Pluribus hands",
+                rows,
+                axis(label, fmt="pct", lo=0),
+                [
+                    dot_series(
+                        "Imported hands, 95% Wilson interval",
+                        "c1",
+                        [
+                            (v["value"] / 100, v["lower"] / 100, v["upper"] / 100)
+                            for v in (stats[pid][name] for pid in players)
+                        ],
+                    )
+                ],
+                ranges=[(min(means), max(means))] * len(rows),
+                range_label="Phase 1 bots: lowest to highest archetype average",
+                refs=[ref(tag, "Phase 1 TAG bots", axis_name="x")],
+                subtitle="From public information only (hands redacted to what a participant "
+                "sees), with the Phase 1 stats code. Player names are the dataset's pseudonyms.",
+            )
+        )
+    humans, pluribus = stats["All humans"], stats["Pluribus"]
+
+    def span(stat: str) -> tuple[float, float]:
+        values = [bots[a][stat]["estimate"] for a in bots]
+        return min(values), max(values)
+
+    lo, hi = span("wtsd")
+    pre = ("vpip", "pfr", "three_bet")
+    tag, lag = bots["tag"], bots["lag"]
+    between = all(
+        min(tag[k]["estimate"], lag[k]["estimate"])
+        <= humans[k]["value"]
+        <= max(tag[k]["estimate"], lag[k]["estimate"])
+        for k in pre
+    )
+    takeaways = [
+        f"The professionals went to showdown after seeing the flop {humans['wtsd']['value']:.0f}% "
+        f"of the time and Pluribus {pluribus['wtsd']['value']:.0f}%; the Phase 1 archetypes "
+        f"average {lo:.0f}% to {hi:.0f}%. Phase 1 logged that its bots reach showdown too "
+        "often; real data now measure the gap.",
+        f"Preflop the professionals' VPIP / PFR / 3-bet is {humans['vpip']['value']:.0f}% / "
+        f"{humans['pfr']['value']:.0f}% / {humans['three_bet']['value']:.1f}%, "
+        + ("between the TAG bots' " if between else "against the TAG bots' ")
+        + f"{tag['vpip']['estimate']:.0f}% / {tag['pfr']['estimate']:.0f}% / "
+        f"{tag['three_bet']['estimate']:.1f}% and the LAG bots' "
+        f"{lag['vpip']['estimate']:.0f}% / {lag['pfr']['estimate']:.0f}% / "
+        f"{lag['three_bet']['estimate']:.1f}%.",
+        f"After the flop they bet less: c-bet {humans['cbet']['value']:.0f}% against "
+        f"{bots['tag']['cbet']['estimate']:.0f}% for TAG and "
+        f"{bots['lag']['cbet']['estimate']:.0f}% for LAG bots.",
+        "Descriptive only. Fitting population priors to real data is the next item (P3.7).",
+    ]
+    return section(
+        "import-pluribus",
+        "Real hands next to the Phase 1 bots",
+        "Imported hands go straight into the Phase 1 profiling code. These are the statistics "
+        f"of Pluribus and the {len(players) - 2} professionals it played (by their dataset "
+        "pseudonyms), against the range of the bots the classifier was trained on.",
+        sources=[IMPORT],
+        controls=[control("stat", "Statistic", IMPORT_STATS)],
+        defaults={"stat": "wtsd"},
+        views=views,
+        takeaways=takeaways,
+        method="Every imported Pluribus hand, redacted to public information; statistics as "
+        "defined in poker_lab/profiling/stats.py (Phase 1). Bot values: the Phase 1 sanity "
+        "check (experiments/results/phase1/bot_sanity), mean over bots per archetype.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
@@ -1761,7 +2060,8 @@ def build(load) -> dict[str, Any]:
     rc = load(RECOMMEND)
     fc = load(FITCHECK)
     cf = load(CONFIRM)
-    head = overview(r, ex, br, rc, fc)
+    im = load(IMPORT)
+    head = overview(r, ex, br, rc, fc, im)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -1776,6 +2076,7 @@ def build(load) -> dict[str, Any]:
             provenance(RECOMMEND, rc),
             provenance(FITCHECK, fc),
             provenance(CONFIRM, cf),
+            provenance(IMPORT, im),
         ],
         "sections": [
             charts(r),
@@ -1793,5 +2094,8 @@ def build(load) -> dict[str, Any]:
             fitcheck_consequences(fc),
             fitcheck_examples(fc),
             confirm_fallback(cf),
+            import_faults(im),
+            import_public_data(im),
+            import_pluribus(im),
         ],
     }
