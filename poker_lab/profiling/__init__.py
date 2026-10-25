@@ -4,6 +4,7 @@
 * ``shrinkage``: empirical-Bayes priors (beta-binomial; normal for sizes) and posteriors.
 * ``features``: profile feature vectors and sample-size windows.
 * ``classifier``: calibrated archetype classifier.
+* ``support``: flags profiles unlike every training archetype (P3.7).
 * ``regression``: continuous bot-parameter regression.
 * ``situations`` / ``action_model``: next-action prediction from public situations + profile.
 * ``profile_store``: per-player profiles accumulated across sessions from completed hands.
@@ -52,7 +53,13 @@ _EXPORTS = {
         "hand_counters",
         "raw_stats",
     ),
-    "poker_lab.profiling.profile_store": ("PlayerProfile", "ProfileSnapshot", "ProfileStore"),
+    "poker_lab.profiling.profile_store": (
+        "PlayerProfile",
+        "ProfileSnapshot",
+        "ProfileStore",
+        "hand_half",
+    ),
+    "poker_lab.profiling.support": ("SupportCheck",),
     "poker_lab.profiling.push_fold": ("PushFoldHistory", "push_fold_observations"),
 }
 _WHERE = {name: module for module, names in _EXPORTS.items() for name in names}

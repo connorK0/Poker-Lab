@@ -106,6 +106,8 @@ def fit_normal_prior(
         return NormalPrior(mean, default_kappa)
     (sa, na), (sb, nb) = half_a, half_b
     ok = (na > 0) & (nb > 0)
+    if ok.sum() < 3:  # too few players with data in both halves to estimate tau^2
+        return NormalPrior(mean, default_kappa)
     xa, xb = sa[ok] / na[ok], sb[ok] / nb[ok]
     # E[(xa - xb)^2] = sigma^2 (1/na + 1/nb); Cov(xa, xb) across players = tau^2.
     sigma2 = float(np.mean((xa - xb) ** 2 / (1 / na[ok] + 1 / nb[ok])))

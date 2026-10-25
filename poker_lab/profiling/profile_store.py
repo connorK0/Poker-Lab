@@ -12,10 +12,15 @@
 
 Priors default to uniform Beta(1, 1); once enough players are stored, ``refit_priors()``
 fits empirical-Bayes priors to the stored population itself (needs >= ``min_players``).
+Each player's counters are kept in two halves (a stable hash of the hand id picks the half),
+so a refit can also fit the bet-size priors, whose pseudo-counts need two disjoint samples per
+player (``fit_normal_prior``). Stores saved in format 1 kept totals only; their players have
+no halves, and a refit keeps the size priors as they are.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
@@ -33,9 +38,18 @@ from poker_lab.profiling.shrinkage import (
 from poker_lab.profiling.stats import BINOMIAL_STATS, COUNTERS, N_COUNTERS, hand_counters
 from poker_lab.schema import HandHistory, HandStatus, redact_hole_cards
 
+FORMAT = "poker_lab.profile_store/2"
+_FORMAT_V1 = "poker_lab.profile_store/1"
+
 
 class IncompleteHandError(ValueError):
     """Raised when an in-progress hand is offered to the profile store."""
+
+
+def hand_half(hand_id: str) -> int:
+    """Which of a player's two halves (0 or 1) a hand counts toward: a stable hash of its id,
+    so the split is the same in every session and independent of what happened in the hand."""
+    return hashlib.blake2b(hand_id.encode("utf-8"), digest_size=1).digest()[0] & 1
 
 
 def uniform_shrinker() -> EmpiricalBayesShrinker:
@@ -76,7 +90,8 @@ class ProfileSnapshot:
 class ProfileStore:
     def __init__(self, shrinker: EmpiricalBayesShrinker | None = None) -> None:
         self.shrinker = shrinker or uniform_shrinker()
-        self._counters: dict[str, np.ndarray] = {}
+        self._counters: dict[str, np.ndarray] = {}  # player -> (2 halves, N_COUNTERS)
+        self._unsplit: set[str] = set()  # players loaded from format 1 (halves unknown)
         self._hand_ids: set[str] = set()
         self.duplicates_skipped = 0
 
@@ -93,11 +108,11 @@ class ProfileStore:
             self.duplicates_skipped += 1
             return False
         public = redact_hole_cards(hand)
+        half = hand_half(hand.hand_id)
         for player_id, row in hand_counters(public):
-            if player_id in self._counters:
-                self._counters[player_id] += row
-            else:
-                self._counters[player_id] = np.array(row, dtype=np.int64)
+            if player_id not in self._counters:
+                self._counters[player_id] = np.zeros((2, N_COUNTERS), dtype=np.int64)
+            self._counters[player_id][half] += row
         self._hand_ids.add(hand.hand_id)
         return True
 
@@ -116,7 +131,8 @@ class ProfileStore:
         return len(self._hand_ids)
 
     def profile(self, player_id: str) -> PlayerProfile:
-        counts = self._counters.get(player_id, np.zeros(N_COUNTERS, dtype=np.int64))
+        halves = self._counters.get(player_id)
+        counts = np.zeros(N_COUNTERS, dtype=np.int64) if halves is None else halves.sum(axis=0)
         shrunk = self.shrinker.transform(counts, intervals=True)
         stats = {name: float(v) for name, v in zip(shrunk.names, shrunk.mean, strict=True)}
         stats["af"] = float(aggression_factor(np.array(stats["aggr_share"])))
@@ -142,21 +158,26 @@ class ProfileStore:
         )
 
     def refit_priors(self, min_players: int = 30) -> bool:
-        """Fit empirical-Bayes priors to the stored players (if there are enough of them)."""
+        """Fit empirical-Bayes priors to the stored players (if there are enough of them).
+
+        The size priors are refit from the split halves; if any player has none (loaded from
+        format 1), they are kept as they are."""
         if len(self._counters) < min_players:
             return False
-        totals = np.stack(list(self._counters.values()))
-        fitted = EmpiricalBayesShrinker.fit(totals)
-        # keep size priors unless split-half data is available (counters only store totals)
-        self.shrinker = EmpiricalBayesShrinker(fitted.binomial, self.shrinker.continuous)
+        stacked = np.stack(list(self._counters.values()))  # players x halves x counters
+        halves = None if self._unsplit else (stacked[:, 0], stacked[:, 1])
+        fitted = EmpiricalBayesShrinker.fit(stacked.sum(axis=1), halves)
+        continuous = self.shrinker.continuous if halves is None else fitted.continuous
+        self.shrinker = EmpiricalBayesShrinker(fitted.binomial, continuous)
         return True
 
     # ------------------------------------------------------------------ persistence
     def save(self, path: str | Path) -> None:
         payload = {
-            "format": "poker_lab.profile_store/1",
+            "format": FORMAT,
             "counter_names": list(COUNTERS),
             "players": {pid: c.tolist() for pid, c in sorted(self._counters.items())},
+            "unsplit": sorted(self._unsplit),
             "hand_ids": sorted(self._hand_ids),
             "priors": self.shrinker.to_dict(),
         }
@@ -165,14 +186,25 @@ class ProfileStore:
 
     @classmethod
     def load(cls, path: str | Path) -> ProfileStore:
+        """Load a store saved in format 2, or in format 1 (totals only: kept in the first half,
+        and the player is marked as having no halves)."""
         payload = json.loads(Path(path).read_text(encoding="utf-8"))
-        if payload.get("format") != "poker_lab.profile_store/1":
+        version = payload.get("format")
+        if version not in (FORMAT, _FORMAT_V1):
             raise ValueError("not a profile store file")
         if payload["counter_names"] != list(COUNTERS):
             raise ValueError("counter layout changed since this store was saved")
         store = cls(EmpiricalBayesShrinker.from_dict(payload["priors"]))
-        store._counters = {
-            pid: np.array(c, dtype=np.int64) for pid, c in payload["players"].items()
-        }
+        if version == _FORMAT_V1:
+            store._counters = {
+                pid: np.stack([np.array(c, dtype=np.int64), np.zeros(N_COUNTERS, np.int64)])
+                for pid, c in payload["players"].items()
+            }
+            store._unsplit = set(store._counters)
+        else:
+            store._counters = {
+                pid: np.array(c, dtype=np.int64) for pid, c in payload["players"].items()
+            }
+            store._unsplit = set(payload["unsplit"])
         store._hand_ids = set(payload["hand_ids"])
         return store

@@ -1,11 +1,19 @@
 """ProfileStore: completed hands only, idempotent, persistent across sessions."""
 
+import json
+
 import numpy as np
 import pytest
 
 from poker_lab.engine import RandomAgent, SeatedPlayer, TableSimulator
 from poker_lab.profiling import counters_by_player, raw_stats
-from poker_lab.profiling.profile_store import IncompleteHandError, ProfileSnapshot, ProfileStore
+from poker_lab.profiling.profile_store import (
+    IncompleteHandError,
+    ProfileSnapshot,
+    ProfileStore,
+    hand_half,
+)
+from poker_lab.profiling.stats import COUNTERS
 from poker_lab.schema import HandHistoryStore, TableConfig
 from tests.helpers import record_reference_hand
 
@@ -82,3 +90,42 @@ def test_save_load_round_trip_and_refit(tmp_path):
     assert again.hands_ingested == store.hands_ingested
     assert again.refit_priors(min_players=30)
     assert not ProfileStore().refit_priors(min_players=30)
+
+
+def test_halves_split_by_hand_id_and_sum_to_totals():
+    assert {hand_half(f"h{i}") for i in range(50)} == {0, 1}
+    assert hand_half("abc") == hand_half("abc")  # stable, not Python's salted hash()
+    hands = _session(13, ["a", "b", "c", "d", "e", "f"])
+    store = ProfileStore()
+    store.ingest_many(hands)
+    halves = store._counters["a"]
+    assert halves.shape == (2, len(COUNTERS))
+    assert np.array_equal(halves.sum(axis=0), counters_by_player(hands)["a"])
+    in_first = [h for h in hands if hand_half(h.hand_id) == 0]
+    assert np.array_equal(halves[0], counters_by_player(in_first)["a"])
+
+
+def test_refit_fits_size_priors_from_halves_and_keeps_them_for_format_1(tmp_path):
+    store = ProfileStore()
+    for seed in range(14, 20):
+        store.ingest_many(_session(seed, [f"q{seed}{i}" for i in range(6)]))
+    default = store.shrinker.continuous
+    assert store.refit_priors(min_players=30)
+    assert store.shrinker.continuous != default  # refit from the split halves
+    # a format 1 file kept totals only: the players load without halves
+    path = tmp_path / "v1.json"
+    payload = {
+        "format": "poker_lab.profile_store/1",
+        "counter_names": list(COUNTERS),
+        "players": {pid: c.sum(axis=0).tolist() for pid, c in store._counters.items()},
+        "hand_ids": sorted(store._hand_ids),
+        "priors": ProfileStore().shrinker.to_dict(),
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    old = ProfileStore.load(path)
+    assert old.profile("q140").counters == store.profile("q140").counters
+    assert old.refit_priors(min_players=30)
+    assert old.shrinker.continuous == default  # no halves: size priors kept
+    assert old.shrinker.binomial == store.shrinker.binomial
+    old.save(tmp_path / "v2.json")
+    assert ProfileStore.load(tmp_path / "v2.json")._unsplit == set(old.players())
