@@ -3,7 +3,7 @@
 * ``hand_history``: canonical data model (``HandHistory`` and its parts).
 * ``views``: firewalled views of a hand in progress (``PublicHandState``, ``SeatView``).
 * ``store``: ``HandHistoryStore``, which keeps hole cards sealed until a hand is complete.
-* ``serialization``: strict JSON Lines encoding.
+* ``serialization``: strict JSON Lines encoding, and migration of older schema versions.
 * ``validation``: deep consistency checks (chip conservation, betting sequence, cards).
 """
 
@@ -39,6 +39,8 @@ from poker_lab.schema.serialization import (
     hand_from_dict,
     hand_to_dict,
     loads_hand,
+    migrate_jsonl,
+    migrate_record,
     read_jsonl,
     write_jsonl,
 )
@@ -51,6 +53,7 @@ from poker_lab.schema.store import (
 from poker_lab.schema.validation import (
     HandHistoryValidationError,
     compute_uncalled_returns,
+    expected_forced_posts,
     find_problems,
     validate_hand_history,
 )
@@ -86,12 +89,15 @@ __all__ = [
     "card_to_id",
     "compute_uncalled_returns",
     "dumps_hand",
+    "expected_forced_posts",
     "find_problems",
     "hand_from_dict",
     "hand_to_dict",
     "id_to_card",
     "is_valid_card",
     "loads_hand",
+    "migrate_jsonl",
+    "migrate_record",
     "parse_cards",
     "position_names",
     "read_jsonl",

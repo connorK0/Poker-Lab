@@ -4,6 +4,12 @@ One hand per line, UTF-8. Paths ending in ``.gz`` are gzip-compressed transparen
 Decoding is strict: unknown or missing keys raise ``ValueError``, so a record cannot silently
 drop or smuggle fields. In-progress records that contain hole cards are rejected because
 ``HandHistory`` itself forbids them.
+
+Records are always written in the current schema version. Version 1 records (no
+``big_blind_ante``, ``straddles`` or ``min_bet`` in the table) are read by migrating them:
+``migrate_record`` checks a record against its own version's keys and fills in the rules version
+1 implied (no big-blind ante, no straddles, a minimum bet of one big blind). ``migrate_jsonl``
+rewrites a file in the current version.
 """
 
 from __future__ import annotations
@@ -15,6 +21,7 @@ from pathlib import Path
 from typing import IO, Any
 
 from poker_lab.schema.hand_history import (
+    SCHEMA_VERSION,
     Action,
     CardObservation,
     ChipAward,
@@ -85,6 +92,9 @@ def hand_to_dict(hand: HandHistory) -> dict[str, Any]:
             "ante": t.ante,
             "game": t.game,
             "currency": t.currency,
+            "big_blind_ante": t.big_blind_ante,
+            "straddles": list(t.straddles),
+            "min_bet": t.min_bet,
         },
         "button_seat": hand.button_seat,
         "seats": [
@@ -124,9 +134,10 @@ def hand_to_dict(hand: HandHistory) -> dict[str, Any]:
     }
 
 
-_TABLE_KEYS = frozenset(
+_TABLE_KEYS_V1 = frozenset(
     {"table_id", "max_seats", "small_blind", "big_blind", "ante", "game", "currency"}
 )
+_TABLE_KEYS = _TABLE_KEYS_V1 | {"big_blind_ante", "straddles", "min_bet"}
 _SEAT_KEYS = frozenset({"seat", "player_id", "starting_stack", "position"})
 _HOLE_KEYS = frozenset({"seat", "cards", "shown"})
 _ACTION_KEYS = frozenset({"seat", "street", "type", "amount", "total_bet", "all_in"})
@@ -134,16 +145,42 @@ _SHOWDOWN_KEYS = frozenset({"seat", "shown"})
 _AWARD_KEYS = frozenset({"seat", "amount"})
 
 
+def _require_keys(obj: Mapping[str, Any], keys: frozenset[str], what: str) -> None:
+    _check_keys(obj, keys, what)
+    missing = keys - set(obj)
+    if missing:
+        raise ValueError(f"missing keys in {what}: {sorted(missing)}")
+
+
+def migrate_record(data: Mapping[str, Any]) -> dict[str, Any]:
+    """A record of any supported version as a current-version record (a new dict).
+
+    Each version's keys are checked strictly before migrating, so a version 1 record may not
+    carry version 2 keys, nor a version 2 record lack them.
+    """
+    _check_keys(data, _HAND_KEYS, "hand")
+    version = data.get("schema_version")
+    if version == SCHEMA_VERSION:
+        return dict(data)
+    if version != 1:
+        raise ValueError(f"unsupported schema_version {version!r}")
+    _require_keys(data, _HAND_KEYS, "hand")
+    _require_keys(data["table"], _TABLE_KEYS_V1, "version 1 table")
+    rules = {"big_blind_ante": 0, "straddles": [], "min_bet": data["table"]["big_blind"]}
+    table = {**data["table"], **rules}
+    return {**data, "table": table, "schema_version": SCHEMA_VERSION}
+
+
 def hand_from_dict(data: Mapping[str, Any], *, validate: bool = False) -> HandHistory:
-    """Build a ``HandHistory`` from ``hand_to_dict`` output (strict).
+    """Build a ``HandHistory`` from ``hand_to_dict`` output (strict). Older schema versions are
+    migrated first (``migrate_record``).
 
     With ``validate=True`` the deep consistency checks in ``validation.py`` also run.
     """
-    _check_keys(data, _HAND_KEYS, "hand")
-    missing = _HAND_KEYS - set(data)
-    if missing:
-        raise ValueError(f"missing keys in hand: {sorted(missing)}")
-    _check_keys(data["table"], _TABLE_KEYS, "table")
+    data = migrate_record(data)
+    _require_keys(data, _HAND_KEYS, "hand")
+    _require_keys(data["table"], _TABLE_KEYS, "table")
+    table = {**data["table"], "straddles": tuple(data["table"]["straddles"])}
 
     def awards(items: Iterable[Mapping[str, Any]], what: str) -> tuple[ChipAward, ...]:
         out = []
@@ -181,7 +218,7 @@ def hand_from_dict(data: Mapping[str, Any], *, validate: bool = False) -> HandHi
 
     hand = HandHistory(
         hand_id=data["hand_id"],
-        table=TableConfig(**data["table"]),
+        table=TableConfig(**table),
         button_seat=data["button_seat"],
         seats=tuple(seats),
         actions=tuple(actions),
@@ -231,7 +268,7 @@ def write_jsonl(hands: Iterable[HandHistory], path: str | Path, *, append: bool 
 
 
 def read_jsonl(path: str | Path, *, validate: bool = False) -> Iterator[HandHistory]:
-    """Yield hands from a JSON Lines file. Blank lines are skipped."""
+    """Yield hands from a JSON Lines file (any supported version). Blank lines are skipped."""
     path = Path(path)
     with _open(path, "r") as fh:
         for lineno, line in enumerate(fh, start=1):
@@ -241,3 +278,13 @@ def read_jsonl(path: str | Path, *, validate: bool = False) -> Iterator[HandHist
                 yield loads_hand(line, validate=validate)
             except (ValueError, TypeError, KeyError) as exc:
                 raise ValueError(f"{path}:{lineno}: {exc}") from exc
+
+
+def migrate_jsonl(src: str | Path, dst: str | Path, *, validate: bool = True) -> int:
+    """Rewrite the hands in ``src`` (any supported version) to ``dst`` in the current version;
+    return the count. ``dst`` must be a different file. Every hand passes the deep consistency
+    checks unless ``validate=False``."""
+    src, dst = Path(src), Path(dst)
+    if src.resolve() == dst.resolve():
+        raise ValueError("migrate_jsonl writes a new file; dst must differ from src")
+    return write_jsonl(read_jsonl(src, validate=validate), dst)

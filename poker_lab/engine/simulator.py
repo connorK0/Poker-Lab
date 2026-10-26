@@ -79,6 +79,20 @@ class EngineError(RuntimeError):
     """Internal inconsistency between PokerKit and the recorded hand (a bug, not bad input)."""
 
 
+def pokerkit_rules(
+    table: TableConfig, n_players: int
+) -> tuple[bool, int | tuple[int, ...], tuple[int, ...], int]:
+    """PokerKit's ``(ante_trimming_status, antes, blinds_or_straddles, min_bet)`` for a hand
+    with ``n_players`` players at ``table``. A big-blind ante is the second player's ante
+    (PokerKit gives it to the big blind heads-up too) and is never trimmed: it is dead money,
+    not a bet the other players match."""
+    if len(table.straddles) > n_players - 2:
+        raise ValueError(f"{len(table.straddles)} straddles need more than {n_players} players")
+    if table.big_blind_ante:
+        return False, (0, table.big_blind_ante), table.blinds_or_straddles, table.min_bet
+    return True, table.ante, table.blinds_or_straddles, table.min_bet
+
+
 def forced_posts(
     operations: Iterable[Operation], order: Sequence[int], stacks: Mapping[int, int]
 ) -> list[Action]:
@@ -160,6 +174,7 @@ class TableSimulator:
         ids = [p.player_id for p in players]
         if len(set(ids)) != len(ids):
             raise ValueError("duplicate player ids at one table")
+        pokerkit_rules(table, len(players))  # e.g. more straddles than players after the blinds
         self.table = table
         self.players = dict(sorted(by_seat.items()))
         if isinstance(starting_stack, int):
@@ -231,13 +246,9 @@ class TableSimulator:
             rng.shuffle(deck)
         next_card = 0
 
-        t = self.table
         state = FastNoLimitTexasHoldem.create_state(
             AUTOMATIONS,
-            True,
-            t.ante,
-            (t.small_blind, t.big_blind),
-            t.big_blind,
+            *pokerkit_rules(self.table, len(order)),
             tuple(self.stacks[s] for s in order),
             len(order),
             mode=Mode.TOURNAMENT,

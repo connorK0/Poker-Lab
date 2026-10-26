@@ -16,6 +16,7 @@ from poker_lab.engine.simulator import (
     SeatedPlayer,
     TableSimulator,
     legal_actions_from_state,
+    pokerkit_rules,
 )
 
 __all__ = [
@@ -37,5 +38,6 @@ __all__ = [
     "check_decision",
     "clamp_raise",
     "legal_actions_from_state",
+    "pokerkit_rules",
     "replay_in_pokerkit",
 ]

@@ -96,8 +96,10 @@ def blind_pot(
 ) -> BlindPot:
     """The table rules and forced bets of a push/fold spot, from a hand's actions so far (or all
     of them); raises ``OffTree`` when the abstract game cannot describe the hand."""
-    if table.ante or 2 * table.small_blind != table.big_blind:
-        raise OffTree("the game needs blinds in a 1:2 ratio and no ante")
+    if table.ante or table.big_blind_ante or table.straddles:
+        raise OffTree("the game has no antes or straddles")
+    if 2 * table.small_blind != table.big_blind:
+        raise OffTree("the game needs blinds in a 1:2 ratio")
     forced = [a for a in actions if a.action_type.is_forced]
     posters = {a.action_type: a.seat for a in forced}
     if len(forced) != 2 or set(posters) != {ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND}:

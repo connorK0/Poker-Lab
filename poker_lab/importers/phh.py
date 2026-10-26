@@ -42,9 +42,13 @@ Mapping
 * Descriptive fields (event, venue, author, ...) and user-defined fields go to
   ``metadata["phh.<field>"]``, the date and time to ``started_at``.
 
-Schema v1 cannot hold straddles, antes that differ by seat (the big-blind ante of modern
-tournaments), a minimum bet other than the big blind, more than one runout, or variants other
-than no-limit hold'em. Such hands are rejected as unsupported, never approximated.
+* Forced bets: the blinds and straddles in dealing order, the minimum bet, and antes that are
+  either the same for every player or posted by the big blind alone (the big-blind ante of
+  modern tournaments, which PHH records without ante trimming).
+
+Schema v2 cannot hold other antes that differ by seat (a button ante, say), a big-blind ante
+with ante trimming, more than one runout, or variants other than no-limit hold'em. Such hands
+are rejected as unsupported, never approximated.
 
 The export (``hand_to_phh``) is the inverse up to card provenance. It places board deals and
 showdown decisions where PokerKit's rules put them and records finishing stacks, so that a
@@ -79,10 +83,10 @@ from pokerkit import (
 )
 from pokerkit import HandHistory as PHH
 from pokerkit.notation import parse_action
-from pokerkit.utilities import parse_value
+from pokerkit.utilities import clean_values, parse_value
 
 from poker_lab.engine.fast_hand import FastNoLimitTexasHoldem
-from poker_lab.engine.simulator import forced_posts
+from poker_lab.engine.simulator import forced_posts, pokerkit_rules
 from poker_lab.schema import (
     Action,
     ActionType,
@@ -138,7 +142,7 @@ class _PHH(PHH):
 
 class RejectReason(StrEnum):
     PARSE = "parse"  # not TOML, or not a PHH hand (missing or mistyped fields)
-    UNSUPPORTED = "unsupported"  # valid PHH outside schema v1 (variant, straddle, BB ante, ...)
+    UNSUPPORTED = "unsupported"  # valid PHH outside schema v2 (variant, button ante, ...)
     ILLEGAL_ACTION = "illegal_action"  # PokerKit refuses an action
     INCOMPLETE = "incomplete"  # the actions stop before the hand is over
     RESULT_MISMATCH = "result_mismatch"  # recorded finishing stacks contradict the replay
@@ -344,7 +348,7 @@ def _seating(phh: PHH, n: int) -> tuple[tuple[int, ...], int]:
     if len(set(order)) != n:
         raise _reject(RejectReason.INCONSISTENT, "two players share a seat")
     if max_seats > 10:
-        raise _reject(RejectReason.UNSUPPORTED, f"{max_seats} seats (schema v1 holds at most 10)")
+        raise _reject(RejectReason.UNSUPPORTED, f"{max_seats} seats (schema v2 holds at most 10)")
     if max(order) >= max_seats:
         raise _reject(RejectReason.INCONSISTENT, "a seat number exceeds seat_count")
     if seat_order_from_button(order, order[-1]) != order:
@@ -384,7 +388,7 @@ def _metadata(phh: PHH) -> dict[str, str]:
             meta[f"phh.{name}"] = str(value)
     if phh.time_banks is not None:
         meta["phh.time_banks"] = _json(phh.time_banks)
-    if not phh.ante_trimming_status and any(phh.antes):  # only matters with antes
+    if not phh.ante_trimming_status and _uniform(phh.antes):  # implied by a big-blind ante
         meta["phh.ante_trimming_status"] = "false"
     if phh.year is not None and phh.month is None and phh.time is not None:
         meta["phh.time"] = phh.time.isoformat()  # a time without a full date
@@ -510,6 +514,23 @@ def _check_types(phh: PHH) -> None:
         raise _reject(RejectReason.PARSE, "players must be names")
 
 
+def _uniform(antes: Sequence[Any]) -> bool:
+    """Whether ``antes`` are the same nonzero ante for every player."""
+    return any(antes) and len(set(antes)) == 1
+
+
+def _antes(phh: PHH) -> tuple[int, int]:
+    """(ante for every player, big-blind ante) of a scaled hand."""
+    antes = list(phh.antes)
+    if not any(antes) or _uniform(antes):
+        return antes[0], 0
+    if any(a for i, a in enumerate(antes) if i != 1):
+        raise _reject(RejectReason.UNSUPPORTED, f"antes differ by seat {antes}")
+    if phh.ante_trimming_status:
+        raise _reject(RejectReason.UNSUPPORTED, "a big-blind ante with ante trimming")
+    return 0, antes[1]
+
+
 def _as_fast(phh: PHH) -> _PHH:
     if isinstance(phh, _PHH):
         return phh
@@ -529,7 +550,7 @@ def hand_from_phh(phh: PHH, *, hand_id: str | None = None, allow_rake: bool = Tr
     if phh.variant != "NT":
         raise _reject(
             RejectReason.UNSUPPORTED,
-            f"variant {phh.variant!r} (schema v1 holds no-limit hold'em only)",
+            f"variant {phh.variant!r} (schema v2 holds no-limit hold'em only)",
         )
     for name in PHH.required_field_names["NT"]:
         if getattr(phh, name) is None:
@@ -540,15 +561,12 @@ def hand_from_phh(phh: PHH, *, hand_id: str | None = None, allow_rake: bool = Tr
         hand_id = str(phh.hand)
     n = len(phh.starting_stacks)
     if not 2 <= n <= 10:
-        raise _reject(RejectReason.UNSUPPORTED, f"{n} players (schema v1 holds 2 to 10)")
+        raise _reject(RejectReason.UNSUPPORTED, f"{n} players (schema v2 holds 2 to 10)")
     phh, scale = _scaled(phh)
-    if len(set(phh.antes)) != 1:
-        raise _reject(RejectReason.UNSUPPORTED, f"antes differ by seat {phh.antes}")
+    ante, big_blind_ante = _antes(phh)
     small_blind, big_blind, *straddles = phh.blinds_or_straddles
-    if any(straddles):
-        raise _reject(RejectReason.UNSUPPORTED, f"straddles {phh.blinds_or_straddles}")
-    if phh.min_bet != big_blind:
-        raise _reject(RejectReason.UNSUPPORTED, f"min_bet {phh.min_bet} != big blind {big_blind}")
+    while straddles and not straddles[-1]:
+        straddles.pop()
     order, max_seats = _seating(phh, n)
     if phh.players is None:
         players = [f"{hand_id}/p{i + 1}" for i in range(n)]
@@ -563,8 +581,11 @@ def hand_from_phh(phh: PHH, *, hand_id: str | None = None, allow_rake: bool = Tr
             max_seats=max_seats,
             small_blind=small_blind,
             big_blind=big_blind,
-            ante=phh.antes[0],
+            ante=ante,
             currency=currency if scale == 1 else f"{currency}/{scale}",
+            big_blind_ante=big_blind_ante,
+            straddles=tuple(straddles),
+            min_bet=phh.min_bet,
         )
     except (ValueError, TypeError) as exc:
         raise _reject(RejectReason.UNSUPPORTED, str(exc)) from exc
@@ -709,13 +730,17 @@ def hand_to_phh(hand: HandHistory) -> PHH:
     order = seat_order_from_button([s.seat for s in hand.seats], hand.button_seat)
     n = len(order)
     meta = dict(hand.metadata)
-    trimming = meta.pop("phh.ante_trimming_status", "true") != "false"
+    trimming, raw_antes, raw_blinds, min_bet = pokerkit_rules(t, n)
+    if meta.pop("phh.ante_trimming_status", "true") == "false":
+        trimming = False
+    antes = list(clean_values(raw_antes, n))
+    blinds = list(clean_values(raw_blinds, n))
     base = _PHH(
         variant="NT",
         ante_trimming_status=trimming,
-        antes=[t.ante] * n,
-        blinds_or_straddles=[t.small_blind, t.big_blind] + [0] * (n - 2),
-        min_bet=t.big_blind,
+        antes=antes,
+        blinds_or_straddles=blinds,
+        min_bet=min_bet,
         starting_stacks=[hand.seat_info(s).starting_stack for s in order],
         actions=[],
     )
@@ -795,9 +820,9 @@ def hand_to_phh(hand: HandHistory) -> PHH:
     user.update(dated.pop("user_defined_fields", {}))
     return dataclasses.replace(
         base,
-        antes=[amount(t.ante)] * n,
-        blinds_or_straddles=[amount(t.small_blind), amount(t.big_blind)] + [0] * (n - 2),
-        min_bet=amount(t.big_blind),
+        antes=[amount(a) for a in antes],
+        blinds_or_straddles=[amount(b) for b in blinds],
+        min_bet=amount(min_bet),
         starting_stacks=[amount(hand.seat_info(s).starting_stack) for s in order],
         actions=[_map_cbr(a, lambda s: str(amount(int(s)))) for a in actions],
         hand=hand.hand_id,

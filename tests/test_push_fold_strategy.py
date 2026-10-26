@@ -133,7 +133,8 @@ def test_off_tree_spots_fall_back_or_raise():
     [
         (HU, 2500, "outside"),  # 25 bb: deeper than the solved range
         (HU, 100, "outside"),  # 1 bb: the big blind is all-in from posting
-        (TableConfig("ante", 2, 50, 100, ante=10), 1000, "no ante"),
+        (TableConfig("ante", 2, 50, 100, ante=10), 1000, "no antes"),
+        (TableConfig("bba", 2, 50, 100, big_blind_ante=100), 1000, "no antes"),
         (TableConfig("odd", 2, 50, 150), 1500, "1:2"),
     ],
 )
@@ -144,6 +145,17 @@ def test_unsupported_tables_and_stacks_are_off_the_tree(table, stacks, reason):
     assert preflop
     for view in preflop:
         with pytest.raises(OffTree, match=reason):
+            push_fold_spot(view)
+
+
+def test_straddled_pots_are_off_the_tree():
+    hero = Collector(PushFoldStrategy(fallback=CheckCallStrategy()))
+    others = [StrategyAgent(CheckCallStrategy()) for _ in range(2)]
+    _play(TableConfig("straddle", 3, 50, 100, straddles=(200,)), [hero, *others], 3, 1000)
+    preflop = [v for v in hero.views if v.public.street is Street.PREFLOP]
+    assert preflop
+    for view in preflop:
+        with pytest.raises(OffTree, match="straddles"):
             push_fold_spot(view)
 
 

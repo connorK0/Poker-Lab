@@ -1,4 +1,4 @@
-"""Canonical hand-history data model (schema version 1).
+"""Canonical hand-history data model (schema version 2).
 
 This module is the contract between all phases. The simulator (Phase 1), external imports
 (Phase 3), and the camera + manual capture system (Phase 4) all emit ``HandHistory`` objects.
@@ -13,6 +13,14 @@ Conventions
 * Seats are integers in ``[0, max_seats)``, numbered clockwise.
 * ``payouts`` are pot awards. ``uncalled_returns`` are bets returned because nobody matched
   them. Chip conservation: ``sum(contributions) == sum(payouts) + sum(uncalled_returns) + rake``.
+* Forced bets (``TableConfig``) are listed in dealing order, as PokerKit and PHH do: the small
+  blind, the big blind, then the straddles of the players after it (``straddles[0]`` is the
+  first player after the big blind). Antes are either the same for every seat (``ante``) or
+  one ante the big blind posts for the table (``big_blind_ante``, as in modern tournaments).
+  The action log records what each seat actually posted, which is less when a stack is short.
+
+Version 2 added ``big_blind_ante``, ``straddles`` and ``min_bet``; ``serialization`` reads
+version 1 records by migrating them.
 
 Information firewall
 --------------------
@@ -34,7 +42,7 @@ from typing import Any
 from poker_lab.schema.cards import validate_card
 from poker_lab.schema.positions import POSITION_LABELS
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 
 class Street(StrEnum):
@@ -154,6 +162,10 @@ class CardObservation:
 
 @dataclass(frozen=True, slots=True)
 class TableConfig:
+    """A table's rules. ``min_bet`` (the smallest bet, and the smallest raise increment before
+    any raise) defaults to the big blind. ``straddles`` has no trailing zeros, so equal rules
+    compare equal."""
+
     table_id: str
     max_seats: int
     small_blind: int
@@ -161,6 +173,9 @@ class TableConfig:
     ante: int = 0
     game: str = "NLHE"
     currency: str = "chips"
+    big_blind_ante: int = 0
+    straddles: tuple[int, ...] = ()
+    min_bet: int | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.table_id, str) or not self.table_id:
@@ -174,7 +189,30 @@ class TableConfig:
         if self.small_blind > self.big_blind:
             raise ValueError("small_blind must not exceed big_blind")
         if self.game != "NLHE":
-            raise ValueError(f"unsupported game {self.game!r}; schema v1 supports 'NLHE' only")
+            raise ValueError(f"unsupported game {self.game!r}; schema v2 supports 'NLHE' only")
+        _require_int("big_blind_ante", self.big_blind_ante, 0)
+        if self.ante and self.big_blind_ante:
+            raise ValueError("a table has either an ante for every seat or a big-blind ante")
+        if type(self.straddles) is not tuple:
+            _set(self, "straddles", tuple(self.straddles))
+        level = self.big_blind
+        for k, straddle in enumerate(self.straddles):
+            _require_int(f"straddles[{k}]", straddle, 0)
+            if straddle and straddle <= level:
+                raise ValueError(f"straddle {straddle} must exceed the bet before it ({level})")
+            level = max(level, straddle)
+        if self.straddles and not self.straddles[-1]:
+            raise ValueError("straddles must not end with 0 (no straddle)")
+        if len(self.straddles) > self.max_seats - 2:
+            raise ValueError(f"{len(self.straddles)} straddles at a {self.max_seats}-seat table")
+        if self.min_bet is None:
+            _set(self, "min_bet", self.big_blind)
+        _require_int("min_bet", self.min_bet, 1)
+
+    @property
+    def blinds_or_straddles(self) -> tuple[int, ...]:
+        """Small blind, big blind and straddles, in dealing order."""
+        return (self.small_blind, self.big_blind, *self.straddles)
 
 
 @dataclass(frozen=True, slots=True)

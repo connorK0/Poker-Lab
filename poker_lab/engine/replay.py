@@ -13,7 +13,7 @@ from dataclasses import dataclass
 
 from pokerkit import HoleCardsShowingOrMucking, Mode, NoLimitTexasHoldem, State
 
-from poker_lab.engine.simulator import AUTOMATIONS
+from poker_lab.engine.simulator import AUTOMATIONS, pokerkit_rules
 from poker_lab.schema import ActionType, HandHistory, seat_order_from_button
 
 
@@ -38,15 +38,15 @@ def replay_in_pokerkit(
 
     Raises ``ReplayError`` on any out-of-turn or illegal action, or an amount mismatch.
     """
-    t = hand.table
     order = seat_order_from_button([s.seat for s in hand.seats], hand.button_seat)
     stacks = {s.seat: s.starting_stack for s in hand.seats}
+    try:
+        rules = pokerkit_rules(hand.table, len(order))
+    except ValueError as exc:
+        raise ReplayError(str(exc)) from exc
     state = game.create_state(
         AUTOMATIONS,
-        True,
-        t.ante,
-        (t.small_blind, t.big_blind),
-        t.big_blind,
+        *rules,
         tuple(stacks[s] for s in order),
         len(order),
         mode=Mode.TOURNAMENT,

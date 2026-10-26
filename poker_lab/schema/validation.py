@@ -4,6 +4,8 @@
 verify that the record is internally consistent:
 
 * positions match the button and seat order;
+* the forced posts (antes, blinds, straddles) are the ones the table's rules require, given
+  each seat's stack (``expected_forced_posts``);
 * actions are in street order, folded or all-in seats do not act again, ``amount`` and
   ``total_bet`` agree, stacks never go negative, and ``is_all_in`` flags are right;
 * checks happen only when nothing is owed, calls match the outstanding bet (or all-in),
@@ -28,8 +30,9 @@ from poker_lab.schema.hand_history import (
     HandStatus,
     SeatInfo,
     Street,
+    TableConfig,
 )
-from poker_lab.schema.positions import assign_positions
+from poker_lab.schema.positions import assign_positions, seat_order_from_button
 
 
 class HandHistoryValidationError(ValueError):
@@ -59,6 +62,47 @@ def compute_uncalled_returns(actions: Iterable[Action]) -> dict[int, int]:
         if top > second:
             returns[top_seat] = returns.get(top_seat, 0) + (top - second)
     return returns
+
+
+_BLIND_KINDS = (ActionType.POST_SMALL_BLIND, ActionType.POST_BIG_BLIND)
+
+
+def expected_forced_posts(
+    table: TableConfig, seats: Iterable[SeatInfo], button_seat: int
+) -> list[tuple[int, ActionType, int]]:
+    """(seat, kind, amount) of every forced post the table's rules require, in dealing order.
+
+    Dealing-order position ``k`` posts ``table.blinds_or_straddles[k]`` (heads-up the button
+    posts the small blind) and the ante, plus ``table.big_blind_ante`` for the big blind. A
+    short stack posts the ante first and then what is left of the blind, as PokerKit does.
+    """
+    stacks = {s.seat: s.starting_stack for s in seats}
+    order = seat_order_from_button(stacks, button_seat)
+    blinds = table.blinds_or_straddles
+    posts: list[tuple[int, ActionType, int]] = []
+    for i, seat in enumerate(order):
+        role = (1 - i) if len(order) == 2 else i  # heads-up: the BB is dealt first
+        ante = min(table.ante + (table.big_blind_ante if role == 1 else 0), stacks[seat])
+        if ante:
+            posts.append((seat, ActionType.POST_ANTE, ante))
+        blind = min(blinds[role] if role < len(blinds) else 0, stacks[seat] - ante)
+        if blind:
+            kind = _BLIND_KINDS[role] if role < 2 else ActionType.POST_STRADDLE
+            posts.append((seat, kind, blind))
+    return posts
+
+
+def _check_forced_posts(hand: HandHistory, problems: list[str]) -> None:
+    if len(hand.table.straddles) > len(hand.seats) - 2:
+        problems.append(f"{len(hand.table.straddles)} straddles with {len(hand.seats)} players")
+        return
+    rules = expected_forced_posts(hand.table, hand.seats, hand.button_seat)
+    expected = sorted((seat, kind.value, amount) for seat, kind, amount in rules)
+    recorded = sorted(
+        (a.seat, a.action_type.value, a.amount) for a in hand.actions if a.action_type.is_forced
+    )
+    if recorded != expected:
+        problems.append(f"forced posts {recorded} != the table's rules {expected}")
 
 
 def _check_actions(hand: HandHistory, problems: list[str]) -> tuple[set[int], dict[int, int]]:
@@ -140,6 +184,7 @@ def find_problems(hand: HandHistory, *, check_positions: bool = True) -> list[st
         problems.append("a player occupies more than one seat")
 
     folded, _ = _check_actions(hand, problems)
+    _check_forced_posts(hand, problems)
 
     board = hand.board_cards()
     if len(board) not in (0, 3, 4, 5):

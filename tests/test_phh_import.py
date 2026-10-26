@@ -7,7 +7,14 @@ import random
 import pytest
 from pokerkit import HandHistory as PHH
 
-from poker_lab.engine import AllInAgent, CallingAgent, RandomAgent, SeatedPlayer, TableSimulator
+from poker_lab.engine import (
+    AllInAgent,
+    CallingAgent,
+    RandomAgent,
+    SeatedPlayer,
+    TableSimulator,
+    replay_in_pokerkit,
+)
 from poker_lab.importers import (
     PHHImportError,
     RejectReason,
@@ -20,12 +27,15 @@ from poker_lab.importers import (
 from poker_lab.importers.__main__ import main
 from poker_lab.profiling.push_fold import push_fold_observations
 from poker_lab.schema import (
+    ActionType,
     CardSource,
     HandHistoryStore,
     HandStatus,
     HoleCards,
     TableConfig,
+    dumps_hand,
     find_problems,
+    loads_hand,
     read_jsonl,
     redact_hole_cards,
 )
@@ -90,6 +100,23 @@ hand = "hu-1"
 """
 
 
+# A big-blind ante (schema v2): the big blind antes 3 for the table, which is dead money. Bo calls
+# the button's raise, check-raises the flop and wins it.
+BB_ANTE = """
+variant = "NT"
+ante_trimming_status = false
+antes = [0, 3, 0, 0]
+blinds_or_straddles = [1, 2, 0, 0]
+min_bet = 2
+starting_stacks = [100, 100, 100, 100]
+actions = ["d dh p1 ????", "d dh p2 KhQh", "d dh p3 ????", "d dh p4 ????", "p3 f", "p4 cbr 5",
+           "p1 f", "p2 cc", "d db Qc7d2s", "p2 cc", "p4 cbr 6", "p2 cbr 18", "p4 f"]
+hand = "bba-1"
+players = ["Al", "Bo", "Cat", "Dee"]
+finishing_stacks = [99, 112, 100, 89]
+"""
+
+
 def _phh(text, **subs):
     for old, new in subs.items():
         assert old in text, old
@@ -112,6 +139,13 @@ def simulated():
         (TableConfig("six", 6, 1, 2, ante=1), list(range(6)), 6),
         (TableConfig("nine", 10, 2, 4, ante=2), [0, 1, 3, 4, 5, 7, 8, 9, 2], 9),
         (TableConfig("gaps", 9, 1, 2), [1, 4, 6, 8], 4),
+        # schema v2: big-blind antes (also heads-up), straddles, other minimum bets
+        (TableConfig("bba", 8, 1, 2, big_blind_ante=2), list(range(8)), 8),
+        (TableConfig("hu-bba", 2, 2, 4, big_blind_ante=6), [0, 1], 2),
+        (TableConfig("straddle", 6, 1, 2, straddles=(4,)), list(range(6)), 6),
+        (TableConfig("double", 9, 1, 2, straddles=(4, 8)), list(range(9)), 9),
+        (TableConfig("button", 5, 1, 2, straddles=(0, 4)), [0, 2, 3, 4], 4),
+        (TableConfig("minbet", 6, 1, 2, min_bet=5), [0, 1, 3], 3),
     ]
     for k, (table, seats, _) in enumerate(configs):
         agents = [
@@ -130,8 +164,10 @@ def test_round_trip_reproduces_simulated_hands(simulated):
             assert back == as_imported(h)
             assert back.source == "imported"
             assert all(o.source is CardSource.IMPORTED for o in back.board)
-    assert {len(h.seats) for h in simulated} == {2, 4, 6, 9}
+    assert {len(h.seats) for h in simulated} == {2, 3, 4, 6, 8, 9}
     assert any(a.is_all_in for h in simulated for a in h.actions)
+    kinds = {a.action_type for h in simulated for a in h.actions}
+    assert ActionType.POST_STRADDLE in kinds
 
 
 def test_round_trip_through_files(simulated, tmp_path):
@@ -249,9 +285,13 @@ def _reason(phh, **kw):
     ("subs", "reason"),
     [
         ({'variant = "NT"': 'variant = "PO"'}, RejectReason.UNSUPPORTED),
-        ({"[0.25, 0.5, 0]": "[0.25, 0.5, 1]"}, RejectReason.UNSUPPORTED),  # straddle
-        ({"antes = [0, 0, 0]": "antes = [0, 0.5, 0]"}, RejectReason.UNSUPPORTED),  # BB ante
-        ({"min_bet = 0.5": "min_bet = 1"}, RejectReason.UNSUPPORTED),
+        ({"antes = [0, 0, 0]": "antes = [0, 0, 0.5]"}, RejectReason.UNSUPPORTED),  # button ante
+        ({"antes = [0, 0, 0]": "antes = [0.5, 0.5, 0]"}, RejectReason.UNSUPPORTED),
+        # a straddle is accepted, but then Cy (the straddler on the button) acts out of turn
+        ({"[0.25, 0.5, 0]": "[0.25, 0.5, 1]"}, RejectReason.ILLEGAL_ACTION),
+        # a big-blind ante changes Ben's result: the recorded finishing stacks disagree
+        ({"antes = [0, 0, 0]": "antes = [0, 0.5, 0]"}, RejectReason.RESULT_MISMATCH),
+        ({"[0.25, 0.5, 0]": "[0.25, 0.5, 0.5]"}, RejectReason.UNSUPPORTED),  # not a straddle
         ({"[50, 62.75, 40]": "[50, inf, 40]"}, RejectReason.UNSUPPORTED),
         ({"[50, 62.75, 40]": "[50, 62.750001, 40]"}, RejectReason.UNSUPPORTED),
         ({'"p3 cbr 1.5",': '"p1 cbr 1.5",'}, RejectReason.ILLEGAL_ACTION),  # out of turn
@@ -268,6 +308,33 @@ def _reason(phh, **kw):
 )
 def test_invalid_hands_are_rejected_with_a_reason(subs, reason):
     assert _reason(_phh(FOREIGN, **subs)) == reason
+
+
+def test_big_blind_antes_import():
+    hand = hand_from_phh(PHH.loads(BB_ANTE), allow_rake=False)
+    assert (hand.table.ante, hand.table.big_blind_ante) == (0, 3)
+    posts = [(a.seat, a.action_type, a.amount) for a in hand.actions if a.action_type.is_forced]
+    assert posts == [
+        (1, ActionType.POST_ANTE, 3),
+        (0, ActionType.POST_SMALL_BLIND, 1),
+        (1, ActionType.POST_BIG_BLIND, 2),
+    ]
+    assert hand.net_results() == {0: -1, 1: 12, 2: 0, 3: -11}
+    assert "phh.ante_trimming_status" not in hand.metadata  # implied by the big-blind ante
+    assert replay_in_pokerkit(hand, allow_unknown_cards=True).net == hand.net_results()
+    assert hand_from_phh(PHH.loads(hand_to_phh(hand).dumps())) == hand
+    assert loads_hand(dumps_hand(hand), validate=True) == hand
+    trimmed = BB_ANTE.replace("ante_trimming_status = false", "ante_trimming_status = true")
+    assert _reason(PHH.loads(trimmed)) == RejectReason.UNSUPPORTED
+
+
+def test_other_minimum_bets_import():
+    hand = hand_from_phh(_phh(FOREIGN, **{"min_bet = 0.5": "min_bet = 1"}))
+    assert (hand.table.big_blind, hand.table.min_bet) == (50, 100)
+    assert hand_to_phh(hand).min_bet == 1
+    assert hand_from_phh(PHH.loads(hand_to_phh(hand).dumps())) == hand
+    # with a minimum bet of 5, Ann's 4.25 flop bet is too small
+    assert _reason(_phh(FOREIGN, **{"min_bet = 0.5": "min_bet = 5"})) == "illegal_action"
 
 
 def test_missing_actions_are_not_repaired():
@@ -316,7 +383,7 @@ def test_batch_reports_every_rejection(tmp_path):
 
 def test_cli_writes_json_lines(tmp_path, capsys):
     (tmp_path / "a.phh").write_text(FOREIGN, encoding="utf-8")
-    (tmp_path / "b.phh").write_text(FOREIGN.replace("min_bet = 0.5", "min_bet = 1"), "utf-8")
+    (tmp_path / "b.phh").write_text(FOREIGN.replace("[0, 0, 0]", "[0, 0, 0.5]"), "utf-8")
     out, rej = tmp_path / "hands.jsonl.gz", tmp_path / "rejected.jsonl"
     assert main([str(tmp_path), "--out", str(out), "--rejections", str(rej), "--no-rake"]) == 0
     assert "1 hands imported from 2 files; 1 rejected (unsupported 1)" in capsys.readouterr().out
