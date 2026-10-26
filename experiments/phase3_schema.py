@@ -52,11 +52,21 @@ C. **The WSOP hold'em hands.** The 2023 WSOP Event #43 final table (83 hands) an
 
 A failed prediction is reported as such, and every failing hand is listed. There are no figures:
 every result is a count.
+
+Post hoc, after the run at commit 4c4e373: A1 failed on 5 of 80,000 checks, all of them check 5
+(the loader) on pots split three ways in cents, where the difference reaches 1.33 units.
+PokerKit gives a split pot's whole remainder to the first winner in dealing order, so with
+three winners and two odd cents one winner gets both; the loader splits decimal amounts
+exactly. The odd-chip rule above assumed a difference below one unit. To test that this is the
+only cause, every hand on which the loader disagreed (odd chips and failures) is checked again
+with the same hand in whole units (currency ``chips``, so the loader splits in whole units
+too): ``whole_units`` in the results. The pre-registered verdict is unchanged.
 """
 
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import gzip
 import hashlib
 import json
@@ -240,6 +250,17 @@ def check(name: str, hand: HandHistory) -> str | None:
     raise ValueError(f"unknown check {name!r}")
 
 
+def whole_units(hand: HandHistory, problem: str) -> str:
+    """Post hoc: does the loader agree when the same hand is written in whole units? The kind
+    of difference (odd chip or larger) and the answer, e.g. ``"odd chip/agrees"``."""
+    kind = "odd chip" if problem == ODD_CHIP else "larger"
+    if "/" not in hand.table.currency:
+        return f"{kind}/already whole units"
+    whole = dataclasses.replace(hand, table=dataclasses.replace(hand.table, currency="chips"))
+    again = loader_check(hand_to_phh(whole).dumps(), whole)
+    return f"{kind}/{'agrees' if again is None else 'differs'}"
+
+
 def v2_features(hand: HandHistory) -> list[str]:
     out = features(hand)
     forced = [a for a in hand.actions if a.action_type.is_forced]
@@ -263,6 +284,7 @@ def round_trip_task(seed: int, structure: str, n_hands: int) -> dict[str, Any]:
         "odd_chip": Counter(),
         "features": Counter(),
         "failures": [],
+        "whole_units": Counter(),
         "seconds": 0.0,
     }
     t0 = time.perf_counter()
@@ -279,6 +301,8 @@ def round_trip_task(seed: int, structure: str, n_hands: int) -> dict[str, Any]:
                 key = f"{view_name}/{name}"
                 out["checks"][key] += 1
                 problem = check(name, h)
+                if name == "loader" and problem is not None:
+                    out["whole_units"][whole_units(h, problem)] += 1
                 if problem == ODD_CHIP:
                     out["odd_chip"][key] += 1
                 if problem in (None, ODD_CHIP):
@@ -328,6 +352,7 @@ def summarize_round_trips(parts: list[dict[str, Any]]) -> dict[str, Any]:
         * sum(p["seconds"] for p in parts)
         / max(1, sum(p["hands"] for p in parts)),
         "holds": not failures and checked == passed,
+        "whole_units": dict(sum((p["whole_units"] for p in parts), Counter())),
     }
 
 
@@ -722,6 +747,15 @@ def markdown_summary(r: dict[str, Any]) -> str:
     if rt["failures"]:
         lines += ["", "Failures (first 50):", ""]
         lines += [f"* {f}" for f in rt["failures"]]
+    wu = rt.get("whole_units", {})
+    if wu:
+        lines += [
+            "",
+            "Post hoc: every hand on which PokerKit's loader disagreed, checked again with the "
+            "same hand in whole units: "
+            + ", ".join(f"{k} {v}" for k, v in sorted(wu.items()))
+            + ".",
+        ]
     s, i = v1["simulated"], v1["imported"]
     lines += [
         "",
