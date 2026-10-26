@@ -449,7 +449,7 @@ def _records(path: Path) -> list[dict[str, Any]]:
 
 def _compare(theirs_path: Path, ours: list[HandHistory]) -> dict[str, Any]:
     raw = _records(theirs_path)
-    digest = hashlib.sha256(theirs_path.read_bytes()).hexdigest()
+    digest = hashlib.sha256(gzip.decompress(theirs_path.read_bytes())).hexdigest()  # no mtime
     try:
         theirs = list(read_jsonl(theirs_path, validate=True))
     except ValueError as exc:
@@ -761,7 +761,7 @@ def markdown_summary(r: dict[str, Any]) -> str:
         "",
         "## B. Version 1 files",
         "",
-        f"Written by the schema v1 code at {v1['commit'][:7]} (SHA-256 of the files "
+        f"Written by the schema v1 code at {v1['commit'][:7]} (SHA-256 of their contents "
         f"{v1['v1_files_sha256'][:12]}...).",
         "",
         "| Source | v1 records | Identical to the current code |",
