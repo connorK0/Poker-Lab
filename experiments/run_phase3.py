@@ -37,6 +37,10 @@ is rebuilt):
     the engine, PokerKit, JSON and PHH at v2 tables; the schema v1 code's own output (run in a
     temporary git worktree) read and migrated by the current code; the WSOP hold'em hands
     (P3.10).
+11. ``adaptive``: push/fold bots that adapt to the hero (move toward a best response to its
+    observed push and call rates), played in sessions scored by exact values block by block,
+    against heroes that exploit once, refit, refit on recent hands, best-respond or stay at
+    equilibrium (P3.9).
 """
 
 from __future__ import annotations
@@ -59,6 +63,7 @@ STEPS = (
     "priors",
     "sequence",
     "schema",
+    "adaptive",
 )
 
 
@@ -72,6 +77,7 @@ def run(
 ) -> dict[str, float]:
     # Imported here: worker processes re-import this module (Windows spawn).
     from experiments import (
+        phase3_adaptive,
         phase3_bridge,
         phase3_confirm,
         phase3_exploit,
@@ -96,6 +102,7 @@ def run(
         "priors": phase3_priors,
         "sequence": phase3_sequence,
         "schema": phase3_schema,
+        "adaptive": phase3_adaptive,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

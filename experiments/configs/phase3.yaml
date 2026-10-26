@@ -164,3 +164,32 @@ schema:
   public_paths: [wsop, alice-carol-wikipedia.phh, antonius-blom-2009.phh,
                  arieh-yockey-2019.phh, dwan-ivey-2009.phh, phua-xuan-2019.phh]
   workers: 12
+
+adaptive:
+  # P3.9: exploiting push/fold bots that adapt to the hero (pre-registered; see
+  # phase3_adaptive.py). Game, replicates, priors and starting bots are P3.2's (standard
+  # population); recommender and check settings are P3.4's and P3.5's. Bot speeds, heroes and
+  # session length were set on development seeds 98 and 99.
+  stack: 10
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  hands: 2000
+  bin: 250
+  period: 25                      # hands between a bot's updates
+  pseudo: 10                      # a bot's prior hands at the equilibrium's rates
+  adaptive:
+    slow: {speed: 0.1, half_life: 200}
+    fast: {speed: 0.5, half_life: 50}
+    calls_only: {speed: 0.5, half_life: 50, adapts: [call]}
+  observe_hands: 200              # fit once: hands watched before deciding
+  refit_every: 50
+  window: 300                     # refit recent: hands used
+  calibration_bots: 300
+  check_sizes: [50, 100, 200, 400, 800, 1600]
+  fit_level: 0.05
+  check_draws: 400
+  ps: [0.1, 0.25, 0.5, 0.75, 0.9]
+  level: 0.9
+  draws: 2000
+  workers: 12

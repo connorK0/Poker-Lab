@@ -206,6 +206,22 @@ class HandLog:
     action: np.ndarray  # int: 1 push or call, 0 fold
     shown: np.ndarray  # bool: the bot's class was revealed at showdown
 
+    def redacted(self) -> HandLog:
+        """What the hero may know: the bot's class only where it was shown at a showdown
+        (-1 elsewhere). ``observations`` gives the same result for the redacted log."""
+        return HandLog(
+            self.bot_is_sb,
+            self.hero_class,
+            np.where(self.shown, self.bot_class, -1),
+            self.acted,
+            self.action,
+            self.shown,
+        )
+
+    def window(self, start: int, stop: int) -> HandLog:
+        """Hands ``start`` to ``stop - 1``."""
+        return HandLog(*(getattr(self, f.name)[start:stop] for f in fields(self)))
+
     def observations(self, n: int) -> Observations:
         out = {"sb_shown": np.zeros(169), "sb_hidden": np.zeros((2, 169))}
         out |= {"bb_shown": np.zeros(169), "bb_hidden": np.zeros((2, 169))}
@@ -351,20 +367,21 @@ def fit_frequency(
     pop_push, pop_call = range_shares(pop)
     push_rate = (obs.pushes + pseudo * pop_push) / (obs.n_sb + pseudo)
     call_rate = (obs.calls + pseudo * pop_call) / (obs.n_bb + pseudo)
+    return PushFoldBotParams(width_for_share(push_rate, t), width_for_share(call_rate, t), t)
 
-    def width_for(rate: float, which: int) -> float:
-        def gap(w: float) -> float:
-            params = PushFoldBotParams(w, w, t)
-            return range_shares(params)[which] - rate
 
-        lo, hi = 1e-4, 1 - 1e-4
-        if gap(lo) >= 0:
-            return lo
-        if gap(hi) <= 0:
-            return hi
-        return float(brentq(gap, lo, hi, xtol=1e-6))
+def width_for_share(share: float, temperature: float, order: str = "equity") -> float:
+    """The width whose soft threshold at ``temperature`` covers ``share`` of the combos."""
 
-    return PushFoldBotParams(width_for(push_rate, 0), width_for(call_rate, 1), t)
+    def gap(w: float) -> float:
+        return range_shares(PushFoldBotParams(w, w, temperature), order)[0] - share
+
+    lo, hi = 1e-4, 1 - 1e-4
+    if gap(lo) >= 0:
+        return lo
+    if gap(hi) <= 0:
+        return hi
+    return float(brentq(gap, lo, hi, xtol=1e-6))
 
 
 # -------------------------------------------------------------------------------- posterior
