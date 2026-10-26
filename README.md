@@ -493,7 +493,8 @@ open PHH format (Kim 2024), the format of public research data such as the 10,00
 played against professionals. The importer (`poker_lab/importers/`) replays every hand through
 PokerKit's rules and rejects, with a reason, anything that does not replay exactly. It never
 invents a missing action, as PokerKit's own loader does, and it never approximates what the
-schema cannot hold (straddles, big-blind antes, other variants). It works in batches and
+schema cannot hold (at the time straddles, big-blind antes and other variants; schema v2 holds
+the first two, P3.10). It works in batches and
 offline: there is no folder watching, and online sites' own formats are not read. A
 pre-registered experiment measured it (commit `582ac7c`, rerun at `3c1f25c` after it found two
 bugs;
@@ -589,8 +590,32 @@ windows and metrics, with two ablations and a test with five times the training 
   relative to bots), and the two bot-trained classifiers give a professional the same
   archetype in only 33-48% of windows (83-94% on bots). The logistic model stays the default.
 
-Next: schema v2 for modern tournament hands (P3.10) and opponents that adapt to the hero
-(P3.9); see [PROGRESS.md](PROGRESS.md).
+**Schema v2: big-blind antes, straddles and minimum bets (P3.10).** Schema v1 described a
+table's forced bets as two blinds and an ante for every seat. Modern tournaments use a big-blind
+ante (the big blind antes for the whole table), live games use straddles, and some records set
+a minimum bet other than the big blind. `TableConfig` now holds all three. Every forced post is
+checked against the table's rules by a second implementation independent of PokerKit, and
+version 1 files are read by migrating them. A pre-registered experiment checked it (commit
+`4c4e373`, results from `568cde3`;
+[`schema_summary.md`](experiments/results/phase3/schema/schema_summary.md)).
+
+* **Every component agrees at every new structure.** 10,000 hands at 400 random tables (big-blind
+  antes, straddles, double and button straddles, minimum bets of 2 and 0.5 bb) and their
+  redacted copies: the rules check, unmodified PokerKit, JSON and PHH agree on every one.
+* **One prediction failed, on split cents.** PokerKit's own PHH loader differs on 5 of the
+  10,000 hands by more than the pre-registered one-unit allowance. All five are pots split three
+  or more ways in cents: PokerKit gives a split pot's whole remainder to the first winner, and
+  the loader, reading cents as decimals, splits it exactly. Post hoc, every one of the 73 hands
+  where the loader differed at all agrees when written in whole units.
+* **Old files read back exactly.** The schema v1 code itself, run from a git worktree, wrote
+  20,000 hands (P3.6's tables and the Pluribus hands); the new code reads every one as exactly
+  the hand it makes itself. Phase 1, re-simulated from scratch, reproduces its published
+  numbers exactly.
+* **The WSOP hold'em hands import.** All 11 no-limit hold'em hands of the 2023 WSOP Event #43
+  final table (big-blind ante 1.5 bb) now import, PokerKit's loader agrees on them, and they
+  survive export and import. The 76 files still rejected are other games.
+
+Next: opponents that adapt to the hero (P3.9); see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -616,9 +641,10 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 # model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
 # hand histories imported and checked (1 min; downloads 12 MB of public PHH data once),
 # priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache),
-# the sequence model against Phase 1's classifier (about 1.4 h; needs PyTorch)
+# the sequence model against Phase 1's classifier (about 1.4 h; needs PyTorch),
+# schema v2 checked and the v1 code's output migrated (1 min; needs git history)
 python -m experiments.run_phase3 --seed 2026          # ~2.3 h on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors or sequence
+python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence or schema
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
@@ -646,9 +672,11 @@ flowchart LR
 ```
 
 * **`schema/`**: the contract between phases. A canonical `HandHistory` (table, seats,
-  positions, stacks, blinds/antes, per-card `source` + `confidence`, ordered actions by street,
-  showdown, pot awards vs. uncalled returns, status), strict JSON Lines serialization, and deep
-  validation (betting-sequence consistency, chip conservation, card uniqueness).
+  positions, stacks, blinds, antes, big-blind antes, straddles and the minimum bet, per-card
+  `source` + `confidence`, ordered actions by street, showdown, pot awards vs. uncalled returns,
+  status), strict JSON Lines serialization with migration of version 1 files, and deep
+  validation (forced posts against the table's rules, betting-sequence consistency, chip
+  conservation, card uniqueness).
 * **`engine/`**: `TableSimulator` wraps [PokerKit](https://github.com/uoftcprg/pokerkit) (MIT),
   which enforces the rules (min-raise and reopening rules, all-ins, side pots). Its pure-Python
   showdown evaluator was ~80% of runtime, so a
@@ -762,7 +790,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -770,7 +798,7 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (361 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (394 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
   skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.

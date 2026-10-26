@@ -35,7 +35,19 @@ CONFIRM = "experiments/results/phase3/confirm/confirm.json"
 IMPORT = "experiments/results/phase3/import/import.json"
 PRIORS = "experiments/results/phase3/priors/priors.json"
 SEQUENCE = "experiments/results/phase3/sequence/sequence.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT, PRIORS, SEQUENCE)
+SCHEMA = "experiments/results/phase3/schema/schema.json"
+SOURCES = (
+    PUSHFOLD,
+    EXPLOIT,
+    BRIDGE,
+    RECOMMEND,
+    FITCHECK,
+    CONFIRM,
+    IMPORT,
+    PRIORS,
+    SEQUENCE,
+    SCHEMA,
+)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -69,6 +81,7 @@ def overview(
     im: dict[str, Any],
     pr: dict[str, Any],
     sq: dict[str, Any],
+    sc: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -101,6 +114,7 @@ def overview(
     seq_gain = [v["log_loss_gain"]["mean"] for v in sq["a"]["paired"]["seq"].values()]
     big_gain = [v["log_loss_gain"]["mean"] for v in sq["c"]["paired"]["bag"].values()]
     agree = sq["b"]["humans"]["agreement"]
+    srt, wsop = sc["round_trip"], sc["public"]["by_subset"]["wsop"]
     return {
         "tiles": [
             tile(
@@ -200,6 +214,17 @@ def overview(
                 f"of windows (on held-out bots {min(v['bots'] for v in agree.values()):.0%}-"
                 f"{max(v['bots'] for v in agree.values()):.0%})",
             ),
+            tile(
+                "Checks passed with big-blind antes, straddles and other minimum bets",
+                f"{srt['passed']:,}/{srt['checked']:,}",
+                f"{srt['hands']:,} hands; the {srt['checked'] - srt['passed']} misses are "
+                "split cents (schema v2)",
+            ),
+            tile(
+                "WSOP final-table hold'em hands imported",
+                f"{wsop['imported']}/{wsop['nlhe']}",
+                "all with a big-blind ante, which schema v1 rejected",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -221,7 +246,9 @@ def overview(
             "transfer to these players (P3.7). A PyTorch model that reads every decision of "
             "every hand does not beat Phase 1's hand-written statistics with Phase 1's "
             "training bots, edges ahead only with five times as many, and is even more "
-            "overconfident on the professionals (P3.8)."
+            "overconfident on the professionals (P3.8). Schema v2 holds big-blind antes, "
+            "straddles and other minimum bets, reads version 1 files by migrating them, and "
+            "imports the hold'em hands of a modern tournament final table (P3.10)."
         ),
     }
 
@@ -1984,7 +2011,8 @@ def import_public_data(im: dict[str, Any]) -> dict[str, Any]:
         f"{by['pluribus']['accepted']:,} Pluribus hands, {by['historical']['accepted']} of "
         f"{by['historical']['files']} historical hands and {by['wsop']['accepted']} of the "
         f"{by['wsop']['files']} WSOP hands. The WSOP event is a mixed-game championship and "
-        "its hold'em hands use a big-blind ante, which schema v1 cannot hold.",
+        "its hold'em hands use a big-blind ante, which schema v1 could not hold (schema v2 "
+        "imports them: see the schema v2 section).",
         f"Pre-registered: PokerKit's own loader replays every imported hand to the same result. "
         f"It does for {cc['agree']:,} of {cc['of']:,}, so the prediction does not hold."
         if not cc["holds"]
@@ -3017,7 +3045,8 @@ def build(load) -> dict[str, Any]:
     im = load(IMPORT)
     pr = load(PRIORS)
     sq = load(SEQUENCE)
-    head = overview(r, ex, br, rc, fc, im, pr, sq)
+    sc = load(SCHEMA)
+    head = overview(r, ex, br, rc, fc, im, pr, sq, sc)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -3035,6 +3064,7 @@ def build(load) -> dict[str, Any]:
             provenance(IMPORT, im),
             provenance(PRIORS, pr),
             provenance(SEQUENCE, sq),
+            provenance(SCHEMA, sc),
         ],
         "sections": [
             charts(r),
@@ -3065,5 +3095,101 @@ def build(load) -> dict[str, Any]:
             sequence_gain(sq),
             sequence_scale(sq),
             sequence_transfer(sq),
+            schema_v2(sc),
         ],
     }
+
+
+SCHEMA_STRUCTURES = (
+    ("blinds", "Blinds only"),
+    ("ante", "Ante for every seat"),
+    ("bb_ante", "Big-blind ante"),
+    ("straddle", "Straddle (2 bb)"),
+    ("double_straddle", "Double straddle (2 and 4 bb)"),
+    ("button_straddle", "Straddle on the button"),
+    ("min_bet_up", "Minimum bet 2 bb"),
+    ("min_bet_down", "Minimum bet 0.5 bb"),
+)
+SCHEMA_CHECKS = (
+    ("full/rules", "Forced posts follow the rules"),
+    ("full/replay", "Unmodified PokerKit replays it"),
+    ("full/json", "JSON round trip"),
+    ("full/phh", "PHH export and import"),
+    ("full/loader", "PokerKit's own PHH loader agrees"),
+)
+
+
+def schema_v2(sc: dict[str, Any]) -> dict[str, Any]:
+    rt, v1, pub, pred = sc["round_trip"], sc["v1_files"], sc["public"], sc["predictions"]
+    by = rt["by_structure"]
+    cols = [label for _, label in SCHEMA_CHECKS] + ["Redacted copy (rules, JSON, PHH)"]
+
+    def cells(st: str) -> list[tuple[int, int]]:
+        checks = by[st]["checks"]
+        out = [(checks[k]["passed"], checks[k]["checked"]) for k, _ in SCHEMA_CHECKS]
+        red = [v for k, v in checks.items() if k.startswith("redacted/")]
+        out.append((sum(v["passed"] for v in red), sum(v["checked"] for v in red)))
+        return out
+
+    grid = [cells(st) for st, _ in SCHEMA_STRUCTURES]
+    per = rt["tables"] // len(SCHEMA_STRUCTURES)
+    chart = heatmap(
+        "Hands at schema v2 tables, checked five ways",
+        [f"{label} ({by[st]['hands']:,} hands)" for st, label in SCHEMA_STRUCTURES],
+        cols,
+        [[p / c if c else 0.0 for p, c in row] for row in grid],
+        counts=[[p for p, _ in row] for row in grid],
+        fmt="pct",
+        vmax=1.0,
+        subtitle=f"Share of hands that pass each check. {rt['tables']} random tables, {per} per "
+        f"structure, {rt['hands'] // rt['tables']} hands each.",
+    )
+    odd = sum(v["checks"]["full/loader"]["odd_chip"] for v in by.values())
+    missed = rt["checked"] - rt["passed"]
+    whole = rt.get("whole_units", {})
+    agrees = sum(v for k, v in whole.items() if k.endswith("/agrees"))
+    s, i = v1["simulated"], v1["imported"]
+    c1, c2, c3 = pred["C1"], pred["C2"], pred["C3"]
+    wsop = pub["by_subset"]["wsop"]
+    antes = sorted({h["big_blind_ante_bb"] for h in pub["hands"] if h["subset"] == "wsop"})
+    variants = ", ".join(f"{v} {n}" for v, n in sorted(pub["rejected_variants"].items(), key=str))
+    takeaways = [
+        f"{rt['passed']:,} of {rt['checked']:,} checks pass on {rt['hands']:,} hands with "
+        "big-blind antes, straddles and minimum bets above and below the big blind, and on their "
+        f"redacted copies. The engine, unmodified PokerKit, JSON and PHH agree on every hand; "
+        f"A1 {_verdict(pred['A1']['holds'])} because of {missed} hands where PokerKit's own PHH "
+        "loader shares a split pot differently.",
+        f"Post hoc: all {odd + missed} hands where the loader differs at all are pots split in "
+        "cents. PokerKit gives a split pot's whole remainder to the first winner; reading cents "
+        "as decimals, the loader splits them exactly. Written in whole units, the loader agrees "
+        f"on {agrees} of {sum(whole.values())}.",
+        f"Version 1 files read back exactly: the schema v1 code's own output ({s['records']:,} "
+        f"simulated hands from P3.6's tables and {i['records']:,} Pluribus hands, written at "
+        f"commit {v1['commit'][:7]}) migrates to {s['identical'] + i['identical']:,} of "
+        f"{s['records'] + i['records']:,} hands identical to what the current code makes "
+        f"(B1 {_verdict(pred['B1']['holds'])}). Phase 1 re-simulated with schema v2 reproduces "
+        "its published numbers exactly.",
+        f"The WSOP final table's {wsop['imported']} of {wsop['nlhe']} no-limit hold'em hands now "
+        f"import (big-blind ante {', '.join(f'{a:g}' for a in antes)} bb; C1 "
+        f"{_verdict(c1['holds'])}). PokerKit's own loader agrees on {c2['agree']} of "
+        f"{c2['of']} imported public hands (C2 {_verdict(c2['holds'])}) and {c3['same']} of "
+        f"{c3['of']} survive export and import (C3 {_verdict(c3['holds'])}). What is still "
+        f"rejected is other games: {variants}.",
+    ]
+    return section(
+        "schema-v2",
+        "Schema v2: big-blind antes, straddles and minimum bets",
+        "Schema v1 held blinds and an ante for every seat. Modern tournaments use a big-blind "
+        "ante (one player antes for the whole table) and live games use straddles. Schema v2 "
+        "records both, and a minimum bet other than the big blind, and checks every forced "
+        "post against the table's rules.",
+        sources=[SCHEMA],
+        views={"": view(chart)},
+        takeaways=takeaways,
+        method="Part A: random tables in the style of P3.6, each hand checked by find_problems, "
+        "a replay through unmodified PokerKit, JSON and PHH round trips, and PokerKit's own PHH "
+        "loader. Part B: the v1 code run in a temporary git worktree. Part C: the PHH dataset "
+        f"at commit {sc['dataset']['commit'][:7]}. Pre-registered predictions A1, B1, C1-C3; "
+        "the whole-unit re-check is post hoc.",
+        post_hoc=True,
+    )

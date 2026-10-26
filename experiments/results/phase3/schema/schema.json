@@ -1,0 +1,1400 @@
+{
+ "meta": {
+  "seed": 2026,
+  "config": {
+   "tables": 400,
+   "hands": 25,
+   "dataset_commit": "e47fbd5816372360bade4de5d712346fe1bb70f6",
+   "v1_commit": "0cf0c4f1db21cb7e134da52a38f5473a53be0ca0",
+   "v1_tables": 400,
+   "v1_hands": 25,
+   "v1_pluribus_paths": [
+    "pluribus"
+   ],
+   "v1_chunks": 40,
+   "public_paths": [
+    "wsop",
+    "alice-carol-wikipedia.phh",
+    "antonius-blom-2009.phh",
+    "arieh-yockey-2019.phh",
+    "dwan-ivey-2009.phh",
+    "phua-xuan-2019.phh"
+   ],
+   "workers": 12
+  },
+  "git": {
+   "commit": "568cde30a69cbc7a74fc1ad2a3b6173f1175c504",
+   "dirty": false
+  },
+  "timestamp_utc": "2026-10-26T18:03:53+00:00",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "packages": {
+   "numpy": "2.4.6",
+   "pandas": "2.3.3",
+   "scipy": "1.18.0",
+   "scikit-learn": "1.9.0",
+   "matplotlib": "3.11.0",
+   "pokerkit": "0.7.7",
+   "phevaluator": "0.6.0",
+   "torch": "2.14.1"
+  }
+ },
+ "dataset": {
+  "url": "https://github.com/uoftcprg/phh-dataset.git",
+  "commit": "e47fbd5816372360bade4de5d712346fe1bb70f6"
+ },
+ "structures": [
+  "blinds",
+  "ante",
+  "bb_ante",
+  "straddle",
+  "double_straddle",
+  "button_straddle",
+  "min_bet_up",
+  "min_bet_down"
+ ],
+ "round_trip": {
+  "tables": 400,
+  "hands": 10000,
+  "checked": 80000,
+  "passed": 79995,
+  "by_structure": {
+   "blinds": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "9": 4,
+     "3": 5,
+     "4": 8,
+     "5": 7,
+     "8": 3,
+     "2": 10,
+     "7": 7,
+     "6": 6
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 6
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "all_in": 925,
+     "side_pot": 610,
+     "showdown": 986,
+     "cents": 325,
+     "heads_up": 250
+    },
+    "failures": 0
+   },
+   "ante": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "8": 10,
+     "3": 6,
+     "5": 4,
+     "7": 7,
+     "6": 7,
+     "4": 7,
+     "2": 6,
+     "9": 3
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 7
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "antes": 1250,
+     "cents": 450,
+     "all_in": 1055,
+     "side_pot": 731,
+     "showdown": 1051,
+     "all_in_post": 80,
+     "heads_up": 150
+    },
+    "failures": 0
+   },
+   "bb_ante": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "7": 7,
+     "3": 4,
+     "8": 6,
+     "6": 4,
+     "2": 12,
+     "9": 9,
+     "5": 5,
+     "4": 3
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1249,
+      "odd_chip": 4
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "cents": 400,
+     "all_in": 1023,
+     "side_pot": 686,
+     "showdown": 991,
+     "all_in_post": 155,
+     "bb_ante_posted": 1250,
+     "heads_up": 300
+    },
+    "failures": 1
+   },
+   "straddle": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "3": 8,
+     "4": 5,
+     "5": 7,
+     "9": 6,
+     "8": 4,
+     "6": 14,
+     "7": 6
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 10
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "all_in": 1069,
+     "showdown": 1046,
+     "all_in_post": 207,
+     "straddle_posted": 1250,
+     "side_pot": 779,
+     "cents": 425
+    },
+    "failures": 0
+   },
+   "double_straddle": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "4": 8,
+     "9": 6,
+     "8": 11,
+     "6": 12,
+     "5": 5,
+     "7": 8
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1247,
+      "odd_chip": 20
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "all_in": 1201,
+     "straddle_posted": 1250,
+     "side_pot": 962,
+     "showdown": 1185,
+     "cents": 600,
+     "all_in_post": 454
+    },
+    "failures": 3
+   },
+   "button_straddle": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "6": 10,
+     "9": 8,
+     "7": 11,
+     "8": 6,
+     "4": 10,
+     "5": 5
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 10
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "all_in": 1156,
+     "side_pot": 835,
+     "showdown": 1147,
+     "all_in_post": 175,
+     "straddle_posted": 1250,
+     "cents": 400
+    },
+    "failures": 0
+   },
+   "min_bet_up": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "2": 9,
+     "4": 6,
+     "9": 7,
+     "3": 4,
+     "5": 7,
+     "8": 9,
+     "6": 6,
+     "7": 2
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 7
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "heads_up": 225,
+     "cents": 375,
+     "all_in": 1072,
+     "showdown": 1074,
+     "side_pot": 702,
+     "all_in_post": 14
+    },
+    "failures": 0
+   },
+   "min_bet_down": {
+    "tables": 50,
+    "hands": 1250,
+    "players": {
+     "4": 8,
+     "9": 8,
+     "5": 8,
+     "8": 6,
+     "3": 5,
+     "6": 6,
+     "2": 6,
+     "7": 3
+    },
+    "checks": {
+     "full/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/loader": {
+      "checked": 1250,
+      "passed": 1249,
+      "odd_chip": 4
+     },
+     "full/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/replay": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "full/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/json": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/phh": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     },
+     "redacted/rules": {
+      "checked": 1250,
+      "passed": 1250,
+      "odd_chip": 0
+     }
+    },
+    "features": {
+     "all_in": 1100,
+     "side_pot": 785,
+     "showdown": 1029,
+     "cents": 275,
+     "all_in_post": 19,
+     "heads_up": 150
+    },
+    "failures": 1
+   }
+  },
+  "failures": [
+   {
+    "hand": "t3333489054-000010",
+    "check": "full/loader",
+    "why": "loader ['-2.00', '0.6666666666666666666666666700', '0', '4.666666666666666666666666670', '4.666666666666666666666666670', '-8.00', '0'] != [-2, 2, 0, 4, 4, -8, 0]"
+   },
+   {
+    "hand": "t3026452634-000021",
+    "check": "full/loader",
+    "why": "loader ['-5462.00', '1434.666666666666666666666667', '5742.00', '-400', '-400', '825.6666666666666666666666670', '-2122.00', '381.6666666666666666666666667', '0'] != [-5462, 1436, 5742, -400, -400, 825, -2122, 381, 0]"
+   },
+   {
+    "hand": "t3188062555-000024",
+    "check": "full/loader",
+    "why": "loader ['-1.00', '-2.00', '-6.00', '-8.00', '-69.00', '34.16666666666666666666666666', '41.16666666666666666666666670', '10.66666666666666666666666667'] != [-1, -2, -6, -8, -69, 36, 40, 10]"
+   },
+   {
+    "hand": "t1536933253-000022",
+    "check": "full/loader",
+    "why": "loader ['-22.00', '-10.0', '21.66666666666666666666666660', '21.66666666666666666666666670', '21.66666666666666666666666670', '-33.00', '0', '0'] != [-22, -10, 23, 21, 21, -33, 0, 0]"
+   },
+   {
+    "hand": "t3366301983-000021",
+    "check": "full/loader",
+    "why": "loader ['-100', '-506.00', '-100', '2348.666666666666666666666667', '-6758.00', '23412.66666666666666666666667', '-599.00', '-19330.0', '1631.666666666666666666666667'] != [-100, -506, -100, 2350, -6758, 23412, -599, -19330, 1631]"
+   }
+  ],
+  "n_failures": 5,
+  "ms_per_hand": 40.498346670065075,
+  "holds": false,
+  "whole_units": {
+   "odd chip/agrees": 68,
+   "larger/agrees": 5
+  }
+ },
+ "v1_files": {
+  "simulated": {
+   "records": 10000,
+   "v1_records": 10000,
+   "identical": 10000,
+   "failures": [],
+   "features": {
+    "heads_up": 1250,
+    "antes": 4350,
+    "showdown": 8201,
+    "all_in": 8453,
+    "side_pot": 5643,
+    "cents": 3025
+   }
+  },
+  "imported": {
+   "records": 10000,
+   "v1_records": 10000,
+   "identical": 10000,
+   "failures": [],
+   "rejected_by_v1": 0,
+   "rejected_now": 0
+  },
+  "v1_files_sha256": "f769f19bb8fb1e7eace450369620f1c296a84b9539ec4a7348102d8e31d509b7",
+  "holds": true,
+  "p36_features_match": true,
+  "commit": "0cf0c4f1db21cb7e134da52a38f5473a53be0ca0",
+  "tables": 400,
+  "pluribus_files": 10000
+ },
+ "public": {
+  "files": 88,
+  "content_sha256": "bbd42f5bf7c59b54188e11ab7af24d6dfb4b7c2f992087943bb31b3ac193d9b0",
+  "by_subset": {
+   "historical": {
+    "files": 5,
+    "nlhe": 1,
+    "imported": 1
+   },
+   "wsop": {
+    "files": 83,
+    "nlhe": 11,
+    "imported": 11
+   }
+  },
+  "hands": [
+   {
+    "file": "dwan-ivey-2009",
+    "subset": "historical",
+    "players": 3,
+    "big_blind_ante_bb": 0.0,
+    "ante_bb": 0.25,
+    "pot_bb": 840.8,
+    "showdown": true,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/00-02-07",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 32.875,
+    "showdown": true,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/00-08-38",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 77.4375,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/00-15-36",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 18.75,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/00-18-39",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 10.0,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/02-51-10",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 18.166666666666668,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/02-53-09",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 18.833333333333332,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/02-54-12",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 19.166666666666668,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/02-56-12",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 21.333333333333332,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/02-57-27",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 9.666666666666666,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/03-00-32",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 15.166666666666666,
+    "showdown": false,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   },
+   {
+    "file": "wsop/2023/43/5/03-02-41",
+    "subset": "wsop",
+    "players": 5,
+    "big_blind_ante_bb": 1.5,
+    "ante_bb": 0.0,
+    "pot_bb": 46.666666666666664,
+    "showdown": true,
+    "loader_agrees": true,
+    "odd_chip": false,
+    "fixed_point": true
+   }
+  ],
+  "rejected": [
+   {
+    "file": "alice-carol-wikipedia",
+    "subset": "historical",
+    "reason": "unsupported",
+    "detail": "variant 'FB' (schema v2 holds no-limit hold'em only)",
+    "variant": "FB"
+   },
+   {
+    "file": "antonius-blom-2009",
+    "subset": "historical",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "arieh-yockey-2019",
+    "subset": "historical",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "phua-xuan-2019",
+    "subset": "historical",
+    "reason": "unsupported",
+    "detail": "variant 'NS' (schema v2 holds no-limit hold'em only)",
+    "variant": "NS"
+   },
+   {
+    "file": "wsop/2023/43/5/00-22-43",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-25-05",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-29-03",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-30-52",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-32-02",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-34-43",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-35-59",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/00-41-13",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-43-47",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-46-43",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-48-29",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-51-22",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-55-24",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/00-58-03",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/01-00-21",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-02-14",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-03-57",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-06-16",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-07-20",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-10-31",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-13-57",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/01-18-22",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-22-35",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-25-08",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-26-14",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-29-49",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-32-58",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-37-39",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'PO' (schema v2 holds no-limit hold'em only)",
+    "variant": "PO"
+   },
+   {
+    "file": "wsop/2023/43/5/01-39-18",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-42-31",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-44-49",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-45-43",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-46-42",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-47-38",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-51-27",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FT' (schema v2 holds no-limit hold'em only)",
+    "variant": "FT"
+   },
+   {
+    "file": "wsop/2023/43/5/01-53-52",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/01-56-25",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/01-59-02",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-00-25",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-01-50",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-04-37",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-07-21",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'N2L1D' (schema v2 holds no-limit hold'em only)",
+    "variant": "N2L1D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-09-20",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-13-08",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-14-32",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-18-42",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-22-35",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-25-11",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-28-14",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S/8"
+   },
+   {
+    "file": "wsop/2023/43/5/02-29-59",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-34-51",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-36-12",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-40-27",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-41-31",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-42-44",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/02-46-42",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F2L3D' (schema v2 holds no-limit hold'em only)",
+    "variant": "F2L3D"
+   },
+   {
+    "file": "wsop/2023/43/5/03-05-55",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-11-08",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-12-55",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-14-40",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-17-31",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-19-14",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'F7S' (schema v2 holds no-limit hold'em only)",
+    "variant": "F7S"
+   },
+   {
+    "file": "wsop/2023/43/5/03-22-08",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-25-05",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-32-24",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-36-22",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-42-38",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-44-38",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-46-32",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FO/8' (schema v2 holds no-limit hold'em only)",
+    "variant": "FO/8"
+   },
+   {
+    "file": "wsop/2023/43/5/03-48-33",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/03-49-18",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   },
+   {
+    "file": "wsop/2023/43/5/03-50-24",
+    "subset": "wsop",
+    "reason": "unsupported",
+    "detail": "variant 'FR' (schema v2 holds no-limit hold'em only)",
+    "variant": "FR"
+   }
+  ],
+  "rejected_variants": {
+   "FB": 1,
+   "PO": 8,
+   "F2L3D": 8,
+   "NS": 1,
+   "F7S": 13,
+   "FO/8": 14,
+   "FR": 10,
+   "FT": 7,
+   "N2L1D": 7,
+   "F7S/8": 7
+  },
+  "c1": {
+   "nlhe": 12,
+   "imported": 12,
+   "only_variants_rejected": true,
+   "holds": true
+  },
+  "c2": {
+   "agree": 12,
+   "of": 12,
+   "holds": true
+  },
+  "c3": {
+   "same": 12,
+   "of": 12,
+   "holds": true
+  }
+ },
+ "predictions": {
+  "A1": {
+   "holds": false
+  },
+  "B1": {
+   "holds": true
+  },
+  "C1": {
+   "nlhe": 12,
+   "imported": 12,
+   "only_variants_rejected": true,
+   "holds": true
+  },
+  "C2": {
+   "agree": 12,
+   "of": 12,
+   "holds": true
+  },
+  "C3": {
+   "same": 12,
+   "of": 12,
+   "holds": true
+  }
+ },
+ "seconds": {
+  "round_trips": 38.0,
+  "v1_code": 12.1,
+  "v1_compare": 11.2,
+  "public": 0.2
+ },
+ "elapsed_seconds": 61.5
+}

@@ -66,6 +66,7 @@ $B(a,b)$ the beta function.
   * [Step 32: Importing hand histories from text files](#step-32-importing-hand-histories-from-text-files-p36)
   * [Step 33: Priors from real players](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37)
   * [Step 34: A sequence model over raw actions](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38)
+  * [Step 35: Schema v2](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -86,7 +87,9 @@ five-card combination of their two hole cards and the five board cards.
 **Forced bets.** The two seats to the left of the dealer *button* post the *small blind* (SB)
 and the *big blind* (BB) before any cards are seen. Here the blinds are 1 and 2 chips, and
 every amount is measured in chips or in big blinds (bb). Some games also have *antes* (a small
-forced bet from everyone) or *straddles* (an optional third blind); the schema supports both.
+forced bet from everyone, or in modern tournaments one *big-blind ante* that the big blind
+posts for the whole table) or *straddles* (an optional third blind, usually two big blinds).
+Schema v2 holds all three ([Step 35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310)).
 
 **Actions.** On their turn a player may *fold* (give up), *check* (only if nothing is owed),
 *call* (match the current bet), *bet* (open the betting on a street) or *raise* (increase the
@@ -3334,6 +3337,143 @@ out to keep the comparison with the stats fair.
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only sequence` (about 1.4 hours
   on 16 cores, most of it simulating and training on the extra bots of part C).
 
+## Step 35: Schema v2: big-blind antes, straddles and minimum bets (P3.10)
+
+**The problem.** Schema v1 described a table's forced bets with three numbers: small blind,
+big blind, and an ante that every seat pays. Three common rules did not fit:
+
+* the *big-blind ante* of modern tournaments: one player, the big blind, antes for the whole
+  table (the 2023 WSOP final table in the PHH dataset antes 1.5 bb this way);
+* *straddles*: a voluntary third (and fourth) blind posted before the cards, usually twice the
+  big blind, by the player after the big blind or, in some games, by the button;
+* a *minimum bet* other than the big blind (some home games and published records).
+
+The importer of Step 32 rejected such hands by name, so the dataset's 11 WSOP hold'em hands
+never got in. Approximating them (say, spreading the big-blind ante over every seat) would
+have changed who wins what, so the schema had to grow.
+
+**The design.** `TableConfig` gains `big_blind_ante`, `straddles` and `min_bet`.
+
+* *Dealing order.* Forced bets are listed the way PokerKit and PHH list them: small blind, big
+  blind, then `straddles[0]` for the first player after the big blind, `straddles[1]` for the
+  next, with zeros for players who do not straddle. A button straddle four-handed is
+  `straddles = (0, 4)`. `TableConfig.blinds_or_straddles` returns the whole list.
+* *Semantic antes.* PHH stores one ante per player. The schema stores the two kinds that exist
+  in practice, `ante` (every seat) and `big_blind_ante` (one seat), and refuses a table with
+  both. Anything else (a button ante, say) is rejected on import rather than stored as a list
+  nobody downstream knows how to read.
+* *Canonical values.* `min_bet` defaults to the big blind and `straddles` has no trailing
+  zeros, so two descriptions of the same rules compare equal. A straddle must exceed the bet
+  before it; a table cannot have more straddles than seats after the blinds.
+* *One translation to PokerKit.* `engine.pokerkit_rules(table, n)` turns a table into
+  PokerKit's `(ante_trimming_status, antes, blinds_or_straddles, min_bet)`. The simulator, the
+  PokerKit replay and the PHH exporter all use it, so they cannot drift apart. A big-blind ante
+  is never *trimmed*: PokerKit would otherwise treat the one ante larger than everyone else's
+  as an unmatched bet and hand it back. It is dead money.
+
+**Checking forced posts against the rules.** The action log already recorded each post with
+its amount; nothing checked that the posts were the ones the rules require. Validation now
+recomputes them independently of PokerKit (`schema.expected_forced_posts`). For the player in
+dealing position $k$ with starting stack $S$, nominal ante $A_k$ (the ante, plus the big-blind
+ante for the big blind) and nominal blind or straddle $B_k$:
+
+$$a_k = \min(A_k, S), \qquad b_k = \min(B_k,\; S - a_k).$$
+
+The ante comes first, as in PokerKit, so a short big blind may post its ante and only part of
+its blind. Heads-up the dealing order starts with the big blind while the button posts the
+small blind, so positions 0 and 1 swap roles. Every simulated hand passes this check as it is
+recorded, which cross-checks the engine's posts against a second implementation on every hand.
+
+**Version 2 and migration.** `SCHEMA_VERSION` is now 2 and records are always written in it.
+`migrate_record` reads a version 1 record. It first checks the record against version 1's own
+keys (a version 1 record carrying a `min_bet` key is an error, not a hint), then fills in what
+version 1 implied: no big-blind ante, no straddles, a minimum bet of one big blind.
+`hand_from_dict` and `read_jsonl` migrate transparently; `migrate_jsonl` rewrites a file. How do
+we know the migration is right? A fixture (`tests/data/schema_v1_hands.jsonl.gz`, 40 hands)
+was written by the version 1 code itself at commit `0cf0c4f`, from a function kept in
+`tests/schema_fixture.py`. The test reads the file with the new code and compares it with what
+the same function makes today. Old code's output, new code's reading, identical.
+
+**What else changed.** The push/fold strategy (Step 28) treats any ante or straddle as off its
+tree. Profiling needs nothing new: a straddle is a forced post, so a straddler who checks its
+option is not counted as voluntarily entering the pot (a test checks this), and the first raise
+over a straddle is the open.
+
+**The experiment** (`experiments/phase3_schema.py`, pre-registered at commit `4c4e373`):
+
+* *A. Round trips at v2 tables.* 400 random tables in the style of Step 32 (2 to 9 players,
+  gaps between seats, stacks from 1 to 400 bb, chips or cents, five kinds of agents), 50 for
+  each of eight structures: blinds only, an ante for every seat, a big-blind ante, a straddle,
+  a double straddle, a button straddle, a minimum bet of 2 bb and one of 0.5 bb. Each of the
+  10,000 hands, and its redacted copy, went through: the rules check, a replay through
+  unmodified PokerKit, a JSON round trip, a PHH round trip, and PokerKit's own PHH loader on
+  the exported text.
+* *B. Version 1 files at scale.* The version 1 code, checked out in a temporary git worktree,
+  wrote what it makes in Step 32: the 10,000 hands of its round-trip tables and the 10,000
+  Pluribus hands. The current code read those files and made the same hands itself.
+* *C. The WSOP hold'em hands*, and the historical hands, at the pinned dataset commit.
+
+Developing on the quick configuration showed that PokerKit's loader sometimes splits a pot's
+odd cent differently from the engine (Step 32 had seen the same in the Pluribus files). Before
+the real run the plan therefore counted a difference of less than one unit per player as an
+*odd chip*, reported separately.
+
+| Prediction | Result |
+|---|---|
+| A1: every check passes on every hand, for every structure | **does not hold**: 79,995 of 80,000; 5 loader checks fail |
+| B1: every version 1 record migrates to the hand the current code makes | holds: 20,000 of 20,000 |
+| C1: every no-limit hold'em hand imports; only other variants are rejected | holds: 11 of 11 WSOP hands, 1 of 1 historical |
+| C2: PokerKit's own loader agrees on every imported hand | holds: 12 of 12 |
+| C3: export then import reproduces every imported hand | holds: 12 of 12 |
+
+**What the failures were.** All five failing checks are the loader on pots split three or more
+ways in cents, where the difference reaches 1.33 units for one player. PokerKit gives a split
+pot's *whole* remainder to the first winner in dealing order: with three winners and 2 cents
+left over, one winner gets both. Reading the cents as decimal dollars, PokerKit's loader splits
+the pot exactly (0.67 cents each). The odd-chip allowance of less than one unit assumed one
+leftover unit; with $w$ winners the remainder can be up to $w - 1$ units. A post-hoc re-check
+confirms that this is the only cause: each of the 73 hands on which the loader disagreed at all
+(the 5 failures and 68 one-unit odd chips) was written again in whole units, and then the loader
+agrees exactly on all 73. The verdict stays *does not hold*; the explanation is labeled post
+hoc. (Whether PokerKit's rule matches house rules is a question for Phase 4's home game, which
+will have to record how its dealer splits odd chips.)
+
+**Other results.** The engine, unmodified PokerKit, JSON and PHH agree on every hand at every
+structure: 1,104 hands had a post that put a short stack all-in, 1,250 a big-blind ante and
+3,750 a straddle. Part B's simulated hands have exactly the feature counts Step 32 published
+for its tables, so they are the same tables. The WSOP hands are five-handed with a big-blind
+ante of 1.5 bb; the 76 files still rejected are other games (stud, razz, draw, Omaha, short-deck and
+fixed-limit hold'em).
+Separately from the experiment, Phase 1 was re-simulated from scratch with schema v2 (828 s):
+every results file and summary is identical to the committed ones.
+
+**Mistakes.**
+
+* The pre-registered odd-chip allowance was too narrow (above).
+* The record of the version 1 files hashed their gzip bytes, which carry a timestamp, so two
+  identical runs recorded different hashes. The hash now covers the decompressed content.
+
+**Limitations.** The schema holds two kinds of ante, not arbitrary per-seat antes. A straddle
+is described by the table, as if it were posted every hand; in a live game a straddle is a
+choice each hand, which a capture app can record by giving that hand its own `TableConfig`.
+Profiling's situation features still flag only the two blinds as "posted a blind", not a
+straddler. Dead blinds (a player returning to the table posts a missed blind) are not modeled.
+
+**Verification.**
+
+* `tests/test_schema_v2.py`: the version 1 fixture reads as the hands the current code makes;
+  `migrate_jsonl`; each version's keys checked strictly; the new table rules are canonical and
+  checked; `expected_forced_posts` by hand (heads-up, short stacks, a button straddle); a
+  changed table is caught by the forced-post check; hands at eight v2 tables replay through
+  unmodified PokerKit; a straddle is not voluntary.
+* `tests/test_phh_import.py`: a big-blind-ante hand imports, replays and round-trips; minimum
+  bets other than the big blind import; button antes and big-blind antes with trimming are
+  rejected; the round-trip fixture includes v2 tables.
+* `tests/test_schema_experiment.py`: each structure's tables have it; a round-trip task runs
+  every check; the loader check tells an odd chip from a real difference.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only schema` (about a minute on
+  16 cores).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -3354,13 +3494,14 @@ out to keep the comparison with the stats fair.
 | Simulated controls | the real data's seating replayed by bots, run through every check (Step 33) | separates what the players do from what the pipeline and the data's shape do |
 | Bit-for-bit re-simulation | five replicates simulated again with a new extractor: every counter and decision row identical, the refit classifier reproduces the published numbers exactly (Step 34) | a new model is compared on exactly the old data |
 | Ablations that prove themselves | the GRU separates two classes that differ only in the order of a hand's tokens; the order-free network cannot (Step 34) | an ablation must remove what it claims to |
+| The old code as the oracle | the schema v1 code, checked out in a git worktree, writes 20,000 hands; the new code must read them back as exactly the hands it makes itself (Step 35) | a migration is tested against what the old version really wrote, not against what we remember it wrote |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 361 tests and runs in about two minutes (the Deep CFR and
+players). The suite has 394 tests and runs in about two minutes (the Deep CFR and
 sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -3470,6 +3611,8 @@ numeric table next to it, so no number depends on reading a color.
 | Averaging hand embeddings over a window plateaued at about 92% accuracy at 2,000 hands (logistic 95%): a mean must learn ratios such as c-bets per c-bet chance from 240 players | development seeds 98 and 99, test windows | learned shrunk rates (soft successes and failures, a Beta prior per rate) | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
 | The check against Phase 1's published numbers matched seeds but not the configuration: the quick run's two seeds are the first two of the full run's | a KeyError in the quick run (no 400-hand row) | compare the results file's whole configuration first | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
 | An experiment helper named `test_windows`, imported into a test module, was collected by pytest as a test | the first test run (fixture 'pool' not found) | renamed `held_out_windows` | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
+| An odd-chip allowance of less than one unit, pre-registered for PokerKit's loader, assumed one leftover unit; three winners can leave two, and PokerKit gives both to one winner | the real run (5 of 80,000 checks failed) | reported as a failed prediction; a post-hoc re-check in whole units explains all 73 differences | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
+| A content hash over gzip files changed between identical runs (gzip headers carry a timestamp) | comparing two runs' results field by field | hash the decompressed content | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 
 ---
 
@@ -3483,6 +3626,7 @@ numeric table next to it, so no number depends on reading a color.
 | Bayes action | the decision with the highest posterior expected payoff |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
 | Best response | a strategy that maximizes payoff against a fixed opponent |
+| Big-blind ante | an ante the big blind posts for the whole table, instead of every seat posting its own (modern tournaments) |
 | Button (BTN) | dealer position; acts last after the flop |
 | C-bet | continuation bet: the preflop raiser bets the flop |
 | Calibrated p-value | a p-value whose threshold is set from its distribution on data simulated from the model, so the false-alarm rate is what it says |
@@ -3500,6 +3644,7 @@ numeric table next to it, so no number depends on reading a color.
 | Credible interval | interval containing the parameter with a given posterior probability |
 | CUSUM | cumulative sum of residuals; its largest excursion detects a change in level (Page 1954) |
 | Data-biased response | robust response that trusts the model per information set by data count |
+| Dead money | chips in the pot that no player has to match, such as antes; they are won, never returned as an uncalled bet |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
@@ -3529,6 +3674,8 @@ numeric table next to it, so no number depends on reading a color.
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | Mid-p value | a p-value that counts ties with the observed statistic as half, for discrete statistics |
+| Migration (of a schema) | reading records written in an older version of a format as the current version, filling in what the old version implied |
+| Minimum bet | the smallest bet allowed, which is also the smallest raise increment before anyone raises; usually one big blind |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
@@ -3552,6 +3699,7 @@ numeric table next to it, so no number depends on reading a color.
 | Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
 | Side pot | pot that an all-in player for less is not eligible for |
 | Stationarity | the data-generating process does not change over time |
+| Straddle | a voluntary blind posted before the cards, usually twice the big blind, by the player after the big blind (or the button); the straddler acts last preflop |
 | Stratified sampling | splitting a Monte Carlo estimate into strata (here: combo pairs) sampled equally, removing the variance between strata |
 | Street | betting round: preflop, flop, turn, river |
 | Support check | flags inputs unlike the training data, so a model's output is not trusted where it was never trained |
@@ -3560,6 +3708,7 @@ numeric table next to it, so no number depends on reading a color.
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
 | Winner's curse | the best-looking of several noisy estimates tends to be an overestimate |
+| Worktree (git) | a second checkout of the same repository at another commit, in its own folder, used here to run old code next to new |
 | z-score | (estimate - true value) / standard error; about standard normal when the estimator is unbiased |
 
 ---
@@ -3742,3 +3891,7 @@ Software design
   cross-checked against `experiments/results/phase3/sequence/sequence_summary.md`; the
   development numbers (seeds 98 and 99) come from development logs, not from a committed
   results file.
+* 2026-10-26: Step 35 (schema v2). Results from commit `568cde3`, cross-checked against
+  `experiments/results/phase3/schema/schema_summary.md`; the pre-registered run was at
+  `4c4e373` (same counts), and the Phase 1 re-simulation was compared field by field with
+  the committed Phase 1 results.
