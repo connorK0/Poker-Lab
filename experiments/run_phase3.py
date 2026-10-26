@@ -33,6 +33,10 @@ is rebuilt):
    hand's decisions, learned shrunk rates over hands) against Phase 1's classifier on Phase 1's
    replicates and windows, with order and input ablations, five times the training bots, and
    P3.7's consistency check on the professionals (P3.8).
+10. ``schema``: schema v2 (big-blind antes, straddles, other minimum bets): round trips through
+    the engine, PokerKit, JSON and PHH at v2 tables; the schema v1 code's own output (run in a
+    temporary git worktree) read and migrated by the current code; the WSOP hold'em hands
+    (P3.10).
 """
 
 from __future__ import annotations
@@ -54,6 +58,7 @@ STEPS = (
     "import",
     "priors",
     "sequence",
+    "schema",
 )
 
 
@@ -75,6 +80,7 @@ def run(
         phase3_priors,
         phase3_pushfold,
         phase3_recommend,
+        phase3_schema,
         phase3_sequence,
     )
 
@@ -89,6 +95,7 @@ def run(
         "import": phase3_import,
         "priors": phase3_priors,
         "sequence": phase3_sequence,
+        "schema": phase3_schema,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

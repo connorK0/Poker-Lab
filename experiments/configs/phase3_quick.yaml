@@ -121,3 +121,15 @@ sequence:
   consistency_reference: 200
   bootstrap: 200
   workers: 4
+
+schema:
+  tables: 16
+  hands: 4
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  v1_commit: 0cf0c4f1db21cb7e134da52a38f5473a53be0ca0
+  v1_tables: 4
+  v1_hands: 3
+  v1_pluribus_paths: [pluribus/100]
+  v1_chunks: 2
+  public_paths: [dwan-ivey-2009.phh]
+  workers: 4

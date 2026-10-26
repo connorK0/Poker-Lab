@@ -149,3 +149,18 @@ sequence:
   consistency_reference: 1000
   bootstrap: 2000
   workers: 12
+
+schema:
+  # P3.10: schema v2 (big-blind antes, straddles, minimum bets) and the migration of v1 files
+  # (pre-registered; see phase3_schema.py).
+  tables: 400                     # part A: 50 tables per forced-bet structure
+  hands: 25
+  dataset_commit: e47fbd5816372360bade4de5d712346fe1bb70f6
+  v1_commit: 0cf0c4f1db21cb7e134da52a38f5473a53be0ca0   # the last commit with schema v1
+  v1_tables: 400                  # part B: P3.6 part A's tables (same seeds) ...
+  v1_hands: 25
+  v1_pluribus_paths: [pluribus]   # ... and the Pluribus hands
+  v1_chunks: 40
+  public_paths: [wsop, alice-carol-wikipedia.phh, antonius-blom-2009.phh,
+                 arieh-yockey-2019.phh, dwan-ivey-2009.phh, phua-xuan-2019.phh]
+  workers: 12
