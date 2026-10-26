@@ -34,7 +34,8 @@ FITCHECK = "experiments/results/phase3/fitcheck/fitcheck.json"
 CONFIRM = "experiments/results/phase3/confirm/confirm.json"
 IMPORT = "experiments/results/phase3/import/import.json"
 PRIORS = "experiments/results/phase3/priors/priors.json"
-SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT, PRIORS)
+SEQUENCE = "experiments/results/phase3/sequence/sequence.json"
+SOURCES = (PUSHFOLD, EXPLOIT, BRIDGE, RECOMMEND, FITCHECK, CONFIRM, IMPORT, PRIORS, SEQUENCE)
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
 STACK = axis("Effective stack (bb)", fmt="num")
@@ -67,6 +68,7 @@ def overview(
     fc: dict[str, Any],
     im: dict[str, Any],
     pr: dict[str, Any],
+    sq: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -96,6 +98,9 @@ def overview(
     est = pr["populations"]["humans"]["estimation"]["25"]["rmse_vs_truth"]
     sup = pr["populations"]["humans"]["classifier"]["support"]
     flagged_from = next(int(n) for n, v in sup.items() if v["humans_flagged"] >= 0.999)
+    seq_gain = [v["log_loss_gain"]["mean"] for v in sq["a"]["paired"]["seq"].values()]
+    big_gain = [v["log_loss_gain"]["mean"] for v in sq["c"]["paired"]["bag"].values()]
+    agree = sq["b"]["humans"]["agreement"]
     return {
         "tiles": [
             tile(
@@ -182,6 +187,19 @@ def overview(
                 f"of profiles flagged (held-out bots: at most "
                 f"{max(v['bots_flagged'] for v in sup.values()):.0%})",
             ),
+            tile(
+                "A network on every decision vs Phase 1's stats",
+                f"{min(seq_gain):+.3f} to {max(seq_gain):+.3f} nats",
+                "log-loss gain at 25-2,000 hands; with five times the training bots "
+                f"{min(big_gain):+.3f} to {max(big_gain):+.3f}",
+            ),
+            tile(
+                "Two bot-trained classifiers agree on a professional",
+                f"{min(v['players'] for v in agree.values()):.0%}-"
+                f"{max(v['players'] for v in agree.values()):.0%}",
+                f"of windows (on held-out bots {min(v['bots'] for v in agree.values()):.0%}-"
+                f"{max(v['bots'] for v in agree.values()):.0%})",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -200,7 +218,10 @@ def overview(
             "replay exactly (P3.6). Priors fit to the 13 professionals of the Pluribus hands "
             "estimate a new professional's statistics far better than the defaults and much "
             "worse for anyone else, and the bot-trained classifier and action models do not "
-            "transfer to these players (P3.7)."
+            "transfer to these players (P3.7). A PyTorch model that reads every decision of "
+            "every hand does not beat Phase 1's hand-written statistics with Phase 1's "
+            "training bots, edges ahead only with five times as many, and is even more "
+            "overconfident on the professionals (P3.8)."
         ),
     }
 
@@ -2602,6 +2623,390 @@ def priors_action(pr: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+SEQ_MODELS = (
+    ("lr", "Logistic, shrunk stats (Phase 1)", "c1"),
+    ("gbm", "Boosted trees, shrunk stats", "c6"),
+    ("seq", "Sequence model (GRU)", "c2"),
+    ("bag", "Sequence model, order dropped", "c3"),
+    ("counters", "Same network on the stats counters", "c4"),
+)
+SEQ_LABEL = {k: label for k, label, _ in SEQ_MODELS}
+
+
+def _seq_points(block: dict[str, Any], key: str | None = None) -> list[tuple]:
+    """(n, mean, lower, upper) from a {n: ci} or {n: {key: ci}} block."""
+    out = []
+    for n, v in block.items():
+        d = v if key is None else v[key]
+        out.append((int(n), d["mean"], d["lower"], d["upper"]))
+    return out
+
+
+def _span(values: list[float], fmt: str = "+.3f") -> str:
+    lo, hi = min(values), max(values)
+    return f"{lo:{fmt}}" if f"{lo:{fmt}}" == f"{hi:{fmt}}" else f"{lo:{fmt}} to {hi:{fmt}}"
+
+
+def sequence_hands(sq: dict[str, Any]) -> dict[str, Any]:
+    a = sq["a"]
+    sizes = [str(n) for n in a["sizes"]]
+    metrics = (
+        ("accuracy", "Accuracy", "pct"),
+        ("log_loss", "Log-loss (nats), one temperature", "num"),
+        ("log_loss_by_size", "Log-loss (nats), one temperature per size", "num"),
+        ("ece", "Calibration error (10 bins)", "num"),
+    )
+    views = {}
+    for metric, label, fmt in metrics:
+        views[metric] = view(
+            line_chart(
+                "Identifying a bot's archetype, by model",
+                WINDOW_HANDS,
+                axis(label, fmt=fmt, lo=0, hi=1 if metric == "accuracy" else None),
+                [
+                    series(
+                        name,
+                        color,
+                        [
+                            (
+                                int(n),
+                                *(
+                                    a["metrics"][m][n][metric][k]
+                                    for k in ("mean", "lower", "upper")
+                                ),
+                            )
+                            for n in sizes
+                        ],
+                        dash=m in ("gbm", "counters"),
+                    )
+                    for m, name, color in SEQ_MODELS
+                    if m in a["metrics"]
+                ],
+                subtitle="Held-out bots, Phase 1's windows (up to 10 per bot and size); bands: "
+                "95% t-intervals over the five replicates.",
+            )
+        )
+    met = a["metrics"]
+    first, last = sizes[0], sizes[-1]
+    h90 = {m: a["hands_to"][m]["0.9"] for m in a["hands_to"]}
+
+    def ll(m: str, n: str) -> float:
+        return met[m][n]["log_loss"]["mean"]
+
+    takeaways = [
+        "With Phase 1's 300 training bots, reading every decision does not beat ten "
+        f"hand-written rates and two sizes. The sequence model ties the logistic model at 50 "
+        f"to 100 hands (log-loss {ll('seq', '100'):.3f} against {ll('lr', '100'):.3f}) and "
+        f"falls behind with more hands: {met['seq'][last]['accuracy']['mean']:.1%} accurate "
+        f"at {int(last):,} hands against {met['lr'][last]['accuracy']['mean']:.1%}.",
+        f"At {int(first)} hands it is a little more accurate "
+        f"({met['seq'][first]['accuracy']['mean']:.1%} against "
+        f"{met['lr'][first]['accuracy']['mean']:.1%}) but less well calibrated (error "
+        f"{met['seq'][first]['ece']['mean']:.3f} against {met['lr'][first]['ece']['mean']:.3f}), "
+        f"so its log-loss is worse ({ll('seq', first):.3f} against {ll('lr', first):.3f}).",
+        "Hands to 90% accuracy (geometric mean over replicates): logistic "
+        f"{h90['lr']['geometric_mean']:,.0f}, sequence model "
+        f"{h90['seq']['geometric_mean']:,.0f} ({h90['seq']['reached']} of 5 replicates reach "
+        f"it), order dropped {h90['bag']['geometric_mean']:,.0f}, counters network "
+        f"{h90['counters']['geometric_mean']:,.0f}. Phase 1's boosted trees have the highest "
+        "log-loss from 50 to 500 hands.",
+    ]
+    return section(
+        "sequence-hands",
+        "Hand-written stats or raw action sequences?",
+        "Phase 1 identifies a player's archetype from ten hand-written rates and two sizes. A "
+        "PyTorch model that reads every decision of every hand instead, on the same held-out "
+        "bots, windows and metrics.",
+        sources=[SEQUENCE],
+        controls=[control("metric", "Metric", [(m, lab) for m, lab, _ in metrics])],
+        views=views,
+        takeaways=takeaways,
+        method="Each hand becomes tokens: every decision of the player (the public situation, "
+        "fold/check/call/bet/raise, the bet size) and a closing token (saw the flop, showdown, "
+        "won at showdown). A GRU reads a hand's tokens in order; each hand adds soft successes "
+        "and failures to 16 learned rates, which a window turns into shrunk rates under a "
+        "learned Beta prior (Phase 1's recipe, with learned stats); an MLP gives the "
+        "probabilities. Ablations: the order within a hand dropped, and the hand's stats "
+        "counters as input. Fit to Phase 1's 300 training bots per replicate (the same five "
+        "replicates, re-simulated and checked identical); 20% of them pick the epoch and the "
+        "temperature.",
+    )
+
+
+def sequence_gain(sq: dict[str, Any]) -> dict[str, Any]:
+    a = sq["a"]
+    others = [(m, name, color) for m, name, color in SEQ_MODELS if m in a["paired"]]
+    views = {
+        key: view(
+            line_chart(
+                "Log-loss gain over Phase 1's logistic model, same windows",
+                WINDOW_HANDS,
+                axis("Gain (nats; above 0: better than logistic)", fmt="signed"),
+                [
+                    series(name, color, _seq_points(a["paired"][m], key))
+                    for m, name, color in others
+                ],
+                refs=[ref(0, "Phase 1's classifier")],
+                subtitle=f"{label}. Mean over windows of the logistic model's log-loss minus "
+                "the model's, paired; bands: 95% t-intervals over five replicates.",
+            )
+        )
+        for key, label in (
+            ("log_loss_gain", "One temperature"),
+            ("log_loss_gain_by_size", "One temperature per sample size"),
+        )
+    }
+    diffs = a["differences"]
+    views["ablations"] = view(
+        line_chart(
+            "What the order and the tokens add",
+            WINDOW_HANDS,
+            axis("Log-loss difference (nats)", fmt="signed"),
+            [
+                series("Sequence model - order dropped", "c2", _seq_points(diffs["seq-bag"])),
+                series(
+                    "Stats counters - tokens (order dropped)",
+                    "c4",
+                    _seq_points(diffs["counters-bag"]),
+                ),
+            ],
+            refs=[ref(0.02, "+0.02"), ref(-0.02, "-0.02"), ref(0, "no difference")],
+            subtitle="Above 0: the first model has the higher (worse) log-loss. Bands: 95% "
+            "t-intervals over five replicates.",
+        )
+    )
+    pred = sq["predictions"]
+    g = [v["log_loss_gain"]["mean"] for v in a["paired"]["seq"].values()]
+    below = [n for n, v in a["paired"]["seq"].items() if v["log_loss_gain"]["upper"] < 0]
+    seq_bag = [v["mean"] for v in diffs["seq-bag"].values()]
+    cnt_bag = [v["mean"] for v in diffs["counters-bag"].values()]
+    takeaways = [
+        f"Paired window by window, the sequence model's gain over the logistic model is "
+        f"{_span(g)} nats: never above 0, and clearly below at "
+        + ", ".join(f"{int(n):,}" for n in below)
+        + f" hands (A1 {_verdict(pred['A1']['holds'])}). Per-size temperatures narrow the "
+        "small-sample gap but do not reverse it.",
+        f"Reading a hand's decisions in order changes the log-loss by {_span(seq_bag)} nats "
+        f"against summing them (A2, under 0.02: {_verdict(pred['A2']['holds'])}), probably "
+        "because each token's situation already says where in the hand the decision was made.",
+        f"Raw tokens against the hand's stats counters, same network: {_span(cnt_bag)} nats "
+        f"(A3 {_verdict(pred['A3']['holds'])}). The raw tokens add little the counters do not "
+        "carry, so the gap to the logistic model comes from the learner, not the input.",
+    ]
+    return section(
+        "sequence-gain",
+        "Paired against Phase 1's classifier",
+        "Every model scored on exactly the windows the logistic model was, so the difference is "
+        "measured window by window, not between two noisy averages.",
+        sources=[SEQUENCE],
+        controls=[
+            control(
+                "show",
+                "Show",
+                [
+                    ("log_loss_gain", "Gain, one temperature"),
+                    ("log_loss_gain_by_size", "Gain, temperature per size"),
+                    ("ablations", "Order and input ablations"),
+                ],
+            )
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="Per replicate, the mean over held-out windows of the per-window log-loss "
+        "difference; 95% t-intervals over the five replicates. Predictions A1-A3 were "
+        "pre-registered (commit c4578ea) after development on two other seeds.",
+    )
+
+
+def sequence_scale(sq: dict[str, Any]) -> dict[str, Any]:
+    c = sq["c"]
+    models = [(m, name, color) for m, name, color in SEQ_MODELS if m in c["metrics"]]
+    base = c["training_players"] - 5 * c["extra_per_archetype"]
+    views = {
+        "improvement": view(
+            line_chart(
+                f"What {c['training_players']:,} training bots buy over {base:,}",
+                WINDOW_HANDS,
+                axis("Log-loss improvement (nats)", fmt="signed"),
+                [
+                    series(name, color, _seq_points(c["improvement"][m]))
+                    for m, name, color in models
+                ],
+                refs=[ref(0, "no change")],
+                subtitle="Log-loss with Phase 1's training bots minus with the extra ones, same "
+                "held-out windows; bands: 95% t-intervals over five replicates.",
+            )
+        ),
+        "log_loss": view(
+            line_chart(
+                f"Log-loss with {c['training_players']:,} training bots",
+                WINDOW_HANDS,
+                axis("Log-loss (nats)", fmt="num", lo=0),
+                [
+                    series(
+                        name,
+                        color,
+                        [
+                            (
+                                int(n),
+                                *(
+                                    c["metrics"][m][n]["log_loss"][k]
+                                    for k in ("mean", "lower", "upper")
+                                ),
+                            )
+                            for n in c["metrics"][m]
+                        ],
+                    )
+                    for m, name, color in models
+                ],
+                subtitle="Held-out bots, Phase 1's windows; bands: 95% t-intervals.",
+            )
+        ),
+    }
+    pred = sq["predictions"]
+    imp = c["improvement"]
+    gain = c["paired"]
+
+    def span(block: dict[str, Any]) -> str:
+        return _span([v["mean"] for v in block.values()])
+
+    above = [n for n, v in gain["bag"].items() if v["log_loss_gain"]["lower"] > 0]
+    gbm_above = [n for n, v in gain["gbm"].items() if v["log_loss_gain"]["lower"] > 0]
+    takeaways = [
+        f"The logistic model barely moves ({span(imp['lr'])} nats; C1, under 0.02: "
+        f"{_verdict(pred['C1']['holds'])}): its twelve features, not the number of players, "
+        f"limit it. The token network improves by {span(imp['bag'])} (C2 "
+        f"{_verdict(pred['C2']['holds'])}), the counters network by {span(imp['counters'])}, "
+        f"boosted trees by {span(imp['gbm'])}.",
+        "With the extra bots the flexible models overtake it. The token network is ahead by "
+        + _span([v["log_loss_gain"]["mean"] for v in gain["bag"].values()])
+        + " nats, clearly at "
+        + ", ".join(f"{int(n):,}" for n in above)
+        + " hands; boosted trees lead from 500 hands (clearly at "
+        + ", ".join(f"{int(n):,}" for n in gbm_above)
+        + f"). C3 predicted the token network within 0.03 of the logistic model: "
+        f"{_verdict(pred['C3']['holds'])}, because the upper ends of its intervals reach "
+        f"{max(v['log_loss_gain']['upper'] for v in gain['bag'].values()):+.3f}.",
+        "So at Phase 1's scale the hand-written stats are the better model, and the networks' "
+        "deficit was a shortage of training players. Bots are cheap to simulate, but the "
+        "gain they buy is small, and part B shows a bot-trained model of either kind does not "
+        "carry over to real players.",
+    ]
+    return section(
+        "sequence-scale",
+        "Is it the method or the amount of training data?",
+        f"The same models refit with five times the training bots ({c['training_players']:,} "
+        f"instead of {base:,}), scored on the same held-out windows.",
+        sources=[SEQUENCE],
+        controls=[
+            control("show", "Show", [("improvement", "Improvement"), ("log_loss", "Log-loss")])
+        ],
+        views=views,
+        takeaways=takeaways,
+        method=f"{c['extra_per_archetype']} extra bots per archetype per replicate, drawn and "
+        "simulated like Phase 1's training pool in a league of their own. The order-dropped "
+        "network stands in for the sequence model (order adds nothing, part A). Pre-registered "
+        "predictions C1-C3.",
+    )
+
+
+def sequence_transfer(sq: dict[str, Any]) -> dict[str, Any]:
+    pops = [("humans", "Professionals"), ("control", "Control: bots in their seats")]
+    models = [(m, name, color) for m, name, color in SEQ_MODELS if m in ("lr", "seq")]
+    views = {}
+    for pop, label in pops:
+        b = sq["b"][pop]
+        views[f"{pop}|consistency"] = view(
+            line_chart(
+                f"{label}: overconfidence compared with bots of the same label",
+                axis("Hands in the window", scale="log", fmt="int"),
+                axis("Gap minus the matched bots' gap", fmt="signed"),
+                [
+                    series(
+                        name,
+                        color,
+                        [
+                            (
+                                int(n),
+                                v["difference"]["value"],
+                                v["difference"]["lower"],
+                                v["difference"]["upper"],
+                            )
+                            for n, v in b["consistency"][m].items()
+                        ],
+                    )
+                    for m, name, color in models
+                ],
+                refs=[ref(0.10, "+0.10"), ref(-0.10, "-0.10"), ref(0, "as for bots")],
+                subtitle="Gap = mean top probability - share of windows whose label matches a "
+                "later 1,000-hand block of the same player. Bands: 95% intervals over players.",
+            )
+        )
+        views[f"{pop}|confidence"] = view(
+            line_chart(
+                f"{label}: how sure each model is",
+                axis("Hands in the window", scale="log", fmt="int"),
+                axis("Mean top probability", fmt="pct", lo=0, hi=1),
+                [
+                    series(
+                        name, color, [(int(n), v[m]["top_prob"]) for n, v in b["labels"].items()]
+                    )
+                    for m, name, color in models
+                ]
+                + [
+                    series(
+                        "The two models agree (share of windows)",
+                        "muted",
+                        [(int(n), v["players"]) for n, v in b["agreement"].items()],
+                        dash=True,
+                    )
+                ],
+                subtitle="Players weigh equally.",
+            )
+        )
+    pred = sq["predictions"]
+    hum, ctl = sq["b"]["humans"], sq["b"]["control"]
+    early = ("25", "50", "100")
+    lr_gap = [hum["consistency"]["lr"][n]["difference"]["value"] for n in early]
+    seq_gap = [hum["consistency"]["seq"][n]["difference"]["value"] for n in early]
+    agree = [v["players"] for v in hum["agreement"].values()]
+    agree_bots = [v["bots"] for v in hum["agreement"].values()]
+    takeaways = [
+        f"On the professionals the sequence model is even more overconfident than the logistic "
+        f"model: its confidence exceeds its agreement with a later 1,000-hand look by "
+        f"{_span(seq_gap, '.2f')} more than for matched bots at 25-100 hands, against "
+        f"{_span(lr_gap, '.2f')} (B1 {_verdict(pred['B1']['holds'])}). Verdicts: logistic "
+        f"*{hum['verdicts']['lr']}*, sequence model *{hum['verdicts']['seq']}*.",
+        f"The two bot-trained models give a professional the same archetype in only "
+        f"{min(agree):.0%}-{max(agree):.0%} of windows, against {min(agree_bots):.0%}-"
+        f"{max(agree_bots):.0%} on held-out bots: on real players they do not even agree with "
+        "each other.",
+        "On the control (bots in the professionals' seats) neither model is overconfident at "
+        f"small samples (B2 {_verdict(pred['B2']['holds'])}). The sequence model's verdict "
+        f"there is *{ctl['verdicts']['seq']}* because it is underconfident at 500-1,000 hands, "
+        "the false alarm the plan warned of with 13 players and six sizes.",
+    ]
+    return section(
+        "sequence-transfer",
+        "Does the sequence model transfer to real players any better?",
+        "P3.7 found the bot-trained logistic classifier overconfident on the 13 Pluribus "
+        "professionals. The same label-free check for the sequence model, on the same windows.",
+        sources=[SEQUENCE],
+        controls=[
+            control("pop", "Players", pops),
+            control(
+                "show", "Show", [("consistency", "Consistency check"), ("confidence", "Confidence")]
+            ),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="Each replicate's logistic and sequence models on P3.7's windows of each "
+        "professional's hands; P3.7's consistency check (each player compared with held-out "
+        "bots whose own reference block got the same label; verdict on 95% intervals over "
+        "players). Control: the real seating replayed by Phase 1 bots.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     r = load(PUSHFOLD)
     ex = load(EXPLOIT)
@@ -2611,7 +3016,8 @@ def build(load) -> dict[str, Any]:
     cf = load(CONFIRM)
     im = load(IMPORT)
     pr = load(PRIORS)
-    head = overview(r, ex, br, rc, fc, im, pr)
+    sq = load(SEQUENCE)
+    head = overview(r, ex, br, rc, fc, im, pr, sq)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -2628,6 +3034,7 @@ def build(load) -> dict[str, Any]:
             provenance(CONFIRM, cf),
             provenance(IMPORT, im),
             provenance(PRIORS, pr),
+            provenance(SEQUENCE, sq),
         ],
         "sections": [
             charts(r),
@@ -2654,5 +3061,9 @@ def build(load) -> dict[str, Any]:
             priors_support(pr),
             priors_classifier(pr),
             priors_action(pr),
+            sequence_hands(sq),
+            sequence_gain(sq),
+            sequence_scale(sq),
+            sequence_transfer(sq),
         ],
     }

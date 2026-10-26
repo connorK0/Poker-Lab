@@ -69,6 +69,7 @@ def test_spread_windows_need_n_hands():
 
 @pytest.fixture(scope="module")
 def standin() -> NamedPool:
+    pytest.importorskip("torch")  # the loader builds HandSequences
     seating = [
         (("a", "b", "c", "d", "e", "Pluribus"), 30),
         (("a", "c", "f", "g", "h", "Pluribus"), 20),

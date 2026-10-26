@@ -558,8 +558,39 @@ the professionals' seats (commit `9fce42a`;
   professionals' seats were flagged 24-56% at 500 to 2,000 hands, so at large samples the
   support check also reacts to who sits at the table.
 
-Next: an optional sequence model over raw action sequences (P3.8); see
-[PROGRESS.md](PROGRESS.md).
+**Raw action sequences against hand-written stats (P3.8).** Phase 1's classifier sees a
+player through ten hand-written rates and two sizes. A PyTorch model reads every decision of
+every hand instead: a GRU over each hand's decisions (public situation, action, bet size),
+and a summary over hands built as learned shrunk rates, Phase 1's own recipe with stats the
+network chooses. It was compared on Phase 1's replicates (re-simulated and checked identical),
+windows and metrics, with two ablations and a test with five times the training bots
+(pre-registered at commit `c4578ea`;
+[`sequence_summary.md`](experiments/results/phase3/sequence/sequence_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/sequence/sequence_scale-dark.png">
+  <img alt="Log-loss against hands observed for four models, each with Phase 1's 300 training bots (dashed) and with 1,500 (solid): the logistic model on hand-written stats barely changes, while boosted trees and the two neural networks improve by 0.03 to 0.08 nats" src="experiments/results/phase3/sequence/sequence_scale.png">
+</picture>
+
+* **With Phase 1's 300 training bots the hand-written stats win.** The sequence model ties the
+  logistic model at 50 to 100 hands and falls behind with more (92.5% against 95.7% accuracy
+  at 2,000 hands; 228 hands to reach 90% against 194). It never beats it (A1 holds).
+* **The order of decisions and the raw tokens add nothing.** Reading a hand in order changes
+  the log-loss by -0.012 to +0.009 nats against summing it; the same network fed each hand's
+  stats counters is within 0.012 of the token version. The gap is the learner, not the
+  information.
+* **It was a shortage of players.** With 1,500 training bots the logistic model moves by at
+  most 0.012 nats (its features limit it), the networks gain 0.03 to 0.06 and edge ahead of it
+  by up to 0.019, and boosted trees become the best model from 500 hands. One prediction
+  failed this way: the networks were expected to stay within 0.03 of the logistic model, and
+  the intervals of their lead reach +0.041.
+* **No better on real players.** On the Pluribus professionals the sequence model is more
+  overconfident than the logistic model (by 0.15 to 0.17 against 0.12 to 0.14 at 25-100 hands,
+  relative to bots), and the two bot-trained classifiers give a professional the same
+  archetype in only 33-48% of windows (83-94% on bots). The logistic model stays the default.
+
+Next: schema v2 for modern tournament hands (P3.10) and opponents that adapt to the hero
+(P3.9); see [PROGRESS.md](PROGRESS.md).
 
 ## Quickstart
 
@@ -567,7 +598,7 @@ Requires Python ≥ 3.11 (developed on 3.13, Windows 11).
 
 ```bash
 pip install -e ".[dev]"          # numpy, pandas, scipy, scikit-learn, matplotlib, pyyaml, pokerkit, phevaluator
-pip install -e ".[dev,nn]"       # adds PyTorch (CPU is enough) for Deep CFR
+pip install -e ".[dev,nn]"       # adds PyTorch (CPU is enough) for Deep CFR and the sequence model
 python -m pytest                 # full test suite
 python -m ruff check .           # lint
 
@@ -584,9 +615,10 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 # the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
 # model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
 # hand histories imported and checked (1 min; downloads 12 MB of public PHH data once),
-# priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache)
-python -m experiments.run_phase3 --seed 2026          # ~52 min on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import or priors
+# priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache),
+# the sequence model against Phase 1's classifier (about 1.4 h; needs PyTorch)
+python -m experiments.run_phase3 --seed 2026          # ~2.3 h on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors or sequence
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
@@ -704,7 +736,8 @@ poker_lab/
   engine/      PokerKit wrapper, Agent interface, fast hand type, replay checker, duplicate matches
   bots/        parameterized bots, archetypes, hand strength, league simulator
   profiling/   stats, shrinkage, features, classifier, support check, regression, action model,
-               ProfileStore, push/fold observations from completed hands
+               ProfileStore, push/fold observations from completed hands, hand tokens and a
+               PyTorch sequence classifier
   games/       Kuhn, Leduc, heads-up push/fold hold'em, preflop matchups, tree compiler,
                TabularPolicy, best response, Leduc bots + fitting, push/fold bots,
                posterior and model-fit checks
@@ -729,7 +762,7 @@ PROGRESS.md    living checklist, decisions log, open questions
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
@@ -737,8 +770,9 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
 
 ## Development
 
-* Tests: `python -m pytest` (301 tests, ~1 min: unit, contract, firewall, differential-vs-PokerKit,
-  solver-vs-reference, explorer and end-to-end tests; the Deep CFR tests skip without PyTorch).
+* Tests: `python -m pytest` (361 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
+  solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
+  skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working
   tree was dirty, and package versions. Experiments are reproducible from the master seed:

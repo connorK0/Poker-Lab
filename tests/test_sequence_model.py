@@ -1,7 +1,11 @@
-"""Raw action sequences (tokens) and the sequence classifier of P3.8."""
+"""Raw action sequences (tokens) and the sequence classifier of P3.8 (needs the ``nn``
+extra; skipped when PyTorch is not installed)."""
 
 import numpy as np
 import pytest
+
+pytest.importorskip("torch")
+
 import torch
 from sklearn.model_selection import GroupShuffleSplit
 

@@ -65,6 +65,7 @@ $B(a,b)$ the beta function.
   * [Step 31: Confirming a post-hoc rule on fresh data](#step-31-confirming-a-post-hoc-rule-on-fresh-data-p35b)
   * [Step 32: Importing hand histories from text files](#step-32-importing-hand-histories-from-text-files-p36)
   * [Step 33: Priors from real players](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37)
+  * [Step 34: A sequence model over raw actions](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -3146,6 +3147,193 @@ less than hoped at large samples, because a fixed table changes the statistics.
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only priors` (9 minutes with the
   simulation cache).
 
+## Step 34: A sequence model over raw actions, against hand-written stats (P3.8)
+
+**The question.** Phase 1 identifies a player's archetype from twelve numbers: ten rates with
+carefully counted opportunities (VPIP, c-bet, fold to a c-bet, ...) and two sizes, shrunk
+toward population priors and fed to a logistic regression. Every one of those numbers was
+chosen by hand. The spec's optional extension asks whether a neural network that reads the raw
+hands (every decision, in order) does better on the same splits and metrics. It is the classic
+question of hand-made features against learned ones, asked on a problem where the hand-made
+features are good.
+
+**Hands as tokens.** `profiling.sequences.hand_tokens` turns one complete hand into, for each
+seated player, a short sequence:
+
+* one token per decision the player made, in order: the public situation just before it (the
+  16 `SITUATION_FEATURES` of Step 13: street, facing a bet, pot odds, pot size, stack-to-pot
+  ratio, players left, raises this street, position, ...), the action as one of five
+  (fold, check, call, bet, raise), and for a bet or raise its size, as
+  $\log(1 + r)$ with $r$ = the raise over the call divided by the pot after calling, and as the
+  log of the player's total street bet in big blinds;
+* one closing token per hand: saw the flop, reached showdown, won at showdown (what the stats
+  counters know of the outcome).
+
+A hand where the player made no decision (a walk) is the closing token alone, so hands can be
+counted. Only public information is used, not even shown cards: the tokens carry what the
+counters carry, as events rather than totals. A test recovers each bot's size parameter from
+its tokens (median postflop bet within 10% of `bet_size_pot`).
+
+**Re-simulating Phase 1, bit for bit.** Phase 1's cache kept decisions only inside its
+action-prediction windows, so the five replicates were simulated again with a league extractor
+that records every token (about 90 seconds each; 1.6 million training tokens per replicate).
+Same seeds, same code: the run checks that players, labels, parameters, all per-hand counters
+and all of Phase 1's decision rows come out identical, and stops otherwise. The tokens are
+stored compressed-row style (`HandSequences`): player $p$'s hands are a slice of a hand
+array, hand $h$'s tokens a slice of a token array.
+
+**The network** (`profiling.sequence_model.SequenceClassifier`, PyTorch):
+
+1. *Within a hand, order matters.* Each token passes through a small MLP; a GRU (a recurrent
+   network with gates that decide what to keep, Cho et al. 2014) reads a hand's tokens in
+   order and its last state describes the hand. "Raise, bet, check" can then mean more than
+   its parts.
+2. *Across hands, it does not.* The bots are stationary, so a player's hands are exchangeable:
+   any reordering is equally likely. The summary of a window should then be a symmetric
+   function of its hands; Zaheer et al. (2017) show that sums of per-item features, followed
+   by any function, cover the symmetric functions ("deep sets").
+3. *Which symmetric function.* The first version averaged the hand embeddings. On the
+   development seeds it plateaued at about 92% accuracy at 2,000 hands, where the logistic
+   model reaches 95%. An average of embeddings has to learn ratios (c-bets per c-bet chance)
+   from only 240 training players. The fix builds Phase 1's recipe into the network: each hand
+   emits, for each of $K = 16$ learned "stats", a soft opportunity $c \in [0,1]$ and the share
+   $t \in [0,1]$ of it taken, that is soft successes $ct$ and failures $c(1-t)$. A window sums
+   them, $S$ and $F$, and reads each stat as the logit of its posterior mean under a learned
+   $\mathrm{Beta}(a, b)$ prior:
+
+   $$x_k = \log(S_k + a_k) - \log(F_k + b_k) = \operatorname{logit}\frac{S_k + a_k}{S_k + F_k + a_k + b_k}.$$
+
+   A short window is pulled toward the prior and a long one converges to the rate: shrinkage
+   (Step 10), with stats the network chooses.
+4. *Head.* An MLP reads the $K$ shrunk rates and $\log n$ and gives five logits.
+
+*Training cheaply.* A window's sums are differences of cumulative sums over the player's hand
+outputs, so one pass of the encoder over a batch of players' 2,000 hands gives every window of
+every size at once: a hand is encoded once per epoch however many windows contain it. Each
+epoch draws, per training player and size, as many windows as Phase 1 used (8 up to 200
+hands, then 4, 2, 1) at random starts. Adam with a cosine-decayed learning rate and clipped
+gradients; 30 epochs; the 20% of training bots that Phase 1's classifier held out for its
+temperature (the same players) pick the epoch and fit the temperatures. Results are
+bit-identical for a seed and a thread count.
+
+**Two ablations.** *Order dropped* (`bag`): the same network with a hand's token embeddings
+summed instead of read by the GRU. *Counters as input* (`counters`): the same order-free
+network, each hand being its stats-counter vector instead of its tokens: the information of
+Phase 1's stats, with a learned summary. Together they split a difference from Phase 1 into
+order, raw information and the learner.
+
+**Part C, more players.** A development check suggested the networks were short of training
+players rather than information, so the plan adds a test: 1,200 more training bots per
+replicate (240 per archetype, drawn and simulated like Phase 1's pool, in a league of their
+own), and every model refit on all 1,500.
+
+**Part B, real players.** The professionals' transfer check from Step 33, repeated for the
+sequence model on the same windows, with a new control draw.
+
+**Developed on two other seeds, then run once.** Everything was built on development seeds 98
+and 99 (full-size replicates with new populations) and the quick configuration; their test
+windows were looked at. That is where mean pooling failed and was replaced, where the schedule,
+clipping, batch size and number of rates were set (compared on seed 98, differences of 0.01
+to 0.02 nats, inside the noise), and where, with those settings frozen, seed 99 showed every
+network 0.02 to 0.07 nats worse than the logistic model. A check on seed 99 with 1,500
+training bots closed that gap, which is why part C exists. The plan and its eight predictions
+were committed (`c4578ea`) before any network saw Phase 1's five replicates; the real hands
+were not loaded during development.
+
+**The experiment** (`experiments/phase3_sequence.py`; seed 2026, commit `c4578ea`, 8 torch
+threads). Every replicate came out identical to Phase 1, and the refit logistic model
+reproduced Phase 1's published accuracy and log-loss exactly (largest difference 0). The run
+took 3.8 hours, but about 2.4 of them were one network's training stalled while the machine
+slept; a replicate otherwise takes 17 minutes.
+
+| Prediction | Result | Verdict |
+|---|---|---|
+| A1: the sequence model beats the logistic model at no sample size | gains -0.044 to -0.003 nats, no interval above 0 | holds |
+| A2: order within a hand changes log-loss by under 0.02 | -0.012 to +0.009 | holds |
+| A3: tokens beat the stats counters by under 0.02 | counters - tokens -0.006 to +0.012 | holds |
+| B1: on the professionals, the sequence model is overconfident at 25-100 hands | +0.17, +0.15, +0.16, every interval above 0 | holds |
+| B2: on the control, neither model is overconfident at 25-100 hands | no interval above 0 | holds |
+| C1: with 1,500 training bots the logistic model changes by under 0.02 | +0.006 to +0.012 | holds |
+| C2: the token network improves by at least 0.02 everywhere | +0.033 to +0.062, every interval above 0 | holds |
+| C3: with 1,500 bots the token network is within 0.03 of the logistic model | ahead by +0.008 to +0.019; interval upper ends reach +0.041 | **does not hold** |
+
+**A. At Phase 1's scale the hand-written stats win.** Held-out bots, Phase 1's windows, means
+over the five replicates:
+
+| Hands | Logistic: accuracy / log-loss | Sequence model | Order dropped | Counters network |
+|---|---|---|---|---|
+| 25 | 73.9% / 0.580 | 74.5% / 0.602 | 74.0% / 0.615 | 73.5% / 0.627 |
+| 100 | 86.4% / 0.322 | 86.0% / 0.325 | 85.9% / 0.327 | 85.8% / 0.325 |
+| 500 | 93.5% / 0.189 | 91.9% / 0.218 | 92.3% / 0.209 | 92.1% / 0.206 |
+| 2,000 | 95.7% / 0.152 | 92.5% / 0.196 | 93.5% / 0.187 | 93.7% / 0.181 |
+
+The sequence model ties the logistic model at 50 to 100 hands and falls behind with more: 90%
+accuracy takes 228 hands against 194 (and one replicate never gets there). At 25 hands it is a
+little more accurate but worse calibrated (calibration error 0.063 against 0.043), so its
+log-loss is worse; per-size temperatures shrink that gap from 0.022 to 0.009 nats without
+closing it. The two ablations
+explain the deficit. Order inside a hand adds nothing measurable (A2), probably because each
+token's situation already says where in the hand it was made. Raw tokens add nothing over
+the stats counters fed to the same network (A3). The gap is the learner, not the information:
+twelve well-chosen numbers and a logistic regression are hard to beat with 240 players to
+learn from.
+
+**C. With five times the players, the flexible models pull ahead.** Refit with 1,500 training
+bots (log-loss before minus after):
+
+| Hands | Logistic | Boosted trees | Token network | Counters network |
+|---|---|---|---|---|
+| 25 | +0.010 | +0.053 | +0.062 | +0.067 |
+| 200 | +0.007 | +0.053 | +0.035 | +0.030 |
+| 2,000 | +0.007 | +0.072 | +0.050 | +0.046 |
+
+The logistic model is limited by its features, not its data (C1). The networks gain 0.03 to
+0.06 nats (C2) and end up ahead of it by 0.008 to 0.019 nats, clearly so at 100 and 200 hands;
+boosted trees, which trailed the logistic model in Phase 1, become the best from 500 hands (0.023 to
+0.039 ahead, intervals above 0). C3 failed in the direction nobody minds: the networks did
+better than "within 0.03" allowed. The lesson is the textbook one about flexible models: their
+ranking against a simple model depends on how much data there is, so "the neural network lost"
+is a statement about 300 training players.
+
+**B. On real players the sequence model is no better, and the two models disagree.** On the
+professionals, the sequence model's confidence exceeds its agreement with a later 1,000-hand
+look by 0.15 to 0.17 more than for bots of the same label at 25 to 100 hands (the logistic
+model: 0.12 to 0.14). Both verdicts are *fails*. And the two bot-trained classifiers give a
+professional the same archetype in only 33% to 48% of windows, against 83% to 94% on held-out
+bots: outside their training range they extrapolate in different directions. On the control
+neither is overconfident at small samples (B2). The sequence model's verdict there is still
+*fails*, because it is *under*confident at 500 and 1,000 hands; the plan had warned that with
+13 players and six sample sizes the verdict rule raises false alarms (it did so on a
+development stand-in too), which is why B1 and B2 were stated on the small-sample intervals.
+
+**What changed.** The library gains `profiling.sequences` (hand tokens and a league extractor)
+and `profiling.sequence_model` (`HandSequences`, `SequenceClassifier`, with mean or learned-rate
+pooling, global or per-size temperatures). No default changes: Phase 1's logistic model stays
+the classifier, and the reasons not to trust any bot-trained classifier on real players
+(Step 33) apply to the network with more force.
+
+**Limitations.** One architecture family, set on two development seeds; the GRU was run only
+in part A, with the order-free network standing in for it in part C (A2 says order does not
+matter). The bots are stationary and stereotyped (sizing nearly fixed per archetype), so the
+things a sequence model could see and statistics cannot (a player changing gears, timing,
+multi-street lines that depend on the board) do not exist in this data. Shown cards were left
+out to keep the comparison with the stats fair.
+
+**Verification.**
+
+* `tests/test_sequence_model.py`: tokens are each player's decisions in order plus a closing
+  token whose outcome flags equal the counters; bot sizes recovered from tokens; rows rebuild
+  hands in any arrival order; window logits equal the head applied to the mean or to the shrunk
+  rates; the GRU separates two classes that differ only in the order of a hand's tokens while
+  the order-free network cannot; fits are bit-identical for a seed; the validation players are
+  the logistic model's temperature players.
+* `tests/test_sequence_experiment.py`: windows match Phase 1's row by row; the consistency
+  chunks; the stand-in loader keeps counters and tokens in step.
+* Each replicate re-simulated identical to Phase 1 (checked in the run); the refit logistic
+  model reproduces Phase 1's published numbers exactly.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only sequence` (about 1.4 hours
+  on 16 cores, most of it simulating and training on the extra bots of part C).
+
 ---
 
 # Part C: cross-cutting engineering
@@ -3164,14 +3352,16 @@ less than hoped at large samples, because a fixed table changes the statistics.
 | Fault injection | 33,540 deliberately damaged hand-history files (Step 32) | measures what a validator catches, and found two bugs its unit tests missed |
 | Estimators against known truth | the held-out prior error, corrected for noise, within 5% of the true error on players with known rates (Step 33) | an evaluation metric is code too, and can be wrong |
 | Simulated controls | the real data's seating replayed by bots, run through every check (Step 33) | separates what the players do from what the pipeline and the data's shape do |
+| Bit-for-bit re-simulation | five replicates simulated again with a new extractor: every counter and decision row identical, the refit classifier reproduces the published numbers exactly (Step 34) | a new model is compared on exactly the old data |
+| Ablations that prove themselves | the GRU separates two classes that differ only in the order of a hand's tokens; the order-free network cannot (Step 34) | an ablation must remove what it claims to |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 348 tests and runs in about a minute (the Deep CFR tests skip
-without PyTorch). The explorer's browser behavior has its own check
+players). The suite has 361 tests and runs in about two minutes (the Deep CFR and
+sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
 ## C.2 Reproducibility and provenance
@@ -3211,6 +3401,9 @@ without PyTorch). The explorer's browser behavior has its own check
   Python script can arrive as a real line break, so an exact-match replacement silently stops
   matching (this happened twice, and once to this very sentence). Edit such files with an
   editor tool, or use raw strings.
+* *Sleep inside long runs:* a laptop that sleeps stretches a run's wall time (one network's
+  fit took 8,706 s instead of 23 s in Step 34, one step took 2 hours in Step 33). Results are
+  unaffected, but read the per-step times before reporting how long anything takes.
 
 ## C.4 Figures
 
@@ -3274,6 +3467,9 @@ numeric table next to it, so no number depends on reading a color.
 | Comparing players' consistency gap with all bots mixes miscalibration with archetype mix (the gap is about 0 for calling stations and -0.1 for TAG bots) | per-archetype gaps in a development run | compare each player with bots of the same reference label | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
 | A min-players rule over every statistic would never fire: even 300 bots give a c-bet prior worse than uniform | quick stand-in run | rule on the mean over statistics; per-statistic failures reported | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
 | Patch scripts wrote CRLF line endings (Python's text mode on Windows) | git's line-ending warning | write bytes; normalize before committing | [33](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37) |
+| Averaging hand embeddings over a window plateaued at about 92% accuracy at 2,000 hands (logistic 95%): a mean must learn ratios such as c-bets per c-bet chance from 240 players | development seeds 98 and 99, test windows | learned shrunk rates (soft successes and failures, a Beta prior per rate) | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
+| The check against Phase 1's published numbers matched seeds but not the configuration: the quick run's two seeds are the first two of the full run's | a KeyError in the quick run (no 400-hand row) | compare the results file's whole configuration first | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
+| An experiment helper named `test_windows`, imported into a test module, was collected by pytest as a test | the first test run (fixture 'pool' not found) | renamed `held_out_windows` | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
 
 ---
 
@@ -3281,6 +3477,7 @@ numeric table next to it, so no number depends on reading a color.
 
 | Term | Meaning |
 |---|---|
+| Ablation | a version of a model with one ingredient removed (here: the order within a hand, or the raw tokens), to measure what that ingredient contributes |
 | All-in | betting every remaining chip |
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
 | Bayes action | the decision with the highest posterior expected payoff |
@@ -3304,6 +3501,7 @@ numeric table next to it, so no number depends on reading a color.
 | CUSUM | cumulative sum of residuals; its largest excursion detects a change in level (Page 1954) |
 | Data-biased response | robust response that trusts the model per information set by data count |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
+| Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
 | Effective sample size (ESS) | for weighted draws, $1 / \sum_k w_k^2$: how many equally weighted draws the sample is worth |
@@ -3311,11 +3509,13 @@ numeric table next to it, so no number depends on reading a color.
 | Empirical Bayes | estimating the prior from the population itself |
 | Equity | probability of winning (ties count half) |
 | Equivalence test | a test that the difference is small (its interval inside a margin), not merely not shown to be large (Schuirmann 1987) |
+| Exchangeable | a sequence whose probability does not change when it is reordered; a stationary player's hands are |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Fault injection | damaging valid inputs on purpose to measure what a checker catches; mutation testing aimed at data |
 | Fixed point (of a round trip) | data that come back unchanged after export and re-import |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
 | Garden of forking paths | the unplanned choices made after seeing data, each an uncounted comparison that makes the chosen result look better than it is |
+| GRU | gated recurrent unit: a recurrent network that reads a sequence one item at a time, with gates that decide what to keep (Cho et al. 2014) |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
@@ -3356,6 +3556,7 @@ numeric table next to it, so no number depends on reading a color.
 | Street | betting round: preflop, flop, turn, river |
 | Support check | flags inputs unlike the training data, so a model's output is not trusted where it was never trained |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
+| Token (of a hand) | one of a player's decisions in a hand (situation, action, size), or the hand's closing outcome, as a vector a sequence model reads |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
 | Winner's curse | the best-looking of several noisy estimates tends to be an overestimate |
@@ -3426,6 +3627,12 @@ Statistics and machine learning
   NeurIPS. (Histogram-based boosting.)
 * Guo, C., Pleiss, G., Sun, Y., Weinberger, K. (2017). *On Calibration of Modern Neural
   Networks.* ICML. (Temperature scaling)
+* Cho, K. et al. (2014). *Learning Phrase Representations using RNN Encoder-Decoder for
+  Statistical Machine Translation.* EMNLP. (The GRU; Step 34)
+* Zaheer, M. et al. (2017). *Deep Sets.* NeurIPS. (Models of sets; Step 34)
+* Kingma, D., Ba, J. (2015). *Adam: A Method for Stochastic Optimization.* ICLR.
+* Loshchilov, I., Hutter, F. (2017). *SGDR: Stochastic Gradient Descent with Warm
+  Restarts.* ICLR. (Cosine learning-rate schedules)
 * Naeini, M. P., Cooper, G., Hauskrecht, M. (2015). *Obtaining Well Calibrated Probabilities
   Using Bayesian Binning.* AAAI. (ECE)
 * Gneiting, T., Raftery, A. (2007). *Strictly Proper Scoring Rules, Prediction, and
@@ -3531,3 +3738,7 @@ Software design
   between-player SDs, per-statistic errors and consistency rates were computed from
   `priors.json` for this step. The figures were redrawn from that file after the run with
   clearer labels (no number changed).
+* 2026-10-25: Step 34 (a sequence model over raw actions). Results from commit `c4578ea`,
+  cross-checked against `experiments/results/phase3/sequence/sequence_summary.md`; the
+  development numbers (seeds 98 and 99) come from development logs, not from a committed
+  results file.
