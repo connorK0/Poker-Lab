@@ -25,7 +25,7 @@ Postflop
     the remaining stack become all-ins.
 
 The coefficients were tuned (not the intended ranges, which were fixed in advance) so that each
-archetype's measured stats land inside ``INTENDED_STATS``; see PROGRESS.md.
+archetype's measured stats land inside ``INTENDED_STATS``; see docs/BUILD_LOG.md, Step 9.
 All randomness comes from the table RNG passed to ``act``.
 """
 

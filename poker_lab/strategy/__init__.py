@@ -2,8 +2,8 @@
 
 Baselines (``baselines``) and the push/fold provider over the solved abstract game
 (``push_fold``, P3.3). The small games of Phase 2 keep their own ``TabularPolicy`` objects; see
-the Decisions Log in PROGRESS.md. Names are re-exported lazily (PEP 562), so importing a baseline
-does not load the solvers.
+docs/BUILD_LOG.md, Step 23. Names are re-exported lazily (PEP 562), so importing a baseline does
+not load the solvers.
 """
 
 from importlib import import_module

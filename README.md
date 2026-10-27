@@ -10,10 +10,14 @@ will do next?** And once you know, **how much can you win by exploiting it, and 
   small games. It solves Kuhn and Leduc poker with CFR variants, Deep CFR and an LP. It then
   models Leduc bots from what a player can see and exploits them with best, restricted Nash
   and data-biased responses.
+* **Phase 3** (in progress) carries both questions to hold'em, starting with heads-up
+  push/fold. It solves that game exactly, models push/fold opponents and ranks exploits with
+  posterior intervals and model-fit checks, and imports real hand histories in the PHH format.
+  It then tests the bot-trained models on the professionals of the Pluribus hands.
 
 Every claim is measured on held-out players across independent seeds with confidence
-intervals. The repository also contains the typed skeleton that Phases 3–5 (general
-framework, home-game capture, live evaluation) plug into.
+intervals. The repository also contains the typed skeleton that Phases 4–5 (home-game
+capture, live evaluation) plug into.
 
 > **Scope.** Offline research only: no integration with any online poker site, no scraping or
 > screen reading, and no real-time assistance for real-money online play. Advice-producing code
@@ -615,7 +619,7 @@ version 1 files are read by migrating them. A pre-registered experiment checked 
   final table (big-blind ante 1.5 bb) now import, PokerKit's loader agrees on them, and they
   survive export and import. The 76 files still rejected are other games.
 
-Next: opponents that adapt to the hero (P3.9); see [PROGRESS.md](PROGRESS.md).
+Next: opponents that adapt to the hero (P3.9, in progress).
 
 ## Quickstart
 
@@ -754,7 +758,8 @@ reference for the home-game phase, not a forecast. Specifically:
   its training range and overconfident, and priors must be refit on the players at hand.
 * **Fixed environment.** 6-max, 100 bb stacks reset every hand, no rake, blinds 1/2.
 * **Analysis choices made after seeing results are labeled *post hoc*.** The primary model and
-  pre-registered metrics were fixed before the reported run; see PROGRESS.md.
+  pre-registered metrics were fixed before the reported run: each plan was committed before its
+  run (commits marked *pre-registered*), and the build log gives it next to the results.
 
 ## Repository layout
 
@@ -781,7 +786,6 @@ experiments/   run_phase1/2/3.py (one command each), configs/, results/, referen
   explorer/    builds results/explorer.html (one section per quantified result, all phases)
 tests/         unit, contract, firewall, differential and end-to-end tests
 docs/          BUILD_LOG.md: how every step was built, with the math
-PROGRESS.md    living checklist, decisions log, open questions
 ```
 
 ## Roadmap
@@ -794,11 +798,22 @@ PROGRESS.md    living checklist, decisions log, open questions
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
-Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*).
+Next tasks:
+
+* **Phase 3.** Opponents that adapt to the hero (P3.9): the experiment is pre-registered and its
+  run is in progress.
+* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; duplicate dealing for
+  more than two players and AIVAT control variates; Leduc opponents that adapt or play outside
+  the bot family.
+* **Phase 4.** A card detector with calibrated confidence, an action-entry app that records
+  through the sealed store, a review screen for capture conflicts, and a consent and
+  data-handling policy for recording other players.
+* **Phase 5.** A pre-registered live evaluation: action-prediction accuracy and win rate with
+  variance reduction.
 
 ## Development
 
-* Tests: `python -m pytest` (394 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (404 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
   skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
@@ -806,4 +821,11 @@ Concrete next tasks are tracked in [PROGRESS.md](PROGRESS.md) (section *Future*)
   tree was dirty, and package versions. Experiments are reproducible from the master seed:
   simulation seeds are derived with `numpy.random.SeedSequence`, cards are dealt from seeded
   RNGs, and results do not depend on the number of worker processes (tested).
-* Decisions and their rationale are logged in [PROGRESS.md](PROGRESS.md).
+* Decisions and their rationale are explained step by step in
+  [docs/BUILD_LOG.md](docs/BUILD_LOG.md).
+
+## License
+
+The code is released under the MIT License; see [LICENSE](LICENSE). The hand histories used in
+Phase 3 (the PHH dataset, including the Pluribus hands) are not part of this repository: they
+are downloaded from their own repository at a pinned commit, and their own terms apply.

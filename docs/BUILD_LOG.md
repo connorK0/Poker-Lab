@@ -261,9 +261,9 @@ Each step lists: **goal**, **what was built**, **concepts and math**, **decision
 
 **Goal.** A repository where every later step is traceable.
 
-**What was built.** `git init` on a branch (`phase1`), [`PROGRESS.md`](../PROGRESS.md) created
-*before any code*, [`pyproject.toml`](../pyproject.toml) with pytest and ruff settings, and a
-package skeleton.
+**What was built.** `git init` on a branch (`phase1`), a `PROGRESS.md` checklist created
+*before any code* (a working file, kept out of the published repository),
+[`pyproject.toml`](../pyproject.toml) with pytest and ruff settings, and a package skeleton.
 
 **Concepts.**
 
@@ -2598,7 +2598,7 @@ three experiments.
   costs against connectors-first bots, because the stability check fires on 24-33% of them
   from 1,000 hands: a wrong hand order also leaves structure in the action residuals. This rule
   was chosen after seeing the results, so the library default stays as pre-registered until
-  fresh seeds confirm it (PROGRESS, Future).
+  fresh seeds confirm it (they did: Step 31).
 
 The lesson generalizes beyond poker: a model-fit check answers "can I trust the numbers?",
 not "is the decision wrong?". Which failures should change the decision depends on how the
@@ -3501,7 +3501,7 @@ straddler. Dead blinds (a player returning to the table posts a missed blind) ar
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 394 tests and runs in about two minutes (the Deep CFR and
+players). The suite has 404 tests and runs in about two minutes (the Deep CFR and
 sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
