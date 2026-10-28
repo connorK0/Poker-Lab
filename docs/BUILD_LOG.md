@@ -67,6 +67,7 @@ $B(a,b)$ the beta function.
   * [Step 33: Priors from real players](#step-33-priors-from-real-players-and-do-the-bot-trained-models-transfer-p37)
   * [Step 34: A sequence model over raw actions](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38)
   * [Step 35: Schema v2](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310)
+  * [Step 36: Opponents that adapt to the hero](#step-36-opponents-that-adapt-to-the-hero-p39)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -3474,6 +3475,227 @@ straddler. Dead blinds (a player returning to the table posts a missed blind) ar
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only schema` (about a minute on
   16 cores).
 
+## Step 36: Opponents that adapt to the hero (P3.9)
+
+**The question.** Every exploit so far was judged against a bot that keeps its strategy, which
+is why every value could be exact: the hero's strategy against the bot's, in closed form (Steps
+27 and 29). A person at the table does not keep still. Push very wide against someone who folds
+too much and they start calling wider. The exploit itself changes the opponent, so its value can
+only be measured by playing it out. How much of the exploitation gain survives that, and do the
+safeguards built in Steps 29 and 30 (rank by a lower bound, fall back when the stability check
+fails) help?
+
+**Bots that adapt.** `games.push_fold_adaptive.AdaptiveBot` starts from a P3.2 bot (two widths
+and a temperature) and watches the hero the way a player with a HUD would. It sees how often
+the hero pushes as the small blind and how often it calls a push as the big blind, never its
+cards. Every 25 hands it updates in four steps.
+
+1. *Rates with a memory.* For pushes, keep a weighted count of events $x$ and of chances $n$.
+   Every hand both decay by $d = 2^{-1/h}$, and a hand in which the hero was the small blind
+   adds its chance and, if the hero pushed, its event:
+
+   $$x_t = d\,x_{t-1} + c_t\,\mathbb{1}[\text{hero pushed}],\qquad n_t = d\,n_{t-1} + c_t,\qquad \hat r = x_t / n_t,$$
+
+   with $c_t = 1$ when the hero had the chance and 0 otherwise. An event $h$ hands old counts
+   half as much as a new one (the *half-life*). The counts start at $m = 10$ hands at the
+   equilibrium's rate, a prior that keeps the first estimates sane. Calls are counted the same
+   way over the pushes the hero faced.
+2. *A model of the hero.* The hero is modeled as a soft threshold in the equity order, at the
+   population's typical temperature, with the width that covers the share $\hat r$ of hands:
+   the "HUD stats" model of Step 27, pointed the other way.
+3. *Best response.* For each hand class, push if pushing beats folding against the modeled
+   hero's calls, and call if calling beats folding against its pushes (`hand_gains`, Step 27).
+   The target widths are the widths, at the bot's own temperature, that cover the same shares.
+4. *A step.* $w \leftarrow w + \eta\,(w^\* - w)$ for each width the bot adapts.
+
+Three kinds of adapter: *slow* ($\eta = 0.1$, $h = 200$), *fast* ($\eta = 0.5$, $h = 50$), and
+*calls only* (fast, but only the call width moves: the player who calls wider after the hero
+pushes a lot but keeps their own pushing habits). The bot stays inside the family the hero's
+model assumes at every moment, since only its widths move. The model is wrong in one thing only:
+it assumes the bot keeps still.
+
+These updates are a version of *fictitious play* (Brown 1951): best-respond to the opponent's
+observed frequencies. Robinson (1951) proved that in two-player zero-sum games, when both players
+play this way, the frequencies converge to an equilibrium. Here only the bot does, and against an
+equilibrium hero a simpler fact applies. A hand the equilibrium always pushes is worth pushing
+against the equilibrium's calls, a hand it always folds is worth folding, and likewise for calls;
+only the few hands it mixes are indifferent. So the best response to the equilibrium plays almost
+exactly the equilibrium's range sizes (within 2 points, checked in the tests), and a bot that
+best-responds to an equilibrium hero drifts toward equilibrium ranges itself. (It best-responds to
+its soft-threshold model of the hero, not to the equilibrium itself, so it gets close rather than
+exact.) That fact turns out to drive the results.
+
+**Scoring a session.** `play_session` plays a hero and a bot in blocks of 25 hands. Before each
+block the hero picks its strategy from a *redacted* log of the completed hands, with the bot's
+cards present only where they were shown at a showdown. The block is dealt and played, and then
+the bot observes and adapts. Each block is scored by the exact expected value of the two
+strategies in force (`match_values`, both seats averaged), not by the chips that changed hands:
+
+$$V = \frac{1}{N} \sum_b n_b\, u(\sigma^{\text{hero}}_b, \sigma^{\text{bot}}_b).$$
+
+This is the expected result *given* the path the session took, so the luck of the cards
+disappears while the randomness that matters stays: which actions were sampled, and therefore
+how the bot adapted. (Replacing a random quantity by its conditional expectation never adds
+variance; it is the Rao-Blackwell idea.) Every hero meets a fresh copy of the same bot with the
+same random numbers. The deals and the uniform draws behind each action do not depend on the
+strategies, so two heroes see the same cards and differ only through what they do (*common
+random numbers*). A hero's *gain* is its value minus the equilibrium hero's against the same
+bot.
+
+**The heroes.** *Equilibrium* always. *Fit once*: watch 200 hands at equilibrium, then play
+Step 29's advised response (best by the 90% lower bound, the equilibrium when the stability
+check fails) for the rest of the session. *Refit*: the advised response recomputed every 50
+hands on all hands so far. *Refit recent*: the same on the last 300 hands. *Bayes best
+response*: recomputed every 50 hands, with no lower bound and no fallback. *Clairvoyant*: the
+best response to the bot's current strategy, read from the bot itself. Nobody can play that;
+it is the ceiling, and against a static bot it is Step 27's oracle.
+
+**What theory says before the run.** A strategy with exploitability $\varepsilon$ can lose at
+most $\varepsilon$ per hand (relative to the game's value) to an opponent who best-responds to it.
+So a fixed exploit with high exploitability is a standing invitation to an adaptive opponent,
+and a restricted Nash response (Step 22) caps the invitation. A hero that refits keeps
+re-exploiting, but its model weighs every hand ever seen, so it reacts more slowly than a bot
+with a 50-hand memory.
+
+**Development.** The design was set on seeds 98 and 99, with 10 starting bots each. The first
+pilot had only slow and fast adapters, and both drifted to near-equilibrium ranges against
+every hero, which left almost nothing to exploit. The calls-only adapter was added so that one
+kind keeps a leak the hero can find. The pilots also showed that against static bots about 2-7%
+of refits fell back to equilibrium. The stability check runs 40 times per session against a
+threshold calibrated for one look, so D1 allows up to 10%.
+
+**The experiment** (`experiments/phase3_adaptive.py`, pre-registered at commit `10aff6e`). Five
+replicates, each with Step 27's prior and its 30 standard test bots as starting points, so the
+static control is Step 29's population. Every starting bot is played as each of the four kinds
+against each of the six heroes: 3,600 sessions of 2,000 hands at 10 bb, and 72,600
+recommendations, each with both model-fit checks. The checks are calibrated per replicate on 300
+bots drawn from the prior (Step 30). A hero's gain is averaged over the 30 bots of a replicate,
+with 95% t-intervals across the five replicates; "loses to" is the share of the 150 bots against
+which its gain is negative.
+
+| Prediction | Result |
+|---|---|
+| A1: against static bots, refitting keeps at least 85% of the clairvoyant's gain | holds: 94% |
+| B1: against slow and fast adapters, the equilibrium hero's value is at most half its value against the same bots static | holds: 0.24 [0.21, 0.27] and 0.25 [0.22, 0.27] |
+| B2: against them even the clairvoyant gains at most 0.01 bb/hand | holds: +0.0031 [+0.0026, +0.0036] and +0.0040 [+0.0035, +0.0044] |
+| C1: against fast adapters the Bayes best response loses to equilibrium play | holds: −0.0049 [−0.0060, −0.0038] |
+| C2: against slow adapters fitting once loses to equilibrium play | holds: −0.0503 [−0.0573, −0.0433] |
+| C3: against slow and fast adapters refitting stays within 0.005 bb/hand of equilibrium play | holds: +0.0011 [+0.0006, +0.0016] and −0.0012 [−0.0015, −0.0008] |
+| C4: against calls-only adapters refitting gains | holds: +0.0245 [+0.0228, +0.0263] |
+| D1: refitting falls back on at least 30% of its refits from hand 1,000 on against slow and fast adapters, and at most 10% against static bots | holds: 64% [63%, 66%], 49% [47%, 51%] and 4% [3%, 4%] |
+
+**Results** (bb/hand; the last four columns are gains over equilibrium play against the same
+bots; intervals in the summary file):
+
+| Bots | Equilibrium hero's value | Fit once | Refit | Bayes best response | Clairvoyant |
+|---|---|---|---|---|---|
+| Static | +0.086 | +0.0746 | +0.0823 | +0.0853 | +0.0880 |
+| Slow adapters | +0.020 | −0.0503 | +0.0011 | −0.0018 | +0.0031 |
+| Fast adapters | +0.021 | −0.0078 | −0.0012 | −0.0049 | +0.0040 |
+| Calls only | +0.043 | +0.0151 | +0.0245 | +0.0254 | +0.0287 |
+
+* *Adaptation takes the money off the table, for everyone.* Against slow and fast adapters the
+  equilibrium hero wins a quarter of what it wins from the same bots static, and nothing is
+  left to take: even perfect knowledge of the bot's current strategy gains under 0.005
+  bb/hand, against +0.088 when the bots keep still. The reason is the one above. Measured post
+  hoc against equilibrium play, the total distance of a bot's push and call widths from the
+  equilibrium's range sizes falls from 0.43 at the start to 0.08 for slow and 0.15 for fast
+  adapters by the end of the session, and 95% and 85% of the bots end closer.
+* *What survives is the leak the bot does not fix.* Calls-only adapters fix their calling (the
+  equilibrium hero's value halves, to +0.043) but push as before. Refitting gains +0.0245
+  against them, 85% of the clairvoyant's +0.0287, and loses to 3% of them.
+* *The safeguards hold the recommender at equilibrium level.* Against slow and fast adapters
+  refitting gains +0.0011 and −0.0012 bb/hand. It loses to 31% and 79% of the bots, but by
+  little: both intervals lie within 0.002 of zero. It gets there by giving up. Step 30's
+  stability check reads the bot's drift as a change in its play, and from hand 1,000 on 64%
+  (slow) and 49% (fast) of refits fall back to equilibrium, against 4% for static and calls-only
+  bots. Against slow adapters the timeline is clear: the recommender profits while the bot still
+  plays its old leaks (+0.013 in the first 250 hands), pays some back as the bot adapts (−0.006
+  in the next 250, when 37% of refits fall back) and then sits at equilibrium play (60-66% of
+  refits fall back from hand 500 on).
+* *The costly mistakes are the ones without safeguards.* An exploit fitted once and kept gains
+  −0.050 bb/hand against slow adapters (losing to 78% of them), and −0.067 per hand in the last
+  250 hands: its strategy has exploitability 0.060 averaged over the session, and the bot moves
+  toward the best response to it while the hero never looks again. The Bayes best response gains
+  −0.0049 against fast adapters (losing to 98% of them). Its strategies are the most exploitable of the heroes anyone
+  can play (0.012 bb/hand, against 0.003 for refitting), and the loss is largest at the start
+  (−0.0135 in the first 250 hands) but lasts, −0.002 to −0.008 per 250 hands after that.
+  Without adaptation the same heroes are fine: against static bots the best response earns
+  97% of the clairvoyant's gain and fitting once 85%.
+* *Static bots replay Step 29.* Refitting keeps 94% of the clairvoyant's gain and loses to none
+  of the 150 bots. It falls back on 2-4% of refits per 250 hands, but over 40 refits 19% of the
+  static bots see at least one fallback: the price of a threshold calibrated for one look and
+  applied 40 times, as the pilots warned.
+* *Post hoc: a shorter memory is not the fix.* Refitting on the last 300 hands instead of all
+  hands changes the gain by +0.0010 [+0.0007, +0.0013] bb/hand against slow adapters, −0.0009
+  [−0.0013, −0.0004] against fast and −0.0023 [−0.0030, −0.0016] against calls-only adapters
+  (differences paired by replicate; −0.0007 [−0.0039, +0.0025] against static bots). On 300
+  hands the stability check fails less often (6% of refits from hand 1,000 on against slow
+  adapters instead of 64%, 22% instead of 49% against fast ones), so the window hero keeps
+  exploiting: a little more profitably against slow adapters, a little less against fast ones,
+  where it loses to 91% of the bots. Fewer hands presumably also mean wider posteriors and
+  smaller exploits, which costs against calls-only bots, whose leak never moves. These are
+  differences of 0.001-0.002 bb/hand. So the theory section's worry, that a model weighing every
+  hand reacts too slowly, does not point to the fix: against the fastest bots a shorter memory
+  did worse, not better.
+* *Post hoc: what the example trajectories show.* For the first bot of each archetype in the
+  first replicate, the fast adapters never settle: from hand 500 on their push widths still
+  range from 45% to 96%, against equilibrium play and against a best response alike. What the
+  best response changes is the hero's value. From hand 500 on it varies 1.9 times as much from
+  block to block as equilibrium play's (median over the 15 adapters), and in 9 of the 15 it
+  drops below zero in some block, to as low as −0.24 bb/hand. Equilibrium play cannot lose to
+  any bot over both seats (the game is symmetric, so its value is zero), and its value never
+  falls below +0.010. The slow nit shows a chase. The best response pushes every hand from hand
+  50; the bot answers by calling 44% of hands (from 4%), and by hand 325 the hero's value has
+  fallen to −0.091. The bot keeps widening its pushes, to 93%, the hero calls 47% in turn, and
+  its value swings back to +0.082 before both settle near +0.010 from hand 1,000.
+
+**What it means.** The safeguards built for a wrong model (Step 30) also cover an opponent who
+adapts: the stability check notices the drift, and falling back gives back little. For a player
+the lessons are plain. Re-check an exploit rather than fitting it once and keeping it. Against
+opponents who adjust, the money is in what they do not adjust. And equilibrium play is not
+merely safe here: against slow and fast adapters it is within 0.005 bb/hand of a hero who can
+read the bot's strategy.
+
+**Limitations.** The bots adapt by one fixed rule that sees only two frequencies, and they never
+leave the family the hero's model assumes. No hero modeled the adaptation itself (weighting
+recent hands in the likelihood, or best-responding to the bot's update rule). The game is
+heads-up push/fold at one stack size, where the best response to the equilibrium nearly is the
+equilibrium; whether adapters settle as close to equilibrium in deeper games is untested.
+
+**Engineering.** The run took 19,097 s (5.3 hours) on 12 processes, against an estimate of 1.8
+hours from the development pilots. The results file is 18.7 MB, since it keeps every refit's
+record. The figures were redrawn from it after the run: a legend moved off the data, the panels'
+separate scales stated, and one color per meaning in the value figure (no number changed).
+
+**Mistakes.**
+
+* The development pilots put the run at 1.8 hours; it took 5.3. Nothing was lost, but long runs
+  now go in the background with slack in the plan.
+* Two explorer sentences claimed more than the data show. One said that against a best response an adapter's "ranges chase the hero's": in
+  the example trajectories fast adapters wander as much against equilibrium play, and only the
+  slow nit shows a chase. The other explained the best response's loss by the hero's long
+  memory, which the post-hoc window comparison does not support. Both now state what was
+  measured, computed from the results file.
+* A figure legend covered the first point of a curve, and the value figure used one color for
+  two meanings (a hero in one panel, a kind of bot in the other).
+
+**Verification.**
+
+* `tests/test_push_fold_adaptive.py` (6 tests): a static bot never changes; the rate estimates
+  follow what the hero does (a hero that always pushes and never calls is estimated above 99%
+  and below 1%); bots move toward the best response, and a calls-only bot moves its call width
+  alone, by as much as a full adapter does; the best response to the equilibrium plays the
+  equilibrium's range sizes within 2 points; sessions are scored by exact values block by block,
+  and the hero sees only completed hands, with unshown classes hidden; two heroes facing copies
+  of the same bot from the same seed get the same deals and differ only in their actions.
+* `tests/test_adaptive_experiment.py` (4 tests): the refitting heroes decide on their schedule,
+  and fitting once decides once and then keeps its strategy; a window limits the hands used; the
+  clairvoyant reads the bot; a small run of the tasks aggregates into all eight predictions, with
+  the equilibrium hero's gain exactly zero and the static bots' widths unmoved.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only adaptive` (5.3 hours on 12
+  processes); smoke test with `--quick`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -3495,6 +3717,7 @@ straddler. Dead blinds (a player returning to the table posts a missed blind) ar
 | Bit-for-bit re-simulation | five replicates simulated again with a new extractor: every counter and decision row identical, the refit classifier reproduces the published numbers exactly (Step 34) | a new model is compared on exactly the old data |
 | Ablations that prove themselves | the GRU separates two classes that differ only in the order of a hand's tokens; the order-free network cannot (Step 34) | an ablation must remove what it claims to |
 | The old code as the oracle | the schema v1 code, checked out in a git worktree, writes 20,000 hands; the new code must read them back as exactly the hands it makes itself (Step 35) | a migration is tested against what the old version really wrote, not against what we remember it wrote |
+| Shared randomness | two heroes facing copies of one adaptive bot from the same seed get identical deals and differ only in their actions (`tests/test_push_fold_adaptive.py`, 6 tests); each session block's value equals the exact head-to-head value; the experiment's heroes refit on schedule and on their window (`tests/test_adaptive_experiment.py`, 4 tests) (Step 36) | a paired comparison is only as good as its pairing |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
@@ -3613,6 +3836,10 @@ numeric table next to it, so no number depends on reading a color.
 | An experiment helper named `test_windows`, imported into a test module, was collected by pytest as a test | the first test run (fixture 'pool' not found) | renamed `held_out_windows` | [34](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38) |
 | An odd-chip allowance of less than one unit, pre-registered for PokerKit's loader, assumed one leftover unit; three winners can leave two, and PokerKit gives both to one winner | the real run (5 of 80,000 checks failed) | reported as a failed prediction; a post-hoc re-check in whole units explains all 73 differences | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 | A content hash over gzip files changed between identical runs (gzip headers carry a timestamp) | comparing two runs' results field by field | hash the decompressed content | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
+| A first design with only slow and fast adapters left almost nothing to exploit: both drifted to near-equilibrium ranges against every hero | the development pilot on seeds 98 and 99 | a calls-only adapter that keeps a leak, added before the pre-registration | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| The pilots' run-time estimate (1.8 hours) was a third of the real run's 5.3 hours | the real run | long runs go in the background, with slack in the plan | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| Two explorer takeaways claimed more than the data show (an adapter's ranges "chase the hero's"; the best response loses because the hero's model remembers every hand) | checking each sentence against the plotted trajectories and the results file | rewritten as numbers computed from the results file, labeled post hoc | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| A legend covered a curve's first point; one figure used one color for a hero in one panel and a kind of bot in the other | looking at the figures | legend moved, colors reassigned, figures redrawn from the results file | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 
 ---
 
@@ -3634,6 +3861,7 @@ numeric table next to it, so no number depends on reading a color.
 | Capability | an unforgeable reference whose possession grants a permission |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
 | Cluster bootstrap | resampling whole clusters (players), not rows |
+| Common random numbers | giving the alternatives being compared the same random inputs, so their difference reflects only how they differ (here: the same deals and draws for every hero) |
 | Concentration (of a Beta prior) | $\kappa = \alpha + \beta$, the prior's weight in pseudo-opportunities; large when the players are alike |
 | Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
 | Conformal p-value | the rank of a new score among held-out scores, $(1 + \#\{\text{held-out} \ge \text{new}\})/(m + 1)$; valid for exchangeable data whatever the model (Vovk et al. 2005) |
@@ -3657,10 +3885,12 @@ numeric table next to it, so no number depends on reading a color.
 | Exchangeable | a sequence whose probability does not change when it is reordered; a stationary player's hands are |
 | Exploitability | how much a best response wins against a strategy (NashConv / 2) |
 | Fault injection | damaging valid inputs on purpose to measure what a checker catches; mutation testing aimed at data |
+| Fictitious play | each player best-responds to the observed frequencies of the opponent's past play (Brown 1951); in two-player zero-sum games the frequencies converge to an equilibrium (Robinson 1951) |
 | Fixed point (of a round trip) | data that come back unchanged after export and re-import |
 | Game value | what the first player gets when both play an equilibrium (minimax theorem) |
 | Garden of forking paths | the unplanned choices made after seeing data, each an uncounted comparison that makes the chosen result look better than it is |
 | GRU | gated recurrent unit: a recurrent network that reads a sequence one item at a time, with gates that decide what to keep (Cho et al. 2014) |
+| Half-life (of a weighted average) | the age at which an observation's weight has fallen to half; with decay $d$ per step it is $\log 2 / \log(1/d)$ steps, so $d = 2^{-1/h}$ |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | HUD | heads-up display of opponent statistics |
@@ -3690,6 +3920,7 @@ numeric table next to it, so no number depends on reading a color.
 | PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
+| Rao-Blackwell | replacing an estimator by its conditional expectation given some information never increases its variance (here: scoring each block by its exact expected value instead of the chips won) |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
 | Regret matching | play actions in proportion to their positive cumulative regret |
 | Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
@@ -3763,6 +3994,10 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
   modeling with hidden cards in Leduc, the idea behind Step 21's marginal likelihood.
 * Burch, N., Schmid, M., Moravcik, M., Morrill, D., Bowling, M. (2018). *AIVAT: A New Variance
   Reduction Technique for Agent Evaluation in Imperfect Information Games.* AAAI.
+* Brown, G. W. (1951). *Iterative Solution of Games by Fictitious Play.* In T. C. Koopmans (ed.),
+  Activity Analysis of Production and Allocation. Wiley. (Fictitious play; Step 36)
+* Robinson, J. (1951). *An Iterative Method of Solving a Game.* Annals of Mathematics 54.
+  (Fictitious play converges in two-player zero-sum games; Step 36)
 
 Statistics and machine learning
 
@@ -3895,3 +4130,11 @@ Software design
   `experiments/results/phase3/schema/schema_summary.md`; the pre-registered run was at
   `4c4e373` (same counts), and the Phase 1 re-simulation was compared field by field with
   the committed Phase 1 results.
+* 2026-10-28: Step 36 (opponents that adapt to the hero). Results from the pre-registered run at
+  commit `10aff6e`, cross-checked against
+  `experiments/results/phase3/adaptive/adaptive_summary.md`; the paired comparison of the two
+  refitting heroes, the bots' distance from the equilibrium's widths and the example-trajectory
+  statistics were computed from `adaptive.json` for this step (post hoc). The figures were
+  redrawn from that file after the run (legend placement and colors; no number changed). The
+  method text was drafted before the run; the rate formula and the reason the bots drift toward
+  equilibrium were corrected while writing it up.

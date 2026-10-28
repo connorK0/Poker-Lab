@@ -619,7 +619,43 @@ version 1 files are read by migrating them. A pre-registered experiment checked 
   final table (big-blind ante 1.5 bb) now import, PokerKit's loader agrees on them, and they
   survive export and import. The 76 files still rejected are other games.
 
-Next: opponents that adapt to the hero (P3.9, in progress).
+**Opponents that adapt to the hero (P3.9).** Every exploit so far was judged against a bot that
+keeps its strategy. Here the bots answer, as a player with a HUD would: every 25 hands they move
+toward a best response to how often the hero pushes and calls. Slow adapters take 10% steps and
+weigh the hero's actions with a half-life of 200 hands; fast ones take 50% steps with a 50-hand
+half-life; a third kind adapts only its calls. Six heroes play 2,000-hand sessions against
+copies of the same bots, from the same cards: equilibrium play, an exploit fitted once and kept,
+P3.4's recommender refitted every 50 hands (on all hands or the last 300), the Bayes best
+response without safeguards, and a clairvoyant reference that reads the bot's current strategy.
+Each 25-hand block is scored by the exact value of the two strategies in force (pre-registered;
+commit `10aff6e`;
+[`adaptive_summary.md`](experiments/results/phase3/adaptive/adaptive_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/adaptive/adaptive_gain-dark.png">
+  <img alt="Gain over equilibrium play against hands into the session for five heroes, in four panels: against static bots every exploiting hero gains about 0.08 bb/hand; against slow and fast adapters the curves settle near zero, except fitting once, which loses up to 0.067 bb/hand; against bots that adapt only their calls, refitting gains about 0.025" src="experiments/results/phase3/adaptive/adaptive_gain.png">
+</picture>
+
+* **Adaptation takes the money off the table, for everyone.** Against slow and fast adapters,
+  equilibrium play wins +0.020 and +0.021 bb/hand, a quarter of its +0.086 against the same
+  bots static. The bots best-respond to the hero, and the best response to equilibrium play is
+  close to equilibrium play, so they fix most of their leaks whatever the hero does. Even a hero
+  that reads the bot's current strategy gains at most +0.004 bb/hand over equilibrium play.
+* **The safeguards hold.** P3.4's recommender, refitting with P3.5's stability check, stays
+  within 0.002 bb/hand of equilibrium play against adapters (+0.0011 and −0.0012). The check
+  sees the bots drift and falls back to equilibrium on 64% and 49% of refits from hand 1,000 on,
+  against 4% for bots that keep still. Against static bots refitting keeps 94% of the
+  clairvoyant's gain.
+* **The costly mistakes are the ones without safeguards.** An exploit fitted once and kept does
+  0.050 bb/hand worse than equilibrium play against slow adapters, and worse against 78% of
+  them. A best response refitted without safeguards does 0.0049 bb/hand worse against fast
+  adapters, and worse against 98% of them.
+* **What survives is the leak a player does not fix.** Against bots that adapt only their
+  calls, refitting still gains +0.025 bb/hand, 85% of the clairvoyant's gain. All eight
+  predictions hold.
+* **Post hoc: a shorter memory is not the fix.** Refitting on the last 300 hands gains 0.001
+  bb/hand more than refitting on all hands against slow adapters, and 0.001 and 0.002 less
+  against fast and calls-only adapters (paired 95% intervals exclude zero).
 
 ## Quickstart
 
@@ -646,9 +682,10 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 # hand histories imported and checked (1 min; downloads 12 MB of public PHH data once),
 # priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache),
 # the sequence model against Phase 1's classifier (about 1.4 h; needs PyTorch),
-# schema v2 checked and the v1 code's output migrated (1 min; needs git history)
-python -m experiments.run_phase3 --seed 2026          # ~2.3 h on 16 cores
-python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence or schema
+# schema v2 checked and the v1 code's output migrated (1 min; needs git history),
+# opponents that adapt (about 5.3 h)
+python -m experiments.run_phase3 --seed 2026          # ~7.6 h on 16 cores
+python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence, schema or adaptive
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
@@ -744,7 +781,9 @@ reference for the home-game phase, not a forecast. Specifically:
 
 * **Stationary, non-adaptive opponents.** Each bot plays one fixed strategy for its whole
   history. People adapt to opponents, tilt, and change gears, so their stats drift and old
-  hands are less informative.
+  hands are less informative. P3.9 tested push/fold bots that adapt to the hero: they take most
+  of the exploitable money off the table, and the recommender's stability check falls back to
+  equilibrium play when they move.
 * **Stereotyped sizing.** A bot's bet sizes are tied to its archetype with little noise, which
   makes sizing a strong "tell" (quantified in the no-sizing ablation above).
 * **A five-type taxonomy is a modeling choice.** Bots are drawn from five archetype
@@ -794,14 +833,13 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
 Next tasks:
 
-* **Phase 3.** Opponents that adapt to the hero (P3.9): the experiment is pre-registered and its
-  run is in progress.
+* **Phase 3.** A wrap-up: every step reproduced end to end from one command and a clean commit.
 * **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; duplicate dealing for
   more than two players and AIVAT control variates; Leduc opponents that adapt or play outside
   the bot family.
