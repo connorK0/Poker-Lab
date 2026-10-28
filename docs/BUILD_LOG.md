@@ -3663,18 +3663,20 @@ recent hands in the likelihood, or best-responding to the bot's update rule). Th
 heads-up push/fold at one stack size, where the best response to the equilibrium nearly is the
 equilibrium; whether adapters settle as close to equilibrium in deeper games is untested.
 
-**Engineering.** The run took 19,097 s (5.3 hours) on 12 processes, against an estimate of 1.8
-hours from the development pilots. The results file is 18.7 MB, since it keeps every refit's
+**Engineering.** The results record 19,097 s (5.3 hours) on 12 processes, but that is wall time:
+the laptop was closed, and asleep, for most of the run (the pitfall of C.3). The development
+pilots put the work at about 1.8 hours. The results file is 18.7 MB, since it keeps every refit's
 record. The figures were redrawn from it after the run: a legend moved off the data, the panels'
 separate scales stated, and one color per meaning in the value figure (no number changed).
 
 **Mistakes.**
 
-* The development pilots put the run at 1.8 hours; it took 5.3. Nothing was lost, but long runs
-  now go in the background with slack in the plan.
-* Two explorer sentences claimed more than the data show. One said that against a best response an adapter's "ranges chase the hero's": in
-  the example trajectories fast adapters wander as much against equilibrium play, and only the
-  slow nit shows a chase. The other explained the best response's loss by the hero's long
+* The write-up first reported the run's 5.3 hours of wall time as its run time, three times the
+  pilots' estimate, although the laptop had been closed for most of it. C.3 already warned
+  about exactly this; the owner caught it.
+* Two explorer sentences claimed more than the data show. One said that against a best response
+  an adapter's "ranges chase the hero's": in the example trajectories fast adapters wander as
+  much against equilibrium play, and only the slow nit shows a chase. The other explained the best response's loss by the hero's long
   memory, which the post-hoc window comparison does not support. Both now state what was
   measured, computed from the results file.
 * A figure legend covered the first point of a curve, and the value figure used one color for
@@ -3693,8 +3695,9 @@ separate scales stated, and one color per meaning in the value figure (no number
   and fitting once decides once and then keeps its strategy; a window limits the hands used; the
   clairvoyant reads the bot; a small run of the tasks aggregates into all eight predictions, with
   the equilibrium hero's gain exactly zero and the static bots' widths unmoved.
-* Experiment: `python -m experiments.run_phase3 --seed 2026 --only adaptive` (5.3 hours on 12
-  processes); smoke test with `--quick`.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only adaptive` (about 1.8 hours
+  on 12 processes by the pilots' estimate; the real run's 5.3 hours of wall time include the
+  laptop sleeping); smoke test with `--quick`.
 
 ---
 
@@ -3766,8 +3769,10 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   matching (this happened twice, and once to this very sentence). Edit such files with an
   editor tool, or use raw strings.
 * *Sleep inside long runs:* a laptop that sleeps stretches a run's wall time (one network's
-  fit took 8,706 s instead of 23 s in Step 34, one step took 2 hours in Step 33). Results are
-  unaffected, but read the per-step times before reporting how long anything takes.
+  fit took 8,706 s instead of 23 s in Step 34, one step took 2 hours in Step 33, and Step 36's
+  run recorded 5.3 hours with the laptop closed for most of it). Results are unaffected, but
+  read the per-step times before reporting how long anything takes, and know whether the
+  machine slept.
 
 ## C.4 Figures
 
@@ -3837,7 +3842,7 @@ numeric table next to it, so no number depends on reading a color.
 | An odd-chip allowance of less than one unit, pre-registered for PokerKit's loader, assumed one leftover unit; three winners can leave two, and PokerKit gives both to one winner | the real run (5 of 80,000 checks failed) | reported as a failed prediction; a post-hoc re-check in whole units explains all 73 differences | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 | A content hash over gzip files changed between identical runs (gzip headers carry a timestamp) | comparing two runs' results field by field | hash the decompressed content | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 | A first design with only slow and fast adapters left almost nothing to exploit: both drifted to near-equilibrium ranges against every hero | the development pilot on seeds 98 and 99 | a calls-only adapter that keeps a leak, added before the pre-registration | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
-| The pilots' run-time estimate (1.8 hours) was a third of the real run's 5.3 hours | the real run | long runs go in the background, with slack in the plan | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| A run's wall time (5.3 hours, the laptop closed for most of it) was reported as its run time, three times the pilots' estimate | the owner, who knew the laptop had been closed | report times only from runs the machine stayed awake through; the Phase 3 wrap-up run measures it again | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 | Two explorer takeaways claimed more than the data show (an adapter's ranges "chase the hero's"; the best response loses because the hero's model remembers every hand) | checking each sentence against the plotted trajectories and the results file | rewritten as numbers computed from the results file, labeled post hoc | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 | A legend covered a curve's first point; one figure used one color for a hero in one panel and a kind of bot in the other | looking at the figures | legend moved, colors reassigned, figures redrawn from the results file | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 
@@ -4138,3 +4143,5 @@ Software design
   redrawn from that file after the run (legend placement and colors; no number changed). The
   method text was drafted before the run; the rate formula and the reason the bots drift toward
   equilibrium were corrected while writing it up.
+* 2026-10-28: Step 36's run time corrected: the 5.3 hours the results record are wall time, with
+  the laptop closed for most of the run (the pilots' estimate was about 1.8 hours).
