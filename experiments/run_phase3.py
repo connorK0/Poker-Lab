@@ -127,16 +127,25 @@ def main() -> None:
     ap.add_argument("--quick", action="store_true", help="use configs/phase3_quick.yaml")
     ap.add_argument("--workers", type=int, default=None, help="worker processes")
     ap.add_argument("--only", choices=STEPS, nargs="+", default=None, help="run some steps only")
+    ap.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="output folder (default: experiments/results/<config name>); a reproduction run "
+        "writes to an untracked folder, so later steps do not record the earlier ones' "
+        "rewritten results as uncommitted changes, and the explorer is not rebuilt",
+    )
     args = ap.parse_args()
     path = args.config or CONFIG_DIR / ("phase3_quick.yaml" if args.quick else "phase3.yaml")
     cfg = load_config(path)
     steps = tuple(args.only) if args.only else STEPS
-    elapsed = run(args.seed, cfg, steps=steps, workers=args.workers)
+    out_dir = args.out or RESULTS_ROOT / cfg["name"]
+    elapsed = run(args.seed, cfg, steps=steps, workers=args.workers, out_dir=out_dir)
     timing = ", ".join(f"{k} {v:.0f}s" for k, v in elapsed.items())
-    print(f"wrote {RESULTS_ROOT / cfg['name']} ({timing})")
+    print(f"wrote {out_dir} ({timing})")
     from experiments.explorer.build import refresh
 
-    refresh(RESULTS_ROOT / cfg["name"])
+    refresh(out_dir)
 
 
 if __name__ == "__main__":
