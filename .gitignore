@@ -12,9 +12,10 @@ venv/
 build/
 dist/
 
-# Private working notes: the original project brief and the working checklist
+# Private working notes: the original project brief, the working checklist and the handoff
 poker_claude_code_prompt.md
 PROGRESS.md
+handoff.md
 
 # Local tool settings and secrets
 .claude/
