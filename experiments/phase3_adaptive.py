@@ -574,19 +574,22 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
             ax.set_title(KIND_LABELS[kind], loc="left", fontsize=10, color=theme["ink"])
             ax.set_xlabel("Hands into the session")
         axes[0].set_ylabel("Gain over equilibrium play (bb/hand)")
-        legend(axes[0], theme, loc="lower left")
+        legend(axes[0], theme, loc="lower right")
         title(
             fig,
             theme,
             "Exploiting bots that adapt to the hero",
             f"Mean gain per {cfg['bin']}-hand stretch over the equilibrium hero against the same "
-            "bots. Bands: 95% t-intervals across replicates.",
+            "bots. Bands: 95% t-intervals across replicates. Each panel has its own scale.",
         )
         return fig
 
     def draw_values(theme):
         fig, axes = new_figure(theme, 1, 2, figsize=(12.5, 4.4))
         s = theme["series"]
+        # heroes keep their colors from the gain figure; equilibrium play is the neutral baseline
+        hero_color = {h: s[k] for k, h in enumerate(shown)} | {"equilibrium": theme["muted"]}
+        kind_color = (s[0], s[2], s[3], s[6])  # colors the heroes in the left panel do not use
         kinds = list(agg)
         xs = np.arange(len(kinds))
         ax = axes[0]
@@ -598,13 +601,14 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
                 [y["mean"] for y in v],
                 yerr=[[y["mean"] - y["lower"] for y in v], [y["upper"] - y["mean"] for y in v]],
                 fmt="o",
-                color=s[k],
+                color=hero_color[h],
                 markersize=7,
                 markeredgecolor=theme["surface"],
                 capsize=0,
                 label=HERO_LABELS[h],
             )
         ax.set_xticks(xs, [KIND_LABELS[k] for k in kinds], fontsize=8.5, color=theme["ink2"])
+        ax.set_ylim(bottom=0)
         ax.set_ylabel("Hero's value (bb/hand)")
         ax.set_title("What is left to win", loc="left", fontsize=10, color=theme["ink"])
         legend(ax, theme, loc="upper right")
@@ -612,7 +616,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         style_axes(ax, theme)
         for k, kind in enumerate(kinds):
             fb = agg[kind]["heroes"]["refit"]["fallback_by_bin"]
-            line(ax, theme, x, [100 * v for v in fb], s[k], KIND_LABELS[kind])
+            line(ax, theme, x, [100 * v for v in fb], kind_color[k], KIND_LABELS[kind])
         ax.axhline(5, color=theme["muted"], linewidth=1, linestyle=":")
         ax.set_xlabel("Hands into the session")
         ax.set_ylabel("Refits that fall back to equilibrium (%)")
