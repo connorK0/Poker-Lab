@@ -36,6 +36,7 @@ IMPORT = "experiments/results/phase3/import/import.json"
 PRIORS = "experiments/results/phase3/priors/priors.json"
 SEQUENCE = "experiments/results/phase3/sequence/sequence.json"
 SCHEMA = "experiments/results/phase3/schema/schema.json"
+ADAPTIVE = "experiments/results/phase3/adaptive/adaptive.json"
 SOURCES = (
     PUSHFOLD,
     EXPLOIT,
@@ -47,6 +48,7 @@ SOURCES = (
     PRIORS,
     SEQUENCE,
     SCHEMA,
+    ADAPTIVE,
 )
 GRID_RANKS = "AKQJT98765432"
 SIDES = (("pusher", "Small blind: push"), ("caller", "Big blind: call"))
@@ -82,6 +84,7 @@ def overview(
     pr: dict[str, Any],
     sq: dict[str, Any],
     sc: dict[str, Any],
+    ad: dict[str, Any],
 ) -> dict[str, Any]:
     cmp = r["reference_comparison"]
     p, c = cmp["pusher"]["summary"], cmp["caller"]["summary"]
@@ -115,6 +118,7 @@ def overview(
     big_gain = [v["log_loss_gain"]["mean"] for v in sq["c"]["paired"]["bag"].values()]
     agree = sq["b"]["humans"]["agreement"]
     srt, wsop = sc["round_trip"], sc["public"]["by_subset"]["wsop"]
+    adg = ad["aggregate"]
     return {
         "tiles": [
             tile(
@@ -225,6 +229,18 @@ def overview(
                 f"{wsop['imported']}/{wsop['nlhe']}",
                 "all with a big-blind ante, which schema v1 rejected",
             ),
+            tile(
+                "Equilibrium play's winnings once the bots adapt",
+                f"{adg['fast']['heroes']['equilibrium']['value']['mean']:+.3f} bb/hand",
+                f"from {adg['static']['heroes']['equilibrium']['value']['mean']:+.3f} against "
+                "the same bots static: they fix most of their leaks, whoever they face",
+            ),
+            tile(
+                "Exploiting a fast adapter with a best response",
+                f"{adg['fast']['heroes']['best_response']['gain']['mean']:+.4f} bb/hand",
+                f"over equilibrium play; loses to "
+                f"{adg['fast']['heroes']['best_response']['loses']['share']:.0%} of them",
+            ),
         ],
         "summary": (
             "Phase 3 turns hand histories into ranked exploit recommendations. It starts with a "
@@ -248,7 +264,9 @@ def overview(
             "training bots, edges ahead only with five times as many, and is even more "
             "overconfident on the professionals (P3.8). Schema v2 holds big-blind antes, "
             "straddles and other minimum bets, reads version 1 files by migrating them, and "
-            "imports the hold'em hands of a modern tournament final table (P3.10)."
+            "imports the hold'em hands of a modern tournament final table (P3.10). Bots that "
+            "adapt to the hero take most of the money off the table, for equilibrium play too; "
+            "what survives is exploiting the leaks they do not fix (P3.9)."
         ),
     }
 
@@ -3046,7 +3064,8 @@ def build(load) -> dict[str, Any]:
     pr = load(PRIORS)
     sq = load(SEQUENCE)
     sc = load(SCHEMA)
-    head = overview(r, ex, br, rc, fc, im, pr, sq, sc)
+    ad = load(ADAPTIVE)
+    head = overview(r, ex, br, rc, fc, im, pr, sq, sc, ad)
     return {
         "id": "phase3",
         "label": "Phase 3",
@@ -3065,6 +3084,7 @@ def build(load) -> dict[str, Any]:
             provenance(PRIORS, pr),
             provenance(SEQUENCE, sq),
             provenance(SCHEMA, sc),
+            provenance(ADAPTIVE, ad),
         ],
         "sections": [
             charts(r),
@@ -3096,6 +3116,9 @@ def build(load) -> dict[str, Any]:
             sequence_scale(sq),
             sequence_transfer(sq),
             schema_v2(sc),
+            adaptive_gain(ad),
+            adaptive_left(ad),
+            adaptive_example(ad),
         ],
     }
 
@@ -3191,5 +3214,328 @@ def schema_v2(sc: dict[str, Any]) -> dict[str, Any]:
         "loader. Part B: the v1 code run in a temporary git worktree. Part C: the PHH dataset "
         f"at commit {sc['dataset']['commit'][:7]}. Pre-registered predictions A1, B1, C1-C3; "
         "the whole-unit re-check is post hoc.",
+        post_hoc=True,
+    )
+
+
+AD_KINDS = (
+    ("static", "Static bots"),
+    ("slow", "Slow adapters"),
+    ("fast", "Fast adapters"),
+    ("calls_only", "Adapt calls only"),
+)
+AD_KIND_LABEL = dict(AD_KINDS)
+AD_HEROES = (
+    ("fit_once", "Fit once, then keep", "c1"),
+    ("refit", "Refit on all hands", "c2"),
+    ("refit_recent", "Refit on recent hands", "c3"),
+    ("best_response", "Bayes best response", "c4"),
+    ("clairvoyant", "Clairvoyant (reference)", "c5"),
+)
+AD_HERO_LABEL = {h: label for h, label, _ in AD_HEROES} | {"equilibrium": "Equilibrium"}
+AD_HANDS = axis("Hands into the session", fmt="int")
+
+
+def _ad_bins(ad: dict[str, Any]) -> list[float]:
+    cfg = ad["meta"]["config"]
+    edges = range(0, cfg["hands"] + 1, cfg["bin"])
+    return [(a + b) / 2 for a, b in zip(list(edges)[:-1], list(edges)[1:], strict=True)]
+
+
+def _gain(v: dict[str, float]) -> str:
+    return f"{v['mean']:+.4f} [{v['lower']:+.4f}, {v['upper']:+.4f}]"
+
+
+def _paired(a: list[float], b: list[float]) -> dict[str, float]:
+    """Mean difference a - b over replicates, with its 95% t-interval."""
+    mean, lower, upper = ci(np.subtract(a, b))
+    return {"mean": mean, "lower": lower, "upper": upper}
+
+
+def adaptive_gain(ad: dict[str, Any]) -> dict[str, Any]:
+    agg, pred, cfg = ad["aggregate"], ad["predictions"], ad["meta"]["config"]
+    xs = _ad_bins(ad)
+    views = {}
+    for kind, label in AD_KINDS:
+        heroes = agg[kind]["heroes"]
+        views[kind] = view(
+            line_chart(
+                f"{label}: gain over equilibrium play",
+                AD_HANDS,
+                axis("Gain over equilibrium play (bb/hand)", fmt="signed"),
+                [
+                    series(
+                        name,
+                        color,
+                        [
+                            (x, g["mean"], g["lower"], g["upper"])
+                            for x, g in zip(xs, heroes[h]["gain_by_bin"], strict=True)
+                        ],
+                        dash=h == "clairvoyant",
+                    )
+                    for h, name, color in AD_HEROES
+                ],
+                refs=[ref(0, "equilibrium play")],
+                subtitle=f"Mean over each {cfg['bin']}-hand stretch, against the same bots the "
+                "equilibrium hero met. Bands: 95% t-intervals across replicates.",
+            )
+        )
+    st, slow, fast, calls = (agg[k]["heroes"] for k in ("static", "slow", "fast", "calls_only"))
+    recent = {
+        k: _paired(h["refit_recent"]["gain_by_seed"], h["refit"]["gain_by_seed"])
+        for k, h in (("slow", slow), ("fast", fast), ("calls_only", calls))
+    }
+    takeaways = [
+        f"Against static bots, refitting keeps {pred['A1']['ratio']:.0%} of the clairvoyant "
+        f"hero's gain ({st['refit']['gain']['mean']:+.3f} of "
+        f"{st['clairvoyant']['gain']['mean']:+.3f} bb/hand; A1 {_verdict(pred['A1']['holds'])}): "
+        "P3.4's result, replayed hand by hand.",
+        f"Against fast adapters the Bayes best response loses to equilibrium play: "
+        f"{_gain(fast['best_response']['gain'])} bb/hand, worse than equilibrium against "
+        f"{fast['best_response']['loses']['share']:.0%} of the bots (C1 "
+        f"{_verdict(pred['C1']['holds'])}). Its strategies are the most exploitable of the "
+        f"heroes anyone can play ({fast['best_response']['exploitability']['mean']:.3f} bb/hand "
+        f"on average, against {fast['refit']['exploitability']['mean']:.3f} for refitting), and "
+        "the bots best-respond to what they see the hero do.",
+        f"An exploit fitted once and kept is the costliest mistake against slow adapters: "
+        f"{_gain(slow['fit_once']['gain'])} bb/hand (C2 {_verdict(pred['C2']['holds'])}). The "
+        "bot drifts toward a best response against it while the hero never looks again.",
+        f"The recommender that refits with P3.5's stability check stays close to equilibrium "
+        f"play: {_gain(slow['refit']['gain'])} against slow and {_gain(fast['refit']['gain'])} "
+        f"against fast adapters (C3 {_verdict(pred['C3']['holds'])}).",
+        f"Against bots that adapt only their calls, refitting still gains "
+        f"{_gain(calls['refit']['gain'])} bb/hand (C4 {_verdict(pred['C4']['holds'])}): the "
+        "leaks an opponent does not fix stay worth exploiting.",
+        f"Post hoc: refitting on the last {cfg['window']} hands instead of all of them changes "
+        f"the gain by {_gain(recent['slow'])} bb/hand against slow adapters, "
+        f"{_gain(recent['fast'])} against fast and {_gain(recent['calls_only'])} against "
+        "calls-only adapters (differences paired by replicate). On the shorter window the "
+        "stability check fails less often: in the second half of a session it falls back on "
+        f"{slow['refit_recent']['fallback_second_half']['share']:.0%} of refits against slow "
+        f"adapters, not {slow['refit']['fallback_second_half']['share']:.0%}.",
+    ]
+    return section(
+        "adaptive-gain",
+        "Exploiting opponents who adapt",
+        "Until now every bot kept its strategy whatever the hero did. Here bots answer: every 25 "
+        "hands they move toward a best response to how often the hero pushes and calls. Each "
+        "hero plays the same bots from the same cards, and every stretch of a session is scored "
+        "by the exact value of the two strategies in force.",
+        sources=[ADAPTIVE],
+        controls=[control("kind", "Bots", AD_KINDS)],
+        views=views,
+        takeaways=takeaways,
+        method=f"{cfg['seeds']} replicates x {5 * cfg['test_per_archetype']} of P3.2's standard "
+        f"test bots as starting points, each as four kinds of bot; sessions of {cfg['hands']:,} "
+        f"hands at {cfg['stack']} bb. Refitting heroes decide every {cfg['refit_every']} hands "
+        f"(the recent one on the last {cfg['window']}); fit once decides after "
+        f"{cfg['observe_hands']}. Pre-registered predictions A1-D1; the comparison of the two "
+        "refitting heroes is post hoc.",
+        post_hoc=True,
+    )
+
+
+def adaptive_left(ad: dict[str, Any]) -> dict[str, Any]:
+    agg, pred, cfg = ad["aggregate"], ad["predictions"], ad["meta"]["config"]
+    rows = [label for _, label in AD_KINDS]
+    shown = (("equilibrium", "c1"), ("refit", "c2"), ("best_response", "c4"), ("clairvoyant", "c5"))
+    values = dots_chart(
+        "What is left to win",
+        rows,
+        axis("Hero's value (bb/hand)", fmt="signed"),
+        [
+            dot_series(
+                AD_HERO_LABEL[h],
+                color,
+                [
+                    (lambda v: [v["mean"], v["lower"], v["upper"]])(agg[k]["heroes"][h]["value"])
+                    for k, _ in AD_KINDS
+                ],
+            )
+            for h, color in shown
+        ],
+        refs=[ref(0, "break even")],
+        subtitle="Session value, 95% t-intervals across replicates.",
+    )
+    xs = _ad_bins(ad)
+    colors = ("c1", "c2", "c3", "c4")
+    fallback = line_chart(
+        "How often the refitting hero falls back to equilibrium play",
+        AD_HANDS,
+        axis("Refits that fall back", fmt="pct", lo=0, hi=1),
+        [
+            series(
+                label,
+                color,
+                list(zip(xs, agg[k]["heroes"]["refit"]["fallback_by_bin"], strict=True)),
+            )
+            for (k, label), color in zip(AD_KINDS, colors, strict=True)
+        ],
+        refs=[ref(0.05, "5% (calibrated level)")],
+        subtitle="Share of refits whose advice is the equilibrium because P3.5's stability check "
+        "failed.",
+    )
+    b1, d1 = pred["B1"]["by_kind"], pred["D1"]["by_kind"]
+    st = agg["static"]["heroes"]
+    takeaways = [
+        f"Adaptation takes the money off the table for everyone: the equilibrium hero wins "
+        f"{agg['slow']['heroes']['equilibrium']['value']['mean']:+.3f} and "
+        f"{agg['fast']['heroes']['equilibrium']['value']['mean']:+.3f} bb/hand from slow and fast "
+        f"adapters, {b1['slow']['mean']:.0%} and {b1['fast']['mean']:.0%} of the "
+        f"{st['equilibrium']['value']['mean']:+.3f} it wins from the same bots static (B1 "
+        f"{_verdict(pred['B1']['holds'])}). The bots best-respond to whatever the hero does, "
+        "which moves them toward equilibrium themselves.",
+        f"Even a clairvoyant hero gains only {_gain(pred['B2']['by_kind']['slow'])} and "
+        f"{_gain(pred['B2']['by_kind']['fast'])} bb/hand over equilibrium play against them (B2 "
+        f"{_verdict(pred['B2']['holds'])}).",
+        f"The stability check notices: in the second half of a session the refitting hero falls "
+        f"back on {d1['slow']['share']:.0%} of refits against slow and {d1['fast']['share']:.0%} "
+        f"against fast adapters, and on {d1['static']['share']:.0%} against static bots (D1 "
+        f"{_verdict(pred['D1']['holds'])}).",
+    ]
+    return section(
+        "adaptive-left",
+        "What adaptation leaves to win, and whether the checks notice",
+        "A bot that best-responds to the hero's frequencies fixes most of its leaks against "
+        "every hero, equilibrium play included. And a model that assumes the bot keeps still "
+        "should fail its stability check when the bot moves.",
+        sources=[ADAPTIVE],
+        controls=[control("show", "Show", [("value", "Value"), ("fallback", "Fallbacks")])],
+        views={"value": view(values), "fallback": view(fallback)},
+        takeaways=takeaways,
+        method=f"Checks calibrated per replicate on {cfg['calibration_bots']} bots drawn from the "
+        "prior and played by the equilibrium hero, at the 5% level for both checks together "
+        "(P3.5); P3.5b's rule falls back on the stability check alone.",
+    )
+
+
+def adaptive_example(ad: dict[str, Any]) -> dict[str, Any]:
+    cfg = ad["meta"]["config"]
+    block = cfg["period"]
+    examples = {(e["archetype"], e["kind"]): e for e in ad["examples"]}
+    archs = [
+        (a, ARCHETYPE_LABELS.get(a, a))
+        for a in dict.fromkeys(e["archetype"] for e in ad["examples"])
+    ]
+    heroes = (
+        ("equilibrium", "c1"),
+        ("refit", "c2"),
+        ("best_response", "c4"),
+        ("clairvoyant", "c5"),
+    )
+    views = {}
+    for arch, alabel in archs:
+        for kind, klabel in AD_KINDS:
+            e = examples[(arch, kind)]
+            xs = [block * (k + 0.5) for k in range(len(e["heroes"]["equilibrium"]["values"]))]
+            widths = line_chart(
+                f"{alabel}, {klabel.lower()}: the bot's ranges",
+                AD_HANDS,
+                axis("Width (share of hands)", fmt="pct", lo=0, hi=1),
+                [
+                    series(
+                        f"{'Push' if j == 0 else 'Call'} width vs {AD_HERO_LABEL[h].lower()}",
+                        color,
+                        [(x, w[j]) for x, w in zip(xs, e["heroes"][h]["widths"], strict=True)],
+                        dash=j == 1,
+                        marker=False,
+                    )
+                    for h, color in heroes[:3]
+                    for j in (0, 1)
+                ],
+                subtitle="Solid: push width; dashed: call width. Nash at 10 bb pushes about 58% "
+                "and calls about 37% of hands.",
+            )
+            value = line_chart(
+                f"{alabel}, {klabel.lower()}: the hero's value",
+                AD_HANDS,
+                axis("Exact value (bb/hand)", fmt="signed"),
+                [
+                    series(
+                        AD_HERO_LABEL[h],
+                        color,
+                        list(zip(xs, e["heroes"][h]["values"], strict=True)),
+                        dash=h == "clairvoyant",
+                        marker=False,
+                    )
+                    for h, color in heroes
+                ],
+                refs=[ref(0, "break even")],
+                subtitle=f"Each {block}-hand block scored by the exact value of both strategies.",
+            )
+            views[f"{arch}|{kind}|widths"] = view(widths)
+            views[f"{arch}|{kind}|value"] = view(value)
+    # post hoc descriptions of the trajectories, from hand 500 on where it says "late"
+    late = 500 // block
+    adapters = [e for e in ad["examples"] if e["kind"] != "static"]
+    eq_share = np.array(adapters[0]["heroes"]["equilibrium"]["hero_shares"][0])
+
+    def off_eq(w: list[float]) -> float:
+        return float(np.abs(np.subtract(w, eq_share)).sum())
+
+    drift = {}
+    for kind in ("slow", "fast"):
+        bots = [r for recs in ad["per_seed"] for r in recs if r["kind"] == kind]
+        start = np.array([off_eq(r["start_widths"]) for r in bots])
+        end = np.array([off_eq(r["heroes"]["equilibrium"]["end_widths"]) for r in bots])
+        drift[kind] = (start.mean(), end.mean(), float(np.mean(end < start)), len(bots))
+    wander = [
+        w[0]
+        for e in adapters
+        if e["kind"] == "fast"
+        for h in ("equilibrium", "best_response")
+        for w in e["heroes"][h]["widths"][late:]
+    ]
+    spread = [
+        np.std(e["heroes"]["best_response"]["values"][late:])
+        / np.std(e["heroes"]["equilibrium"]["values"][late:])
+        for e in adapters
+    ]
+    below = [min(e["heroes"]["best_response"]["values"]) for e in adapters]
+    eq_low = min(min(e["heroes"]["equilibrium"]["values"]) for e in ad["examples"])
+    nit = examples[("nit", "slow")]["heroes"]["best_response"]
+    v, w, s = (np.array(nit[k]) for k in ("values", "widths", "hero_shares"))
+    low = int(v.argmin())
+    back = low + int(v[low:].argmax())
+    takeaways = [
+        f"Post hoc: against equilibrium play the adapters drift toward the equilibrium's "
+        f"ranges. Over all {drift['slow'][3]} starting bots, the total distance of their push "
+        f"and call widths from the equilibrium's falls from {drift['slow'][0]:.2f} to "
+        f"{drift['slow'][1]:.2f} for slow and {drift['fast'][1]:.2f} for fast adapters, and "
+        f"{drift['slow'][2]:.0%} and {drift['fast'][2]:.0%} of them end closer. Fast adapters "
+        f"never settle, though: from hand 500 on, the five fast examples' push widths still "
+        f"range from {min(wander):.0%} to {max(wander):.0%}, against equilibrium play and a "
+        "best response alike.",
+        f"Post hoc: what a best response changes is the hero's value. From hand 500 on it "
+        f"varies {np.median(spread):.1f} times as much from block to block as equilibrium "
+        f"play's (median over these {len(adapters)} adapters; more in "
+        f"{sum(x > 1 for x in spread)}), and in {sum(x < 0 for x in below)} of them it drops "
+        f"below zero, to as low as {min(below):+.2f} bb/hand. Equilibrium play cannot lose to "
+        f"any bot over both seats, and here its value never falls below {eq_low:+.3f}.",
+        f"Post hoc: the slow nit shows a chase. The best response starts pushing every hand at "
+        f"hand {block * int(np.argmax(s[:, 0] > 0.995)):,}; the bot answers by calling "
+        f"{w[low, 1]:.0%} of hands (from {w[0, 1]:.0%}), and by hand {block * low:,} the "
+        f"hero's value has fallen to {v[low]:+.3f} bb/hand. The bot keeps widening its pushes, "
+        f"to {w[:, 0].max():.0%}, the hero calls {s[back, 1]:.0%} in turn, and its value "
+        f"swings back to {v[back]:+.3f} before both settle near "
+        f"{v[1000 // block :].mean():+.3f} from hand 1,000.",
+    ]
+    return section(
+        "adaptive-example",
+        "One bot, four ways of reacting",
+        "The same starting bot, from the first replicate, as a static bot and as three kinds of "
+        "adapter, against different heroes: how its ranges move and what each hero earns.",
+        sources=[ADAPTIVE],
+        controls=[
+            control("bot", "Starts as", archs),
+            control("kind", "Bots", AD_KINDS),
+            control("show", "Show", [("widths", "Its ranges"), ("value", "Hero's value")]),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="Example bots: the first bot of each archetype in the first replicate (the "
+        "same random numbers for every hero). The takeaways describe the trajectories after the "
+        "run (post hoc); the drift toward equilibrium is measured on every starting bot, from "
+        "its start and end widths.",
         post_hoc=True,
     )
