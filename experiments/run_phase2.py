@@ -12,6 +12,8 @@ summary and light/dark figures under ``experiments/results/<name>/``):
    perfect-regressor ablation (P2.4). Needs the ``nn`` extra (PyTorch); skipped otherwise.
 3. ``exploit``: modeling Leduc archetype bots from showdown-only observations and exploiting
    them with best, restricted Nash and data-biased responses, evaluated exactly (P2.6-P2.7).
+4. ``aivat``: AIVAT control variates against the plain result and duplicate dealing, exact
+   variances in Leduc and in P3.3's push/fold matchups, and the hero's own view (P2.11).
 """
 
 from __future__ import annotations
@@ -24,7 +26,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("cfr", "deep_cfr", "exploit")
+STEPS = ("cfr", "deep_cfr", "exploit", "aivat")
 
 
 def run(
@@ -37,10 +39,15 @@ def run(
 ) -> dict[str, float]:
     # Experiment modules are imported here: worker processes re-import this module (Windows
     # spawn) and should not each load matplotlib, scikit-learn or torch.
-    from experiments import phase2_cfr, phase2_deep_cfr, phase2_exploit
+    from experiments import phase2_aivat, phase2_cfr, phase2_deep_cfr, phase2_exploit
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
-    modules = {"cfr": phase2_cfr, "deep_cfr": phase2_deep_cfr, "exploit": phase2_exploit}
+    modules = {
+        "cfr": phase2_cfr,
+        "deep_cfr": phase2_deep_cfr,
+        "exploit": phase2_exploit,
+        "aivat": phase2_aivat,
+    }
     elapsed = {}
     for k, step in enumerate(steps, start=1):
         if step == "deep_cfr" and importlib.util.find_spec("torch") is None:

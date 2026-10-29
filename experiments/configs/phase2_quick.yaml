@@ -25,3 +25,14 @@ exploit:
   ps: [0.5, 0.9]
   dbr_pseudocount: 10
   workers: 4
+aivat:
+  bots_per_archetype: 1
+  rnr_p: 0.9
+  cfr_checkpoints: [1, 10]
+  half_width: 0.1
+  sampled_bots: 1
+  sampled_pairs: 300
+  pushfold:
+    stacks: [3]             # not a stack of the full run
+    half_width: 0.05
+  workers: 4
