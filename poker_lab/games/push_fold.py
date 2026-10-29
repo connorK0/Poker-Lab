@@ -105,6 +105,12 @@ class PushFoldGame(Game):
         i, j = state.deal
         return f"{CLASSES[i]}|" if state.history == "" else f"{CLASSES[j]}|p"
 
+    def observer_key(self, state: PushFoldState, hidden: int) -> str:
+        if state.deal is None:
+            return "|"
+        sb, bb = ("?" if p == hidden else CLASSES[c] for p, c in enumerate(state.deal))
+        return f"{sb},{bb}|{state.history}"
+
 
 @cache
 def _unit_tree(matchups: Matchups) -> tuple[GameTree, np.ndarray]:

@@ -124,3 +124,7 @@ class LeducHoldem(Game):
         player = self.current_player(state)
         public = self.deck[state.cards[2]] if len(state.cards) > 2 else ""
         return f"{self.deck[state.cards[player]]}{public}|{'/'.join(state.rounds)}"
+
+    def observer_key(self, state: LeducState, hidden: int) -> str:
+        cards = ("?" if i == hidden else self.deck[c] for i, c in enumerate(state.cards))
+        return f"{''.join(cards)}|{'/'.join(state.rounds)}"

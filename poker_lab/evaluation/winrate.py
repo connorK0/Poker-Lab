@@ -8,8 +8,10 @@ reduction:
   paired difference. ``DuplicateDealEvaluator`` implements the paired estimator.
   TODO(Phase 5): engine hook to replay a recorded deck sequence with permuted seats.
 * AIVAT (Burch et al., 2018): subtract control variates built from a value function and the
-  known strategies of chance and of the hero. ``AIVATEvaluator`` is the interface.
-  TODO(Phase 2/5): needs Phase 2 value estimates; refuses to run until they exist.
+  known strategies of chance and of the hero. ``AIVATEvaluator`` applies them;
+  ``poker_lab.evaluation.aivat`` builds them for games compiled to a tree (P2.11).
+  TODO(Phase 5): hold'em needs a value function over its states, and full AIVAT needs the
+  opponents' cards from every hand (P2.11 measures the hero's own view without them).
 """
 
 from __future__ import annotations
@@ -135,11 +137,13 @@ class DuplicateDealEvaluator(Evaluator):
 
 
 class AIVATEvaluator(Evaluator):
-    """AIVAT-style variance reduction (interface only).
+    """AIVAT-style variance reduction.
 
     ``correction(hand_result) -> float`` must return the sum of control-variate terms (in big
-    blinds) for that hand. AIVAT builds them from chance-node and hero-decision values under
-    a value function; each term has zero expected value, so the estimate stays unbiased.
+    blinds) for that hand: the result minus the AIVAT estimate. AIVAT builds them from
+    chance-node and hero-decision values under a value function; each term has zero expected
+    value, so the estimate stays unbiased. For games compiled to a tree,
+    ``poker_lab.evaluation.aivat.control_variates`` gives the estimate at every terminal.
     """
 
     def __init__(self, correction: Callable[[HandResult], float] | None = None) -> None:
@@ -148,8 +152,8 @@ class AIVATEvaluator(Evaluator):
     def evaluate(self, results: Sequence[HandResult]) -> WinRateEstimate:
         if self.correction is None:
             raise NotImplementedError(
-                "TODO(Phase 2/5): AIVAT needs a value function over public states (Phase 2) "
-                "to build zero-mean control variates for chance and hero decisions."
+                "TODO(Phase 5): AIVAT for hold'em needs a value function over its states; "
+                "small games get theirs from poker_lab.evaluation.aivat."
             )
         adjusted = np.array([r.net_bb - self.correction(r) for r in results], dtype=float)
         iv = t_interval(adjusted)

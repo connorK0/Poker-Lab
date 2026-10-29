@@ -21,6 +21,7 @@ player's own earlier actions (perfect recall).
 from __future__ import annotations
 
 from collections import deque
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -87,6 +88,17 @@ class GameTree:
         """Index of the sequence (information set ``key``, ``action``)."""
         i = self.infoset_index[key]
         return int(self.seq_offset[i]) + self.infoset_actions[i].index(action)
+
+    def follow(self, labels: Iterable[str]) -> int:
+        """The node reached from the root along edge ``labels`` (chance outcomes and actions)."""
+        node = 0
+        for label in labels:
+            start = int(self.child_start[node])
+            children = self.labels[start : start + int(self.num_children[node])]
+            if label not in children:
+                raise ValueError(f"no edge {label!r} below node {node}")
+            node = start + children.index(label)
+        return node
 
     def sequences_of(self, player: int) -> np.ndarray:
         """Boolean mask over sequences owned by ``player``."""

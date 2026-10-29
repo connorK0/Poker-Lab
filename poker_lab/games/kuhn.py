@@ -64,3 +64,7 @@ class KuhnPoker(Game):
     def information_set(self, state: KuhnState) -> str:
         player = self.current_player(state)
         return f"{RANKS[state.cards[player]]}|{state.history}"
+
+    def observer_key(self, state: KuhnState, hidden: int) -> str:
+        cards = ("?" if i == hidden else RANKS[c] for i, c in enumerate(state.cards))
+        return f"{''.join(cards)}|{state.history}"

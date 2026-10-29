@@ -56,3 +56,12 @@ class Game(ABC):
     @abstractmethod
     def information_set(self, state: Hashable) -> str:
         """Key of the acting player's information set at a decision state."""
+
+    def observer_key(self, state: Hashable, hidden: int) -> str:
+        """Everything about ``state`` except player ``hidden``'s private cards (any state).
+
+        Two states share a key if and only if someone who sees the other player's cards, the
+        public cards and every action cannot tell them apart. AIVAT (P2.11,
+        ``poker_lab.evaluation.aivat``) averages over the states that share a key.
+        """
+        raise NotImplementedError(f"{self.name} defines no observer keys")
