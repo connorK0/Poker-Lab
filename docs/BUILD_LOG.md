@@ -68,6 +68,7 @@ $B(a,b)$ the beta function.
   * [Step 34: A sequence model over raw actions](#step-34-a-sequence-model-over-raw-actions-against-hand-written-stats-p38)
   * [Step 35: Schema v2](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310)
   * [Step 36: Opponents that adapt to the hero](#step-36-opponents-that-adapt-to-the-hero-p39)
+  * [Step 37: Phase 3 wrap-up](#step-37-phase-3-wrap-up-one-command-reproduced)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -3665,7 +3666,7 @@ equilibrium; whether adapters settle as close to equilibrium in deeper games is 
 
 **Engineering.** The results record 19,097 s (5.3 hours) on 12 processes, but that is wall time:
 the laptop was closed, and asleep, for most of the run (the pitfall of C.3). The development
-pilots put the work at about 1.8 hours. The results file is 18.7 MB, since it keeps every refit's
+pilots put the work at about 1.8 hours; the Phase 3 wrap-up measured 1.6 (Step 37). The results file is 18.7 MB, since it keeps every refit's
 record. The figures were redrawn from it after the run: a legend moved off the data, the panels'
 separate scales stated, and one color per meaning in the value figure (no number changed).
 
@@ -3695,9 +3696,134 @@ separate scales stated, and one color per meaning in the value figure (no number
   and fitting once decides once and then keeps its strategy; a window limits the hands used; the
   clairvoyant reads the bot; a small run of the tasks aggregates into all eight predictions, with
   the equilibrium hero's gain exactly zero and the static bots' widths unmoved.
-* Experiment: `python -m experiments.run_phase3 --seed 2026 --only adaptive` (about 1.8 hours
-  on 12 processes by the pilots' estimate; the real run's 5.3 hours of wall time include the
-  laptop sleeping); smoke test with `--quick`.
+* Experiment: `python -m experiments.run_phase3 --seed 2026 --only adaptive` (1.6 hours on 12
+  processes, measured in the Phase 3 wrap-up, Step 37; the pre-registered run's 5.3 hours of
+  wall time include the laptop sleeping); smoke test with `--quick`.
+
+## Step 37: Phase 3 wrap-up: one command, reproduced
+
+Step 24 set the rule for ending a phase: rerun every experiment from one command and a clean
+commit, and compare the new results with the committed ones. Phase 3 has eleven steps, written
+over five days, and several later steps changed code that earlier steps use. The rerun answers
+two questions: does the code still produce what the repository says it produced, and, where it
+does not, why?
+
+**What was built.** Two small tools for Step 24's protocol.
+
+* `run_phase3 --out DIR` writes a run to another folder. Without it, a reproduction run
+  overwrites the committed results in place, and every step after the first records
+  `dirty: True`. Each step reads the dirty flag when it starts (Step 14), and by then the
+  earlier steps have rewritten tracked files. With `--out` pointing at an untracked folder, a
+  run from a clean checkout stays clean from first step to last. The explorer is rebuilt only
+  from the default folder.
+* [`experiments/compare_runs.py`](../experiments/compare_runs.py) turns Step 24's comparison
+  script into a tested module. It walks two results folders and lists every difference outside
+  provenance and timing:
+  * JSON files field by field, floats exactly. It skips the top-level `meta` block (commit,
+    timestamp, package versions) but requires `meta.config` to match. It skips wall-clock keys,
+    matched as whole words after splitting the key at underscores (`seconds`, `elapsed`,
+    `time`, `ms` and a few more). A substring match would have skipped `fallback_second_half`,
+    the data behind one of Step 36's predictions, because it contains "second".
+  * Markdown summaries line by line. It skips provenance lines, the cells of timing columns in
+    tables, and times in milliseconds inside sentences ("6.5 ms each"). Only the time itself is
+    masked, so a changed count on the same line is still reported.
+  * PNG figures byte for byte, then pixel by pixel, because two encoders can write the same
+    image as different bytes.
+
+**The run.** `python -m experiments.run_phase3 --seed 2026 --out DIR` ran all eleven steps from
+commit `98449f0`. It ran in a git worktree outside the synced OneDrive folder, so work in the
+main checkout could not touch it.
+
+**Results.**
+
+* **Eight steps reproduced exactly**: every number, summary line and figure of pushfold,
+  exploit, bridge, recommend, priors, sequence, schema and adaptive. That includes the two
+  longest, the sequence models (PyTorch, five replicates) and Step 36's 18.7 MB of
+  refit-by-refit records.
+* **Three steps differ, each through a later change that was made on purpose:**
+  * *import* (Step 32) now accepts 10,012 of the 10,088 public files instead of 10,001. Schema
+    v2 (Step 35) can hold a big-blind ante, so the 11 WSOP hold'em hands that Step 32 rejected
+    for that reason now import, as Step 35 reports. Both prediction verdicts are unchanged.
+    PokerKit's loader still disagrees on 8 hands, every one a split pot's odd chip, and every
+    accepted hand still survives export and import.
+  * *fitcheck* (Step 30) and *confirm* (Step 31) keep every number, but some example
+    explanations now begin "Recommended: ..." where they said "Model check failed: ... play the
+    equilibrium". Step 31 made the stability check the recommender's only fallback by default,
+    so a failed hand-order check now only warns that the intervals are unreliable. The examples
+    use the default. fitcheck also reports the stability-only rule, which joined its list of
+    rules when Step 31 was planned.
+* **Rerun at their own commits, the three match.** To show that those changes are the whole
+  story, the three steps were run again at the commits their results record (`3c1f25c`,
+  `c4c15d0` and `7f50502`). Every JSON field and summary line is identical. The figures are
+  not, and the reason is a gap in provenance. In Steps 30 and 32, the figure code was fixed after
+  the run (a legend moved off the data, an axis un-inverted), and the figures were redrawn from
+  the saved JSON in the results commit. So the committed figures come from newer code than the
+  commit their JSON records. They match the figures drawn at `98449f0` exactly.
+
+The committed results were kept, as in Step 24: they are the record of the pre-registered runs,
+with clean provenance. The rerun counts as verification.
+
+**How long it takes.** The run took 10.5 hours of wall time (14:01 to 00:31), and the laptop's
+lid was closed for 6.5 of them. The Windows System log records each closure (see C.3), so the
+time awake can be measured, not guessed:
+
+| Step | This run, awake (s) | Committed record (s) |
+|---|---|---|
+| pushfold | 72 | 48 |
+| exploit | 240 | 217 |
+| bridge | 1,283 | 1,168 |
+| recommend | 177 | 164 |
+| fitcheck | 445 | 445 |
+| confirm | 424 | 442 |
+| import | 51 | 40 |
+| priors | 841 | 529 |
+| sequence | 4,919 (28,318 of wall time) | 13,657 |
+| schema | 86 | 62 |
+| adaptive | 5,868 | 19,097 |
+| **all** | **14,406 (4.0 hours)** | |
+
+* **A closed lid pauses the run almost entirely.** The sequence step's five replicates took
+  979 and 985 s when nothing interrupted them, and 4,232, 5,786 and 16,306 s across three lid
+  closures. Subtract each closure and they come back to between 930 and 1,000 s.
+* **A screen turned off by the idle timeout did not slow it.** Through 35 minutes of that,
+  each of adaptive's 12 worker processes used as many CPU seconds as wall seconds.
+* **Two committed records are wall time across sleep too:** sequence's 13,657 s (3.8 hours;
+  Step 34 already says most of it was a stall) and adaptive's 19,097 s (5.3 hours; Step 36).
+  Measured awake, they take 1.4 and 1.6 hours.
+* **Two differences are not explained.** Priors took 841 s against 529, with no standby
+  recorded; the laptop was recharging from a 7% battery at the time, which some laptops
+  throttle for. Pushfold and exploit ran during a screen-off standby that began a minute
+  before the run.
+
+**What it means.** A one-command reproduction tests the repository, not just the code. Results
+are a snapshot taken at one commit, and the code moves on. Here every difference traced to a
+change that was intended and written up where it was made, and none was a bug. The figure gap
+is the lesson to carry forward: a figure redrawn after a run should say so in a place a reader
+of the results will see. Here only the commit messages did.
+
+**Mistakes.**
+
+* The first check of whether the laptop had slept looked only for Kernel-Power events 42 and
+  107, which Windows writes for S3 sleep and hibernation. This laptop uses Modern Standby,
+  which writes events 506 and 507 instead, with a reason such as "Lid". The check found
+  nothing, and a test run that took 20 minutes instead of about 2.5 was blamed on the low
+  battery. The lid had been closed for 18 of those minutes.
+* The first comparison script matched wall-clock keys as substrings, so it would have skipped
+  `fallback_second_half`. The tool's own test caught it before the run.
+* Times in milliseconds (`ms_per_hand`, "6.5 ms each") were not recognized as timing at first,
+  so schema and import showed differences that were only timing. Recognizing them took one key
+  word and one pattern, both tested.
+
+**Verification.**
+
+* `tests/test_compare_runs.py` (2 tests). The tool must skip provenance, timing keys, timing
+  columns, milliseconds inside sentences, and a PNG written with a different compression
+  level. It must report a float changed in its last bit, a changed config, a changed data key
+  whose name contains "second", a changed table cell, a changed count on a line that also holds
+  a time, a changed pixel, and an extra file.
+* Reproduction: `python -m experiments.run_phase3 --seed 2026 --out DIR`, then
+  `python -m experiments.compare_runs experiments/results/phase3 DIR`. It exits 1 if anything
+  is listed.
 
 ---
 
@@ -3723,11 +3849,12 @@ separate scales stated, and one color per meaning in the value figure (no number
 | Shared randomness | two heroes facing copies of one adaptive bot from the same seed get identical deals and differ only in their actions (`tests/test_push_fold_adaptive.py`, 6 tests); each session block's value equals the exact head-to-head value; the experiment's heroes refit on schedule and on their window (`tests/test_adaptive_experiment.py`, 4 tests) (Step 36) | a paired comparison is only as good as its pairing |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
+| Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 404 tests and runs in about two minutes (the Deep CFR and
+players). The suite has 406 tests and runs in about two minutes (the Deep CFR and
 sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -3745,6 +3872,9 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   so the pre-registered run is the first time the analysis sees the real data.
 * External data are pinned: the PHH dataset is fetched at a fixed git commit into a cache
   outside the project, and results record that commit and a SHA-256 over every file read.
+* A reproduction run writes to an untracked folder (`--out`) from a git worktree, so every
+  step records a clean tree. Figures carry no provenance of their own: two were redrawn after
+  their run by newer code than the commit their JSON records (Step 37).
 
 ## C.3 Platform lessons (Windows, PowerShell, OneDrive)
 
@@ -3769,10 +3899,14 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   matching (this happened twice, and once to this very sentence). Edit such files with an
   editor tool, or use raw strings.
 * *Sleep inside long runs:* a laptop that sleeps stretches a run's wall time (one network's
-  fit took 8,706 s instead of 23 s in Step 34, one step took 2 hours in Step 33, and Step 36's
-  run recorded 5.3 hours with the laptop closed for most of it). Results are unaffected, but
-  read the per-step times before reporting how long anything takes, and know whether the
-  machine slept.
+  fit took 8,706 s instead of 23 s in Step 34, one step took 2 hours in Step 33, Step 36's
+  run recorded 5.3 hours with the laptop closed for most of it, and the Phase 3 wrap-up spent
+  6.5 of its 10.5 hours with the lid closed). Results are unaffected, but read the per-step
+  times before reporting how long anything takes, and know whether the machine slept. On a
+  Modern Standby laptop the System log shows sleep as Kernel-Power events 506 and 507 (entering
+  and leaving standby, with a reason such as Lid or Idle Timeout); events 42 and 107 appear
+  only for S3 sleep and hibernation. A closed lid paused the wrap-up run almost entirely; a
+  screen turned off by the idle timeout did not slow it (Step 37).
 
 ## C.4 Figures
 
@@ -3842,9 +3976,12 @@ numeric table next to it, so no number depends on reading a color.
 | An odd-chip allowance of less than one unit, pre-registered for PokerKit's loader, assumed one leftover unit; three winners can leave two, and PokerKit gives both to one winner | the real run (5 of 80,000 checks failed) | reported as a failed prediction; a post-hoc re-check in whole units explains all 73 differences | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 | A content hash over gzip files changed between identical runs (gzip headers carry a timestamp) | comparing two runs' results field by field | hash the decompressed content | [35](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310) |
 | A first design with only slow and fast adapters left almost nothing to exploit: both drifted to near-equilibrium ranges against every hero | the development pilot on seeds 98 and 99 | a calls-only adapter that keeps a leak, added before the pre-registration | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
-| A run's wall time (5.3 hours, the laptop closed for most of it) was reported as its run time, three times the pilots' estimate | the owner, who knew the laptop had been closed | report times only from runs the machine stayed awake through; the Phase 3 wrap-up run measures it again | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| A run's wall time (5.3 hours, the laptop closed for most of it) was reported as its run time, three times the pilots' estimate | the owner, who knew the laptop had been closed | report times only from runs the machine stayed awake through; the Phase 3 wrap-up run measured 1.6 hours | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 | Two explorer takeaways claimed more than the data show (an adapter's ranges "chase the hero's"; the best response loses because the hero's model remembers every hand) | checking each sentence against the plotted trajectories and the results file | rewritten as numbers computed from the results file, labeled post hoc | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
 | A legend covered a curve's first point; one figure used one color for a hero in one panel and a kind of bot in the other | looking at the figures | legend moved, colors reassigned, figures redrawn from the results file | [36](#step-36-opponents-that-adapt-to-the-hero-p39) |
+| A check for sleep looked only for Kernel-Power events 42 and 107; the laptop uses Modern Standby, which writes 506 and 507, so an 18-minute lid closure was missed and a slow test run blamed on the battery | listing every Kernel-Power event during the wrap-up run | check both pairs (C.3) | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
+| A comparison script matched wall-clock keys as substrings, so it would have skipped `fallback_second_half`, a data field | the tool's own test | keys split at underscores and matched as whole words | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
+| Figures redrawn in a results commit by newer code than the commit their JSON records, said only in the commit message | a rerun at the recorded commits, whose figures differed | noted in C.2 and Step 37 | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
 
 ---
 
@@ -3880,6 +4017,7 @@ numeric table next to it, so no number depends on reading a color.
 | Dead money | chips in the pot that no player has to match, such as antes; they are won, never returned as an uncalled bet |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
+| Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
 | Effective sample size (ESS) | for weighted draws, $1 / \sum_k w_k^2$: how many equally weighted draws the sample is worth |
@@ -3912,6 +4050,7 @@ numeric table next to it, so no number depends on reading a color.
 | Migration (of a schema) | reading records written in an older version of a format as the current version, filling in what the old version implied |
 | Minimum bet | the smallest bet allowed, which is also the smallest raise increment before anyone raises; usually one big blind |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
+| Modern Standby | the sleep mode of many recent Windows laptops (S0 low-power idle): the system stays nominally on, and programs run slowly or not at all; logged as Kernel-Power events 506 and 507 |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
@@ -4145,3 +4284,8 @@ Software design
   equilibrium were corrected while writing it up.
 * 2026-10-28: Step 36's run time corrected: the 5.3 hours the results record are wall time, with
   the laptop closed for most of the run (the pilots' estimate was about 1.8 hours).
+* 2026-10-29: Step 37 (Phase 3 wrap-up). Reproduction run at `98449f0`, 2026-10-28 14:01 to
+  2026-10-29 00:31, compared with `compare_runs`; the three differing steps rerun at their
+  recorded commits. Times come from the run's log, with the lid-closed intervals taken from the
+  Windows System log (Kernel-Power 506 and 507). Step 36's run time updated to the measured 1.6
+  hours.
