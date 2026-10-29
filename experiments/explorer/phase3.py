@@ -1,4 +1,4 @@
-"""Explorer sections for Phase 3: from hand histories to exploit recommendations (in progress)."""
+"""Explorer sections for Phase 3: from hand histories to exploit recommendations."""
 
 from __future__ import annotations
 
@@ -266,7 +266,10 @@ def overview(
             "straddles and other minimum bets, reads version 1 files by migrating them, and "
             "imports the hold'em hands of a modern tournament final table (P3.10). Bots that "
             "adapt to the hero take most of the money off the table, for equilibrium play too; "
-            "what survives is exploiting the leaks they do not fix (P3.9)."
+            "what survives is exploiting the leaks they do not fix (P3.9). One command reruns "
+            "every step: at commit 98449f0 eight of the eleven reproduce exactly, and the other "
+            "three differ only through later changes described in their sections (they "
+            "reproduce exactly at the commits their results record)."
         ),
     }
 
@@ -3070,7 +3073,7 @@ def build(load) -> dict[str, Any]:
         "id": "phase3",
         "label": "Phase 3",
         "title": "General framework: hand histories to exploit recommendations",
-        "status": "active",
+        "status": "done",
         "summary": head["summary"],
         "tiles": head["tiles"],
         "provenance": [
