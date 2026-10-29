@@ -17,6 +17,9 @@ poker_claude_code_prompt.md
 PROGRESS.md
 handoff.md
 
+# Superseded material kept locally, such as the output of past reproduction runs
+outdated/
+
 # Local tool settings and secrets
 .claude/
 .env
