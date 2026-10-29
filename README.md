@@ -10,10 +10,11 @@ will do next?** And once you know, **how much can you win by exploiting it, and 
   small games. It solves Kuhn and Leduc poker with CFR variants, Deep CFR and an LP. It then
   models Leduc bots from what a player can see and exploits them with best, restricted Nash
   and data-biased responses.
-* **Phase 3** (in progress) carries both questions to hold'em, starting with heads-up
-  push/fold. It solves that game exactly, models push/fold opponents and ranks exploits with
-  posterior intervals and model-fit checks, and imports real hand histories in the PHH format.
-  It then tests the bot-trained models on the professionals of the Pluribus hands.
+* **Phase 3** carries both questions to hold'em, starting with heads-up push/fold. It solves
+  that game exactly, models push/fold opponents and ranks exploits with posterior intervals and
+  model-fit checks, and imports real hand histories in the PHH format. It then tests the
+  bot-trained models on the professionals of the Pluribus hands, and the exploits against
+  opponents that adapt to them.
 
 Every claim is measured on held-out players across independent seeds with confidence
 intervals. The repository also contains the typed skeleton that Phases 4–5 (home-game
@@ -326,7 +327,7 @@ per hand won above the equilibrium strategy against the same bot. Equilibrium pl
 * Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
   (Phase 3).
 
-## Phase 3 (in progress): a bridge to hold'em
+## Phase 3: a bridge to hold'em
 
 Phase 3 turns hand histories into ranked exploit recommendations. Its first step carries the
 Phase 2 solvers to real hold'em with heads-up push/fold. The small blind goes all-in or
@@ -341,6 +342,17 @@ It has 143k nodes and 338 information sets, and the Phase 2 LP and CFR solve it 
 Reproduce with `python -m experiments.run_phase3 --seed 2026 --only pushfold` (1 min).
 Results come from commit `3aa83c2`; see
 [`pushfold_summary.md`](experiments/results/phase3/pushfold/pushfold_summary.md).
+
+**Reproduced from one command.** A single `run_phase3 --seed 2026` at commit `98449f0` (about 4
+hours on 16 cores) reproduced 8 of the 11 steps exactly; only wall-clock timings differ. The
+other three differ only through two later changes, both described below. Since schema v2
+(P3.10), the import step also accepts the 11 WSOP hands with a big-blind ante (10,012 hands
+instead of 10,001; both prediction verdicts unchanged). Since P3.5b made the stability check
+the only fallback, some example explanations in the fit-check and confirmation steps are worded
+as recommendations (every number identical). Rerun at the commits their results record, those
+three steps reproduce exactly too. The committed results are the original runs.
+`python -m experiments.compare_runs` lists every difference between two runs
+([build log, Step 37](docs/BUILD_LOG.md#step-37-phase-3-wrap-up-one-command-reproduced)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/pushfold/pushfold_chart-dark.png">
@@ -676,21 +688,24 @@ python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
 python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
 
-# Phase 3 so far: push/fold solved and checked (1 min), opponents modeled (4 min),
-# the solved strategy played through the real engine (20 min), recommendations evaluated (3 min),
-# model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
+# Reproduce every Phase 3 experiment: push/fold solved and checked (1 min), opponents modeled
+# (4 min), the solved strategy played through the real engine (21 min), recommendations evaluated
+# (3 min), model-fit checks evaluated (7 min), the fallback rule confirmed on fresh seeds (7 min),
 # hand histories imported and checked (1 min; downloads 12 MB of public PHH data once),
-# priors fit to real players and transfer checks (9 min with the Phase 1 simulation cache),
-# the sequence model against Phase 1's classifier (about 1.4 h; needs PyTorch),
+# priors fit to real players and transfer checks (9-14 min with the Phase 1 simulation cache),
+# the sequence model against Phase 1's classifier (1.4 h; needs PyTorch),
 # schema v2 checked and the v1 code's output migrated (1 min; needs git history),
-# opponents that adapt (about 5.3 h)
-python -m experiments.run_phase3 --seed 2026          # ~7.6 h on 16 cores
+# opponents that adapt (1.6 h). Keep the machine awake: a sleeping laptop pauses the run.
+python -m experiments.run_phase3 --seed 2026          # ~4 h on 16 cores
 python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence, schema or adaptive
+python -m experiments.run_phase3 --seed 2026 --out ../rerun/phase3   # write elsewhere, to check a reproduction
+python -m experiments.compare_runs experiments/results/phase3 ../rerun/phase3   # every difference outside provenance and timing
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
 ```
 
-Outputs go to `experiments/results/phase1/` and `experiments/results/phase2/{cfr,deep_cfr,exploit}/`.
+Outputs go to `experiments/results/phase1/`, `experiments/results/phase2/{cfr,deep_cfr,exploit}/`
+and `experiments/results/phase3/<step>/`.
 Each step writes a JSON file with every number (per seed and aggregated, plus seed, config, git
 commit, dirty flag and package versions), a markdown summary, and figures in light and `-dark`
 variants. Phase 1's simulated hands are cached in `experiments/cache/` (git-ignored) so
@@ -833,13 +848,12 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
 | 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
-| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **In progress**: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
+| 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **Done** for heads-up push/fold and the general pipeline (import, profiles, recommendations, checks), not full hold'em solving. Every step reproduces from one command: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
 
 Next tasks:
 
-* **Phase 3.** A wrap-up: every step reproduced end to end from one command and a clean commit.
 * **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; duplicate dealing for
   more than two players and AIVAT control variates; Leduc opponents that adapt or play outside
   the bot family.
@@ -851,7 +865,7 @@ Next tasks:
 
 ## Development
 
-* Tests: `python -m pytest` (404 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (406 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
   skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
