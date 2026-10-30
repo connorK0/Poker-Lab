@@ -71,6 +71,8 @@ $B(a,b)$ the beta function.
   * [Step 37: Phase 3 wrap-up](#step-37-phase-3-wrap-up-one-command-reproduced)
   * Phase 2, completed after Phase 3
   * [Step 38: Variance reduction with AIVAT](#step-38-variance-reduction-with-aivat-measured-exactly-p211)
+  * Performance
+  * [Step 39: Faster code, identical results](#step-39-faster-code-identical-results)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -4295,6 +4297,290 @@ worker processes. The plan had expected minutes. After the run the Leduc figure 
   the simulated ratios are centred on 1, reproducible, and the same drawn in blocks.
 * Post hoc check: `python -m experiments.phase2_aivat_posthoc --seed 2026`.
 
+## Step 39: Faster code, identical results
+
+**The question.** Two steps take three quarters of a Phase 3 rerun: adaptive (Step 36) and
+sequence (Step 34), 1.6 and 1.4 of the wrap-up run's 4.0 awake hours (Step 37). The owner asked
+for faster code under one hard rule: every committed result must come out the same, bit for bit.
+A speedup that moved a probability in its last digit would make every later comparison with the
+committed results a judgment call; under the rule, `compare_runs` (Step 37) decides. Each changed
+step is rerun with `python -m experiments.run_phase3 --seed 2026 --only <step> --out DIR` and
+compared with `python -m experiments.compare_runs experiments/results/phase3 DIR <step>`, which
+skips only provenance and wall-clock keys. Anything but "0 differences" sends the change back
+(for two steps the reference is Step 37's rerun of the old code; see Results).
+
+**Profile first.** As in Step 1, measurement came before any change (`cProfile` and timers). In
+adaptive, the restricted Nash response LPs (HiGHS through SciPy's `linprog`, Step 22) took 74-75%
+of the time spent on one bot in the full configuration (bot 0, against fast and static
+adapters) and 82% in the quick configuration. In sequence, training took 61% of the step,
+re-simulating the replicates with an empty cache about 31%, and prediction 6.6%. The profiles
+gave a ranked plan; the owner approved it and chose the top three items.
+
+**Amdahl's law.** If a fraction $f$ of a program's time is made $s$ times faster and the rest is
+untouched, the time becomes
+
+$$T' = T\Big[(1 - f) + \frac{f}{s}\Big], \qquad
+  \frac{T}{T'} = \frac{1}{(1 - f) + f/s} \le \frac{1}{1 - f}.$$
+
+The bound is the limit $s \to \infty$: the part removed entirely. Amdahl (1967) made the point
+about parallel computers, where the part that cannot be split limits the gain however many
+processors there are; the algebra holds for speeding up any part. For adaptive at full size,
+with $f = 0.745$, LPs that cost nothing would still leave $1 - f = 0.255$ of the time: at most
+3.9× faster (5.6× in the quick configuration, $f = 0.82$). In sequence, the change below
+touches prediction only, 6.6% of the time, so the most it can save is 6.6% (1.07×). Both
+bounds were computed post hoc, from the profiles taken before the changes. The law says where
+to look before a change and, after it, whether a measured speedup can be the change's at all.
+
+**1. Compute only the branch that is used.** Each refit of a P3.9 hero called `recommend`, which
+builds Step 29's whole ranked report: the equilibrium, a restricted Nash response for each $p$
+(one LP per seat and $p$: ten LPs with the default five values) and the best response, each
+scored against every posterior draw. The hero kept one entry. Two cases never need the LPs:
+
+* the *Bayes best-response* hero plays the best response to the posterior mean, in closed form
+  (`hand_gains`, Step 26);
+* when the stability check fails, the advice is the equilibrium, computed once in advance. Step
+  36 counted fallbacks on 64% and 49% of the refitting hero's refits from hand 1,000 on, against
+  slow and fast adapters.
+
+`PushFoldRecommender.choose(data, rule=..., seed=...)` returns only the advice (a `Choice`) and
+solves the LPs only when the candidates must be ranked. Computing a value only when it is needed
+is *lazy evaluation*. Skipping work is exact when the skipped work is *pure* as far as later work
+can tell: the ranking (and the population recommendation it computes once) draws only from
+random generators it seeds itself and changes no state that a later result reads (the caches it
+fills return what a fresh computation would), so leaving it out cannot change anything after
+it. The work that the advice itself needs (the posterior with the given seed, the fit checks
+with that seed extended by 1) runs in both paths, in the same order. Both paths call the same
+functions (`_evidence`, then `_rank` when ranking), so they cannot drift apart.
+
+**2. Reuse LP solutions.** *Memoization* (Michie 1968) stores a function's results under its
+arguments and answers a repeated call from memory. It is exact when two things hold: the key
+determines the input completely, and the function gives the same output for the same input.
+`_solve` keeps, per process, the solutions of the last `SOLVED_SIZE = 2048` LPs, keyed on the
+exact bytes of everything the LP is built from: SHA-1 digests of the sparse matrices $A$, $E$ and
+$F$ (shape, dtypes, and the `data`, `indices` and `indptr` arrays that store a sparse matrix row
+by row), the objective's float64 bytes, the weight $1 - p$ as float64 bytes, and a digest of the
+data-biased response's extra rows $G$ (Step 22) when there are any. HiGHS is deterministic, so
+the same bytes give the same solution, and a hit returns exactly what a solve would have.
+
+* *A key may be stricter than the input, never looser.* $0.0$ and $-0.0$ are equal numbers with
+  different bytes, and one matrix can be stored in two sparse layouts; either costs a miss, not a
+  wrong answer. An objective rounded to 12 digits would be a looser key and could return the
+  answer to a different LP.
+* *Collisions.* Among $n$ different inputs, two share a SHA-1 digest with probability about
+  $n^2 / 2^{161}$: about $2^{-121}$ for a million. (SHA-1 is no longer safe against collisions
+  built on purpose, which do not arise here.)
+* *What would break it:* a solver that is not a function of its input (a time limit, so the answer
+  depends on the machine's speed; randomness without a fixed seed; a parallel sum whose order
+  depends on which thread finishes first); another solver version or options; and changing a form's
+  matrices or a stored solution in place. Options matter at this precision: in the profile, the same
+  LPs solved with HiGHS's presolve turned off gave solutions up to $1.28 \times 10^{-11}$ away. The
+  memo lives and dies with one process, so it never meets another version or other options; a cache
+  on disk would need them in its key, as Step 14's simulation cache needs the code fingerprint.
+  Every caller who asks for the same LP gets the same array, so one caller's edit would reach the
+  next. The arrays are stored read-only, and an edit raises an error.
+
+The memo is a *least-recently-used* (LRU) cache: an `OrderedDict` in which a hit moves its entry
+to the end, a new entry goes at the end, and above 2,048 entries the first, the one used longest
+ago, is dropped; each step costs $O(1)$. Recency is the usual bet: what was used recently tends to
+be used again soon. The bound caps memory. A push/fold solution has 339 entries (169 classes × 2
+actions, plus the empty sequence); with the objective in the key, an entry takes about 5.4 kB,
+about 11 MB in all.
+
+The same commit moves one computation out of a loop. The LP of Step 22 maximizes
+$p\,(A y_{\text{fix}})^\top x + (1-p)\,f^\top q$, and $A y_{\text{fix}}$ does not depend on $p$.
+`restricted_nash_sweep` computes the model's realization plan and $A y_{\text{fix}}$ once per seat
+instead of once per $p$. The same routine on the same inputs gives the same bytes, and each
+objective is then formed exactly as before.
+
+**3. Keep embeddings between predictions.** A fitted `SequenceClassifier` predicts many sets of
+windows of the same players: every window size and calibration in part A, then the transfer
+checks (Step 34). Each call encoded every hand again. Now the classifier keeps each hand's
+embedding between predictions, keyed by the identity of the `HandSequences` object and the exact
+tuple of players in the block of 16 that was encoded together.
+
+*Why the block, not the player.* Floating-point addition is not associative: every operation
+rounds, so the order of a sum can change its last bit. In double precision
+$(0.1 + 0.2) + 0.3 = 0.6000000000000001$, while $0.1 + (0.2 + 0.3) = 0.6$. A matrix product is
+many such sums, and the libraries PyTorch calls choose how to split and order them from the
+matrices' shapes and the number of threads (blocks sized for the processor's cache, vector lanes,
+a share per thread). So a batched product is not guaranteed to equal, bit for bit, the same rows
+computed in another batch. The profile found one such case: predicting every window size in one
+call (the same blocks of players, but more windows in each product of the output layer) gave
+probabilities that were not bit-identical to one call per size, while reusing embeddings from
+the same blocks gave identical bytes. Whether a hand's embedding changes with its block was not
+tested; keying by the block makes the question moot. The network computes in 32-bit floats, for
+which one *ulp* (unit in the last place) just above 1 is $2^{-23} \approx 1.2 \times 10^{-7}$;
+`compare_runs` compares floats exactly and would report a one-ulp change. Keyed by the block, a
+reused embedding is always one computed in exactly the batch that would compute it again. The
+thread count must stay fixed for the same reason (Step 34 already required it for reproducible
+fits).
+
+*Why identity, and what it assumes.* The LP memo reads the objective's bytes and hashes $G$ on every
+call; each form's matrices are hashed once, when the form is built, which assumes they are not
+changed in place afterwards. The embedding memo keys on the object instead. In CPython `id()` is the
+object's address, which a new object can take once the old one is freed, so the classifier holds
+every `HandSequences` it keeps embeddings for. An identity key cannot see a change of content, so
+the module docstring states the preconditions: the weights change only through `fit` (which clears
+the memo), the thread count stays fixed, and sequences are not changed in place. Nothing is freed
+before the next `fit`, so repeated predictions should pass the same object (a new one only misses
+and costs memory). A pickle or deep copy starts with an empty memo (`__getstate__`): its keys are
+the ids of the original's objects, which the copy does not hold. The price is memory: about
+0.27-0.38 GB more at the peak, from about 4.1 GB.
+
+**How it was done.** The changes were made on a branch in a git worktree outside OneDrive, with
+separate worktrees for profiling, the test runs and the reruns. A reviewer subagent read each
+diff before its commit. None of its findings changed a result in the experiments (no caller
+modifies the returned arrays); its fixes are under Mistakes, plus documentation (`falls_back`,
+the memo's preconditions). The suite went
+from 444 to 457 tests, all passing. The reruns ran one at a time. Commits: `90ae418` (`choose`,
+the LP memo and the sweep), `90f18f9` (their tests), `34eea0e` (the embedding memo) and
+`eea6815` (its tests).
+
+**Results.** Both changed steps reproduced the committed results exactly: `compare_runs` reported
+"adaptive: 0 differences" and "sequence: 0 differences" ("total: 0 differences outside provenance
+and timing"). The other steps that call the changed code were rerun the same way. Phase 3's exploit
+and recommend and Phase 2's exploit and aivat match the committed results (aivat's two post hoc
+files come from a separate script, so the rerun does not have them). Fitcheck and confirm match
+Step 37's rerun of the old code exactly; against the committed results they show the same 53 and
+23 differences that Step 37 found and explained.
+
+| Measurement | Old code | New code |
+|---|---|---|
+| adaptive, quick configuration, one after the other | 54 s | 28 s (48% less) |
+| sequence, quick configuration, alternating, 3 rounds (the first with an empty simulation cache; post hoc) | 40.1 s, then 21.2 and 21.0 s | 37.6 s, then 18.5 and 18.6 s (rounds 2-3: about 12% less) |
+| sequence: 40 `predict_proba` calls on a real replicate's pools (1 training epoch, 8 threads), identical bytes | GRU model 29.3 s, counters network 4.4 s | 2.5 s and 1.2 s |
+| adaptive, seed 2026 | 5,868 s awake (Step 37's run) | 2,492 s (58% less) |
+| sequence, seed 2026 | 4,919 s awake (Step 37's run) | about 3,230 s awake (34% less; mostly not the change, below) |
+
+The first three rows compare old and new code in one session; the last two compare runs on
+different days.
+
+**Run times, awake only** (C.3).
+
+* The sequence run took 13,032 s of wall time. For about 9,800 s of it (about 13:04 to 15:47) its
+  process was suspended at the owner's request (`NtSuspendProcess`, then `NtResumeProcess`). A
+  suspended process, like a laptop with its lid closed, gets no processor time while the clock
+  runs, so that interval is subtracted: about 3,230 s awake.
+* Later in that run the laptop entered Modern Standby with the reason "Idle Timeout" (screen
+  off). Step 37 found that this standby does not slow a step's workers, and here replicates 2-5
+  took 628-648 s each.
+* The adaptive run spent most of its time (about 37 of its 42 minutes) in the same idle-timeout
+  standby. As in Step 37 that counts as awake, so its 2,492 s compare directly with Step 37's
+  5,868 s.
+* Apart from the three alternating quick-configuration rounds of the sequence step, every time
+  here is from a single run; none has a confidence interval.
+
+**Against Amdahl's bound** (post hoc: computed for this step, after the runs).
+
+*sequence's full-step gain is mostly not the change.* The memo can save at most 6.6% of the step;
+the step took 34% less time (1.52×). Training, which the change does not touch (`fit` neither
+fills nor reads the memo, and the training code is unchanged since Step 34's run), took 27-39%
+less time, fit by fit (seconds per replicate):
+
+| Fit | Committed run | This run |
+|---|---|---|
+| Sequence model (GRU) | 201-216 | 145-148 |
+| Order dropped | 42-46 | 28-29 |
+| Counters network | 22.5-24 | 15.2-15.7 |
+| Part C, order dropped | 209-217 | 136-156 |
+| Part C, counters network | 115-119 | 76-81 |
+
+Left out: a committed counters fit of 8,705.6 s, during which the laptop slept, and this run's
+first GRU fit, which spans the suspension. In Step 37's two uninterrupted replicates training took
+601 s of 979 and 985; here it took 403-424 s of 628-648. So about 190 of the roughly 350 s each
+replicate saved came from training, on a machine that ran faster that day; of the rest, about
+60 s is the memo's (the profile's 300 s over five replicates) and about 100 s other work, such
+as simulation, that also ran faster. Why the machine was faster was not found. The old code's
+two smaller part-A fits have run at this speed before: in Step 37's third replicate they took
+29.7 and 16.3 s. Load from other programs, the laptop's power and thermal state, and the
+screen being off for replicates 2-5 are candidates, not tested. The memo's own effect is the
+same-session rows of the table: with old and new code alternating in one session, training
+took the same time (8.5-8.7 s per run, all ten fits), and the new code saved 2.4-2.7 s per run,
+about 12% of a warm run's 21 s. That is more than the full-size bound because the quick
+configuration trains a smaller network for 8 epochs instead of 30, so prediction is a larger
+share of its time. At full size the profile put the saving at about 300 s of the step, about
+6%, inside the bound.
+
+*adaptive stays inside it.* In the quick configuration, old and new run one after the other, the
+new time is $28/54 = 0.519$ of the old; with that configuration's share, solving
+$0.519 = 0.178 + 0.822/s$ gives $s \approx 2.4$: the part the changes act on took about 2.4× less
+time ($f$ counts the LPs only; `choose` also skips realization plans and the ranking's scoring,
+a few percent more). The full step's $2{,}492/5{,}868 = 0.425$ gives $s \approx 4.4$ with the
+full-size share. The two need not agree: a full session is 2,000 hands with five values of $p$,
+a quick one 300 hands with three, so the share of refits that fall back, and skip the LPs, may
+differ (Step 36 measured it from hand 1,000 on); and the full-step run came from the same faster
+day as the sequence run. The quick configuration's 48%, from one same-session pair, is the clean
+number for that configuration. The two adaptive changes were measured together, and the code
+does not count cache hits, so how much each gave is not known.
+
+**What was left.**
+
+* Transfer reads the test bots through `bots.inputs`, a different `HandSequences` object from part
+  A's `inputs` for the same players, so the memo misses and those players are encoded once more
+  per model.
+* Refitting a `SequenceClassifier` keeps its old `history` (new losses are appended to it) and,
+  when the refit fits no per-size temperatures, its old `size_temperatures`. This is older than
+  this step and has nothing to do with speed; the experiments fit a new classifier every time, so
+  no result is affected.
+
+**What it means.** An exact speedup is argued first and tested second. A cache is exact when its
+key determines the input and the function is deterministic; skipping work is exact when the work
+is pure. The tests check the facts those arguments rest on (the same bytes, the expensive call
+made or not), and `compare_runs` checks each step whole. The profile said where the time was
+worth attacking (three quarters of adaptive's time was LPs); Amdahl's law, applied after the
+runs (post hoc), said which measured gain could be the change's. Adaptive's could; most of
+sequence's 34% could not, and a comparison across days would have credited the memo with a
+faster machine. A speedup is measured with old and new code in one session.
+
+**Mistakes.**
+
+* `choose` first returned the recommender's own equilibrium arrays on a fallback, so a caller
+  that changed them would have changed every later recommendation. The reviewer caught it; it now
+  returns copies.
+* `restricted_nash_sweep` first iterated over its `p` values once per seat, so a generator, which
+  can be read only once, would have failed. The reviewer caught it; it now makes a tuple first.
+* A pickle or deep copy of a classifier would have carried the embedding memo, keyed by the ids
+  of the original's objects. The reviewer caught it; `__getstate__` drops the memo.
+* The first report of the sequence rerun credited the change with the step's 34%. Amdahl's bound,
+  computed while drafting this step, says the change can give at most 6.6% (post hoc); the
+  same-session comparison was run after that.
+
+**Limitations.**
+
+* The times are single runs on a laptop whose speed varied between days by more than some of the
+  effects; the clean comparisons are the same-session ones.
+* The adaptive LP share at full size comes from one bot's sessions, and LP cache hits are not
+  counted.
+* The embedding memo's preconditions are documented, not checked by the code.
+
+**Verification.**
+
+* `tests/test_recommend.py` (1 new test): `choose` equals the report's advice and its best
+  response, for data whose advice is the equilibrium, a restricted Nash response and the best
+  response; an unknown rule raises.
+* `tests/test_fit_checks.py` (4 new tests): with checks that fail, only warn and pass, `choose`
+  equals the report's advice with the same numbers; spies on `_solve` and `linprog` see no LP on a
+  fallback or for the best response, and at least as many as seats times $p$ values for a
+  ranking.
+* `tests/test_leduc_exploit.py` (4 new tests): a repeated LP is answered from memory, also for a
+  responder compiled again, with HiGHS's own read-only solution (a fresh solve gives the same
+  bytes); LPs one ulp apart in an objective entry or the weight, with other $G$ values, for the
+  other seat or for another tree's payoffs do not share an entry; least-recently-used eviction;
+  the sweep equals the single responses bit for bit, with the memo warm and cold.
+* `tests/test_sequence_model.py` (4 new tests): repeated predictions encode each block once and
+  give the bytes of predictions from scratch; two `HandSequences` of the same players keep their
+  own embeddings, and a new object never inherits a freed one's; a refit forgets the old
+  embeddings; `fit` encodes its held-out players afresh every epoch and leaves nothing behind; a
+  deep copy starts empty and predicts the same bytes. `tests/test_adaptive_experiment.py`'s
+  window test now spies on `choose`.
+* Reruns: `python -m experiments.run_phase3 --seed 2026 --only adaptive --out DIR`, then
+  `python -m experiments.compare_runs experiments/results/phase3 DIR adaptive`; the same for
+  sequence, exploit, recommend, fitcheck and confirm (fitcheck and confirm also against Step 37's
+  rerun), and for Phase 2's exploit and aivat through `run_phase2.run(..., out_dir=DIR)`.
+* Same-session timing: `python -m experiments.run_phase3 --quick --seed 2026 --only sequence
+  --out DIR` from a worktree of the old commit (`f3d628c`) and one of the new (`eea6815`),
+  alternating, with `compare_runs` between each pair.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -4322,11 +4608,13 @@ worker processes. The plan had expected minutes. After the run the Leduc figure 
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
+| Bit-for-bit optimization | each faster path checked against the slow one exactly: `choose` against the full report (by value), repeated predictions against predictions from scratch, a cached LP against a fresh HiGHS solve, a sweep against single responses; each changed step rerun and compared by `compare_runs` (Step 39) | a speedup that moves a result is a change of method |
+| Counting the expensive calls | spies wrap `linprog`, `_solve` and the encoder: no LP on a fallback or for the best response, an evicted LP solved again, each block of players encoded once (Step 39) | checks that the work is skipped, not only that the answer is right |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 444 tests and runs in about two minutes (the Deep CFR and
+players). The suite has 457 tests and runs in about two minutes (the Deep CFR and
 sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -4347,6 +4635,10 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
 * A reproduction run writes to an untracked folder (`--out`) from a git worktree, so every
   step records a clean tree. Figures carry no provenance of their own: two were redrawn after
   their run by newer code than the commit their JSON records (Step 37).
+* Caches inside a process must never change a result. The LP memo keys on its inputs' exact
+  bytes; the embedding memo keys on objects it holds, under preconditions its docstring states.
+  Both die with their process; a cache on disk would also need the code and solver versions in
+  its key, as the simulation cache has its fingerprint (Step 39).
 
 ## C.3 Platform lessons (Windows, PowerShell, OneDrive)
 
@@ -4379,6 +4671,10 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   and leaving standby, with a reason such as Lid or Idle Timeout); events 42 and 107 appear
   only for S3 sleep and hibernation. A closed lid paused the wrap-up run almost entirely; a
   screen turned off by the idle timeout did not slow it (Step 37).
+* *Speed varies between days:* unchanged training code took 27-39% less time on 2026-10-30 than
+  in the committed Step 34 run, for reasons not found (Step 39). Measure a speedup with old and new
+  code in one session, and check a step-level comparison against Amdahl's bound. A process
+  suspended on purpose (`NtSuspendProcess`) is subtracted like a closed lid.
 
 ## C.4 Figures
 
@@ -4461,6 +4757,10 @@ Invert once, and look at every figure before committing it.
 | A pre-registered ±3% tolerance on sampled SDs ignored kurtosis: for Nash against Nash with duplicate dealing (kurtosis 475 at 5 bb) a sampled SD's relative standard error is 3.4%, and in simulation the band is missed 39% of the time at 5 bb and 62% at 10 bb | the real run: F1 failed at 0.957 | reported as failed; post hoc, z-scores with a kurtosis-aware standard error $\sqrt{(\kappa - 1)/(4n)}$ (largest 2.92); set a tolerance on a sampled SD from its own standard error | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
 | `invert_yaxis()` on both panels of a shared-y figure, again: the Leduc figure's rows were upside down (Step 32's mistake, repeated) | looking at the figure after the run | invert once; the figure redrawn from `aivat.json` (no number changed); C.4 | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
 | The sampled check compared every estimator with the true value, so the biased estimator failed it as well as the bias prediction (one fault counted twice) | development runs on seeds 98 and 99 | compare each sample with that estimator's own exact mean; judge bias exactly (A1, C2); disclosed in the plan | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
+| `choose` returned the recommender's own equilibrium arrays on a fallback; a caller that changed them would have changed every later recommendation | the reviewer subagent's reading of the diff | return copies | [39](#step-39-faster-code-identical-results) |
+| `restricted_nash_sweep` iterated over its `p` values once per seat, so a generator would have failed | the reviewer subagent | make a tuple first | [39](#step-39-faster-code-identical-results) |
+| A pickle or deep copy of a `SequenceClassifier` would have carried its embedding memo, keyed by the ids of the original's objects | the reviewer subagent | `__getstate__` drops the memo; a test checks that a copy starts empty and predicts the same bytes | [39](#step-39-faster-code-identical-results) |
+| The first report of the sequence rerun credited the embedding memo with the step's 34%; unchanged training code took 27-39% less time that day | Amdahl's bound from the profile: the memo can save at most 6.6% (post hoc) | a same-session comparison of old and new code; C.3 | [39](#step-39-faster-code-identical-results) |
 
 ---
 
@@ -4472,6 +4772,7 @@ Invert once, and look at every figure before committing it.
 | AIVAT | a win-rate estimator for a player whose strategy is known: control-variate terms at chance and hero steps plus imaginary observations; unbiased for any value function, but it needs the opponent's cards after every hand (Burch et al. 2018; Step 38) |
 | All-in | betting every remaining chip |
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
+| Amdahl's law | if a fraction $f$ of the time is made $s$ times faster, the whole is $1/((1 - f) + f/s)$ times faster, never more than $1/(1 - f)$ (Amdahl 1967; Step 39) |
 | Bayes action | the decision with the highest posterior expected payoff |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
 | Best response | a strategy that maximizes payoff against a fixed opponent |
@@ -4498,6 +4799,7 @@ Invert once, and look at every figure before committing it.
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
 | Delta method | the variance of a smooth function of an estimate, from its slope: $\operatorname{Var}(g(\hat\theta)) \approx g'(\theta)^2 \operatorname{Var}(\hat\theta)$ |
+| Digest (hash) | a short fixed-size fingerprint of a byte string (here SHA-1, 160 bits); equal inputs give equal digests, and different inputs share one with negligible probability unless built to by an attacker (Step 39) |
 | Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
@@ -4526,13 +4828,16 @@ Invert once, and look at every figure before committing it.
 | Kurtosis | $\kappa = \mathbb E[(X - \mu)^4] / \sigma^4$, 3 for a normal distribution; large when rare extreme values carry most of the variance, which makes a sample SD noisy: its relative standard error is about $\sqrt{(\kappa - 1)/(4n)}$ |
 | Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
 | Law of total variance | $\operatorname{Var}(Y) = \mathbb E[\operatorname{Var}(Y \mid D)] + \operatorname{Var}(\mathbb E[Y \mid D])$: the spread within groups plus the spread between them |
+| Lazy evaluation | computing a value only when it is needed; skipping unneeded work is exact when that work is pure (changes no state that later work reads, a shared random generator included) (Step 39) |
 | Leave one player out | fit on every player but one, score the one; repeated for each, so no player is in its own training data |
 | Log-loss | mean negative log-probability of the true class |
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
+| LRU cache | a cache of bounded size that, when full, drops the entry used longest ago (Step 39) |
 | Mahalanobis distance | distance scaled by a covariance, $(x - \mu)^\top S^{-1}(x - \mu)$: how many standard deviations away, in every direction at once |
 | Martingale | a sequence whose expected next value, given everything so far, is its current value; its steps have mean zero and are uncorrelated |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
+| Memoization | storing a function's results under its arguments and answering repeated calls from memory; exact when the key determines the input and the function is deterministic (Michie 1968; Step 39) |
 | Mid-p value | a p-value that counts ties with the observed statistic as half, for discrete statistics |
 | Migration (of a schema) | reading records written in an older version of a format as the current version, filling in what the old version implied |
 | Minimum bet | the smallest bet allowed, which is also the smallest raise increment before anyone raises; usually one big blind |
@@ -4542,6 +4847,7 @@ Invert once, and look at every figure before committing it.
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
+| Non-associativity (floating point) | $(a + b) + c$ and $a + (b + c)$ can differ in the last bit because every operation rounds, so a sum depends on its order and a batched computation on its batch (Step 39) |
 | Odd chip | the chip left over when a pot does not split evenly; rules give it to one winner, some records split it in halves |
 | Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
@@ -4550,6 +4856,7 @@ Invert once, and look at every figure before committing it.
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
+| Profiler | a tool that measures where a program spends its time; Python's is `cProfile` (Steps 1, 39) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Rao-Blackwell | replacing an estimator by its conditional expectation given some information never increases its variance (here: scoring each block by its exact expected value instead of the chips won) |
@@ -4569,6 +4876,7 @@ Invert once, and look at every figure before committing it.
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Token (of a hand) | one of a player's decisions in a hand (situation, action, size), or the hand's closing outcome, as a vector a sequence model reads |
 | Tower property | $\mathbb E\big[\mathbb E[X \mid S]\big] = \mathbb E[X]$: averaging a conditional expectation over what it conditions on gives the plain expectation |
+| ulp | unit in the last place: the gap between a floating-point number and the next; just above 1 it is $2^{-52}$ for 64-bit floats and $2^{-23}$ for 32-bit floats (Step 39) |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | Value function (for control variates) | any number per history or class used to build control-variate terms; the estimate stays unbiased whatever it is, and loses more variance the closer it is to the true expected value |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
@@ -4711,6 +5019,14 @@ Software design
   Concurrency Control.* PhD thesis. (Object capabilities)
 * King, A. (2019). *Parse, don't validate.* Blog post.
 
+Performance and numerics
+
+* Amdahl, G. M. (1967). *Validity of the Single Processor Approach to Achieving Large Scale
+  Computing Capabilities.* AFIPS Spring Joint Computer Conference. (Amdahl's law; Step 39)
+* Michie, D. (1968). *"Memo" Functions and Machine Learning.* Nature 218. (Memoization; Step 39)
+* Goldberg, D. (1991). *What Every Computer Scientist Should Know About Floating-Point
+  Arithmetic.* ACM Computing Surveys 23(1). (Rounding, ulps, non-associativity; Step 39)
+
 ---
 
 # Changelog of this log
@@ -4793,3 +5109,14 @@ Software design
   figure was redrawn from `aivat.json` after the run with fixed figure code (its two panels each
   inverted the shared y axis, so the rows were upside down); no number changed. The step was
   drafted by a subagent from the results files and checked against them before it was added.
+* 2026-10-30: Step 39 (performance: `choose`, the LP memo and sweep, the embedding memo;
+  commits `90ae418`, `90f18f9`, `34eea0e` and `eea6815`). Reruns on seed 2026 compared with
+  `compare_runs`: adaptive, sequence, exploit, recommend and Phase 2's exploit and aivat match
+  the committed results; fitcheck and confirm match Step 37's rerun of the old code. Times come
+  from the runs' logs, with the suspended interval from its suspend and resume times and
+  standby from the Windows System log (Kernel-Power 506 and 507). Computed for this step (post
+  hoc): the Amdahl bounds, the fit-by-fit training times of the committed, wrap-up and new
+  sequence runs, the wrap-up run's fast third replicate, and the same-session quick-configuration
+  comparison of the sequence step. C.1's test count updated (457). The step was drafted by a
+  subagent from the diffs, run logs and results files and checked against them before it was
+  added.
