@@ -401,7 +401,10 @@ other three differ only through two later changes, both described below. Since s
 instead of 10,001; both prediction verdicts unchanged). Since P3.5b made the stability check
 the only fallback, some example explanations in the fit-check and confirmation steps are worded
 as recommendations (every number identical). Rerun at the commits their results record, those
-three steps reproduce exactly too. The committed results are the original runs.
+three steps reproduce exactly too. The committed results are the original runs. Three later
+speed-ups (build log Step 39) change no result: every step that uses the changed code gives the
+same results as before them. Run back to back with the old code, the adaptive step's quick
+configuration takes 48% less time and the sequence step's about 12% less.
 `python -m experiments.compare_runs` lists every difference between two runs
 ([build log, Step 37](docs/BUILD_LOG.md#step-37-phase-3-wrap-up-one-command-reproduced)).
 
