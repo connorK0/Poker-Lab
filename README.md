@@ -198,10 +198,12 @@ response, never from sampled play. Exploitability is NashConv / 2 in chips per h
 0.46 in Kuhn and 2.37 in Leduc. Reproduce with `python -m experiments.run_phase2 --seed 2026`
 (~15 min on 16 cores). The CFR, Deep CFR and exploitation results come from commits `53eb199`,
 `d09ad62` and `963cee6`. A single `run_phase2` at commit `348c4d5` reproduced every number
-exactly; only wall-clock timings differ. Full tables:
+exactly; only wall-clock timings differ. AIVAT (P2.11, added after Phase 3) comes from its
+pre-registered run at `695cb26`. Full tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
-[`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md).
+[`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
+[`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md).
 
 **Checked against independent references first.** The best response reproduces the published
 uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
@@ -314,6 +316,54 @@ per hand won above the equilibrium strategy against the same bot. Equilibrium pl
   <img alt="Gain against the true bot vs exploitability for restricted Nash responses from equilibrium to best response, for models built from 30, 300 and 3000 hands, the oracle and the card-blind model" src="experiments/results/phase2/exploit/exploit_frontier.png">
 </picture>
 
+### 4. AIVAT: far fewer hands for a win rate, if every hand's cards are shown (P2.11)
+
+A live home game (Phase 5) cannot deal every hand twice and will not reach tens of thousands of
+hands. AIVAT (Burch et al., 2018) subtracts, at every step whose probabilities the evaluator
+knows (chance and the hero's own decisions), the change in a value function minus its expected
+change, and averages over the cards the hero could have held. Each term has mean zero, so the
+estimate stays unbiased whatever the value function. In Leduc and in P3.3's push/fold matchups
+every estimator's mean and variance are computed exactly from the game tree. Ratios below are
+how many times fewer hands an estimator needs than the plain result for the same interval.
+12 of 13 pre-registered predictions hold.
+
+* **With every hand's cards shown, AIVAT cuts the hands needed by 27× for an equilibrium hero**
+  in Leduc (median ratio over 50 bots, every bot at least 10×; the median bot needs 282 hands
+  for ±0.1 chips/hand instead of a median of 6,332) and by 4.3× for an exploiting hero (restricted Nash response, p = 0.9). What it
+  cannot remove is the luck in the opponent's decisions, which it cannot price without the
+  opponent's strategy.
+* **A rough value function keeps much of it.** Values from uniform play still give 9.1×; values
+  from 30 CFR+ iterations match the exact equilibrium's (29–30× against 27×).
+* **Duplicate dealing adds little on top**: 1.02× for the equilibrium hero, 1.24× for the
+  exploiting hero.
+* **Without the opponent's cards, almost nothing is left.** An estimator that never uses them,
+  not even those shown at a showdown, gains 1.04–1.05× in Leduc and 1.14–1.20× in push/fold.
+  Correcting the board as if the opponent's card were uniform over the unseen cards gives
+  1.5–1.9×, but is biased: with the equilibrium's values by up to 0.058 chips/hand for the
+  exploiting hero, more than half the ±0.1 the intervals aim for.
+* **Push/fold, Nash hero:** 29×, 70× and 22× fewer hands than all-in EV at 5, 10 and 20 bb
+  (median ratios over the five archetype bots); the median bot needs 60, 45 and 206 hands for
+  ±0.05 bb/hand, against medians of 1,737, 4,329 and 10,796 for all-in EV.
+* **In self-play AIVAT has exactly zero variance** (the paper's Table 1: 0.0064 chips/hand). An
+  equilibrium mixes only between actions of equal value, so with its own values nothing
+  uncorrected changes the value. The plain result's SD, 3.497, matches the paper's 3.513.
+* **A failed prediction.** F1 predicted that P3.3's sampled standard deviations would be within
+  3% of the exact ones in all 66 estimates; one was 0.957 (5 bb, Nash against Nash, duplicate +
+  all-in EV). *Post hoc*: that estimate is nearly always zero (kurtosis 475), so a sampled SD
+  from 100,000 pairs has a 3.4% standard error and the miss is z = −1.25; a ±3% band would be
+  missed 39% of the time even with exact agreement. Scored with kurtosis-aware standard errors,
+  all 65 estimates with variance look like noise (largest |z| 2.92)
+  ([`aivat_posthoc_summary.md`](experiments/results/phase2/aivat/aivat_posthoc_summary.md)).
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/aivat/aivat_leduc-dark.png">
+  <img alt="How many times fewer hands each estimator needs than the plain result in Leduc, for 50 bots, with an equilibrium hero and an exploiting hero: AIVAT about 27 and 4.3 times, the hero's own view about 1.05 times" src="experiments/results/phase2/aivat/aivat_leduc.png">
+</picture>
+
+What a live evaluation can claim therefore depends mostly on whether the opponents' cards are
+seen after every hand, folded ones included, and AIVAT also needs the hero to play a known
+strategy exactly, mixing included. Both are open questions for Phase 4's capture.
+
 **What Phase 2 does not show.**
 
 * The bots follow the same five-parameter family the model fits, so apart from the card-blind
@@ -322,8 +372,9 @@ per hand won above the equilibrium strategy against the same bot. Equilibrium pl
 * The bots are very exploitable (1.0 chip per hand on average, against 2.37 for uniform random
   play) and they do not adapt when exploited.
 * Values are exact expectations. At a real table a strategy is judged from sampled results
-  with large variance. Duplicate dealing (`engine/duplicate.py`) is built and tested for that,
-  and Phase 5 will use it.
+  with large variance. Duplicate dealing (`engine/duplicate.py`) and AIVAT
+  (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
+  no AIVAT value function yet.
 * Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
   (Phase 3).
 
@@ -437,7 +488,9 @@ game (commit `9bdab59`;
   against opponents who play like the hero (5.2× for the LAG, 1.4× for the nit).
 * **What this means for Phase 5.** A live home game will not reach tens of thousands of
   hands, and duplicate dealing is impossible at a real table. Win-rate claims there will need
-  control variates for every chance node (AIVAT).
+  control variates for every chance node (AIVAT). P2.11 measured them: on top of all-in EV they
+  cut the hands needed 22–70× for the Nash hero, but only if every hand's cards are shown and
+  the hero plays a known strategy exactly.
 
 **Ranked recommendations with confidence (P3.4).** The recommender takes what the hero has
 seen of one opponent, built from completed hand histories only, and ranks the possible
@@ -686,7 +739,7 @@ python -m experiments.run_phase1 --seed 2026 --quick  # smoke test, ~1 min (not 
 # Reproduce every Phase 2 experiment (Deep CFR is skipped if PyTorch is missing)
 python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
 python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
-python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr or exploit
+python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr, exploit or aivat
 
 # Reproduce every Phase 3 experiment: push/fold solved and checked (1 min), opponents modeled
 # (4 min), the solved strategy played through the real engine (21 min), recommendations evaluated
@@ -832,7 +885,8 @@ poker_lab/
   strategy/    StrategyProvider, baselines, push/fold provider over the solved game (Phase 3)
   exploit/     exact small-game exploit engines; ranked push/fold recommendations;
                hold'em ExploitEngine + stubs (Phase 3)
-  evaluation/  metrics, intervals, win-rate Evaluator, duplicate/AIVAT hooks (Phase 5)
+  evaluation/  metrics, intervals, win-rate Evaluator, duplicate dealing, AIVAT control
+               variates (exact for small games; Phase 5)
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
   importers/   PHH text files -> HandHistory, strictly replayed through PokerKit; exporter; CLI
@@ -847,16 +901,15 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 | Phase | Goal | What exists now |
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
-| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README. Hold'em-scale exploitability (local best response) is a stretch task |
+| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README, including AIVAT measured exactly (P2.11). Hold'em-scale exploitability (local best response) is a stretch task |
 | 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **Done** for heads-up push/fold and the general pipeline (import, profiles, recommendations, checks), not full hold'em solving. Every step reproduces from one command: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
-| 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT hook |
+| 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT control variates (exact for small games; hold'em needs a value function) |
 
 Next tasks:
 
 * **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; duplicate dealing for
-  more than two players and AIVAT control variates; Leduc opponents that adapt or play outside
-  the bot family.
+  more than two players; Leduc opponents that adapt or play outside the bot family.
 * **Phase 4.** A card detector with calibrated confidence, an action-entry app that records
   through the sealed store, a review screen for capture conflicts, and a consent and
   data-handling policy for recording other players.
@@ -865,7 +918,7 @@ Next tasks:
 
 ## Development
 
-* Tests: `python -m pytest` (406 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
+* Tests: `python -m pytest` (444 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
   solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
   skip without PyTorch).
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
