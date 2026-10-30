@@ -33,7 +33,8 @@ from experiments.explorer.spec import (
 CFR = "experiments/results/phase2/cfr/cfr_convergence.json"
 DEEP = "experiments/results/phase2/deep_cfr/deep_cfr.json"
 EXPLOIT = "experiments/results/phase2/exploit/exploit.json"
-SOURCES = (CFR, DEEP, EXPLOIT)
+AIVAT = "experiments/results/phase2/aivat/aivat.json"
+SOURCES = (CFR, DEEP, EXPLOIT, AIVAT)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -76,7 +77,9 @@ HANDS = axis("Hands observed (bot cards seen only at showdown)", scale="log", fm
 ARCH_OPTIONS = [("all", "All bots"), *[(a, ARCHETYPE_LABELS[a]) for a in ARCHETYPES]]
 
 
-def overview(cfr: dict[str, Any], deep: dict[str, Any], ex: dict[str, Any]) -> dict[str, Any]:
+def overview(
+    cfr: dict[str, Any], deep: dict[str, Any], ex: dict[str, Any], av: dict[str, Any]
+) -> dict[str, Any]:
     leduc = cfr["full_width"]["leduc"]
     cfrp = leduc["cfr+"][-1]
     vanilla = leduc["cfr"][-1]
@@ -106,6 +109,14 @@ def overview(cfr: dict[str, Any], deep: dict[str, Any], ex: dict[str, Any]) -> d
                 "...of which the population prior alone",
                 f"+{pop:.3f}",
                 "a best response with zero hands observed (post hoc control)",
+            ),
+            tile(
+                "AIVAT: hands needed for a Leduc win rate",
+                f"{av['population']['equilibrium']['equilibrium']['aivat']['ratio']['median']:.0f}"
+                "× fewer",
+                "equilibrium hero, every hand's cards shown; "
+                f"{av['population']['equilibrium']['equilibrium']['hero_view']['ratio']['median']:.2f}"
+                "× with folded cards hidden",
             ),
         ],
         "summary": (
@@ -922,11 +933,407 @@ def model_accuracy(ex: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+AV_ROWS = (
+    "duplicate",
+    "mivat",
+    "mivat_io",
+    "aivat",
+    "aivat_duplicate",
+    "aivat_all",
+    "hero_view",
+    "hero_view_approx",
+)
+AV_LABEL = {
+    "chips": "Plain result",
+    "duplicate": "Duplicate dealing",
+    "mivat": "Chance terms only (MIVAT)",
+    "mivat_io": "Chance terms + imaginary observations",
+    "aivat": "AIVAT, every hand's cards shown",
+    "aivat_duplicate": "AIVAT + duplicate dealing",
+    "aivat_all": "AIVAT, the opponent's strategy known too",
+    "hero_view": "Hero's view (folded cards hidden)",
+    "hero_view_approx": "Hero's view + board terms (biased)",
+}
+# push/fold: the plain result is P3.3's all-in EV, so its colors follow the bridge section's
+AV_PF_LABEL = {
+    **AV_LABEL,
+    "chips": "All-in EV",
+    "duplicate": "Duplicate + all-in EV",
+}
+AV_COLOR = {
+    "chips": "c3",
+    "duplicate": "c4",
+    "aivat": "c1",
+    "aivat_duplicate": "c7",
+    "hero_view": "c5",
+    "hero_view_approx": "c2",
+}
+AV_HEROES = (("equilibrium", "Equilibrium hero", "c1"), ("exploiter", "Exploiting hero", "c3"))
+AV_VALUES = (
+    ("equilibrium", "Equilibrium values (LP)"),
+    ("oracle", "Oracle values (the true ones)"),
+    ("uniform", "Uniform-play values"),
+)
+AV_VALUE_TITLE = {
+    "equilibrium": "the exact equilibrium's values",
+    "oracle": "oracle values",
+    "uniform": "uniform-play values",
+}
+AV_PF_HEROES = (("nash", "Nash hero"), ("best_response", "Best-response hero"))
+AV_PF_HERO_TEXT = {"nash": "Nash", "best_response": "best-response"}
+AV_CAP = 1e9  # the experiment's ratio for an estimator with no variance left
+AV_ZERO_SD = 1e-9  # the experiment's threshold for "no variance"
+RATIO_X = axis("Times fewer hands than the plain result (log)", scale="log", fmt="x")
+
+
+def _times(x: float) -> str:
+    return "no variance left" if x >= AV_CAP else f"{x:.2f}×" if x < 10 else f"{x:,.0f}×"
+
+
+def _holds(p: dict[str, Any]) -> str:
+    return "holds" if p["pass"] else "does not hold"
+
+
+def _av_ratio(q: dict[str, float]) -> list[float | None] | None:
+    """[median, q25, q75] of a ratio, or None when the estimator has no variance left."""
+    if q["median"] >= AV_CAP:
+        return None
+    return [q["median"], *(None if q[k] >= AV_CAP else q[k] for k in ("q25", "q75"))]
+
+
+def _lower_first(label: str) -> str:
+    return label[0].lower() + label[1:]
+
+
+def _av_opponent(opp: str) -> str:
+    return "Nash" if opp == "nash" else ARCHETYPE_LABELS[opp]
+
+
+def _av_get(entry: dict[str, Any], name: str) -> dict[str, float]:
+    return entry["base"][name] if name in entry["base"] else entry["values"]["equilibrium"][name]
+
+
+def aivat_leduc(r: dict[str, Any]) -> dict[str, Any]:
+    pop, pred, cfg = r["population"], r["predictions"], r["meta"]["config"]
+    sp, paper = r["selfplay"], r["paper_selfplay_sd"]
+    selfplay = dots_chart(
+        "Leduc self-play: standard deviation per hand",
+        [AV_LABEL[n] for n in ("chips", *AV_ROWS)],
+        axis("Standard deviation per hand (chips)", lo=0),
+        [
+            dot_series(
+                "This run (exact)",
+                "c1",
+                [(_av_get(sp, n)["sd"],) for n in ("chips", *AV_ROWS)],
+            ),
+            dot_series(
+                "Burch et al. (2018), Table 1",
+                "muted",
+                [
+                    (r["paper_selfplay_sd"][n],) if n in r["paper_selfplay_sd"] else None
+                    for n in ("chips", *AV_ROWS)
+                ],
+            ),
+        ],
+        subtitle="The equilibrium against itself, with its own values, whichever value "
+        "function is selected above. The paper sampled hands and used approximate values; here "
+        f"every number is exact. Chance terms only differ from the paper's "
+        f"({_av_get(sp, 'mivat')['sd']:.2f} against {paper['mivat']:.2f}), for a reason not "
+        "established.",
+    )
+    views = {}
+    for value, _ in AV_VALUES:
+        notes = []
+        for n in AV_ROWS:
+            capped = [h for h, _, _ in AV_HEROES if pop[h][value][n]["ratio"]["median"] >= AV_CAP]
+            if not capped:
+                continue
+            every = all(pop[h][value][n]["ratio"]["min"] >= AV_CAP for h in capped)
+            heroes = " and ".join(lab.lower() for h, lab, _ in AV_HEROES if h in capped)
+            notes.append(
+                f"No dot for {AV_LABEL[n]} ({heroes}): no variance left "
+                + ("against any bot." if every else "for the median bot.")
+            )
+        views[value] = view(
+            dots_chart(
+                f"How many times fewer hands each estimator needs, {AV_VALUE_TITLE[value]}",
+                [AV_LABEL[n] for n in AV_ROWS],
+                RATIO_X,
+                [
+                    dot_series(
+                        hlabel, color, [_av_ratio(pop[h][value][n]["ratio"]) for n in AV_ROWS]
+                    )
+                    for h, hlabel, color in AV_HEROES
+                ],
+                subtitle=f"Median over the {len(r['bots'])} bots; whiskers: the middle half. "
+                "Variance of the plain result over the estimator's, per hand (a duplicate pair "
+                "counts as two hands).",
+                refs=[ref(1.0, "plain", axis_name="x")],
+            ),
+            selfplay,
+            notes=notes,
+        )
+    eq, ex = pop["equilibrium"], pop["exploiter"]
+    q = eq["equilibrium"]["aivat"]["ratio"]
+    bias = {h: pop[h]["equilibrium"]["hero_view_approx"]["max_abs_bias"] for h, _, _ in AV_HEROES}
+    takeaways = [
+        f"With every hand's cards shown, AIVAT needs {_times(q['median'])} fewer hands than "
+        f"the plain result for the equilibrium hero (middle half of the bots "
+        f"{_times(q['q25'])}-{_times(q['q75'])}, every bot at least {_times(q['min'])}; B1 "
+        f"{_holds(pred['B1'])}) and {_times(ex['equilibrium']['aivat']['ratio']['median'])} for "
+        f"the exploiting hero (B2 {_holds(pred['B2'])}).",
+        f"Oracle values (the true values of this hero against this bot, unavailable in "
+        f"practice) raise the equilibrium hero's savings to "
+        f"{_times(eq['oracle']['aivat']['ratio']['median'])}, "
+        f"{eq['oracle']['aivat']['ratio']['median'] / q['median']:.2f} times as many (B3 "
+        f"{_holds(pred['B3'])}). The exploiting hero reaches "
+        f"{_times(ex['oracle']['aivat']['ratio']['median'])}: what is left comes from the bot's "
+        "decisions, which AIVAT cannot correct without the bot's strategy. With it known too, "
+        "oracle values leave no variance.",
+        f"Dealing every deal twice adds little on top: "
+        f"{_times(eq['equilibrium']['aivat_duplicate']['ratio']['median'])} against "
+        f"{_times(q['median'])} (E1 {_holds(pred['E1'])}). Duplicate dealing alone gives "
+        f"{_times(eq['equilibrium']['duplicate']['ratio']['median'])}.",
+        f"Hide the folded cards and almost none of the savings are left: the hero's own view "
+        f"needs "
+        f"{_times(eq['equilibrium']['hero_view']['ratio']['median'])} and "
+        f"{_times(ex['equilibrium']['hero_view']['ratio']['median'])} fewer hands (C1 "
+        f"{_holds(pred['C1'])}). Also correcting the board, with the opponent's card taken as "
+        f"uniform over the cards the hero has not seen, gives "
+        f"{_times(eq['equilibrium']['hero_view_approx']['ratio']['median'])} and "
+        f"{_times(ex['equilibrium']['hero_view_approx']['ratio']['median'])}, but it is biased: "
+        f"by up to {bias['exploiter']:.3f} chips/hand against the bots for the exploiting hero, "
+        f"more than half the ±{cfg['half_width']} the intervals aim for, and "
+        f"{bias['equilibrium']:.3f} for the equilibrium hero (C2 {_holds(pred['C2'])}).",
+        f"In self-play AIVAT leaves no variance (SD {_av_get(sp, 'aivat')['sd']:.0e}, rounding "
+        f"error; the paper: {paper['aivat']} chips/hand with approximate values): an "
+        "equilibrium mixes only between actions of equal value, so with its own values the "
+        "opponent's choices, the steps AIVAT does not correct, never change the value. The "
+        f"plain result's SD {sp['base']['chips']['sd']:.3f} matches the paper's "
+        f"{paper['chips']}.",
+        f"Every estimator but the biased one is exactly unbiased ({pred['A1']['result']}; A1 "
+        f"{_holds(pred['A1'])}), and {cfg['sampled_pairs']:,} sampled duplicate deals for each "
+        f"of {cfg['sampled_bots'] * len(ARCHETYPES)} bots ({cfg['sampled_bots']} per archetype) "
+        f"and both heroes agree with the exact moments ({pred['A2']['result']}; A2 "
+        f"{_holds(pred['A2'])}).",
+    ]
+    return section(
+        "aivat-leduc",
+        "Win rates from fewer hands: AIVAT in Leduc",
+        "A live home game cannot deal every hand twice and will not reach tens of thousands of "
+        "hands. AIVAT (Burch, Schmid, Moravčík, Morrill and Bowling, 2018) subtracts, at every "
+        "step whose probabilities are known, the change in a value function minus its expected "
+        "change: luck the evaluator can price. Each such term has mean zero, so the estimate "
+        "stays unbiased whatever the values.",
+        sources=[AIVAT],
+        controls=[control("values", "Value function", AV_VALUES)],
+        views=views,
+        takeaways=takeaways,
+        method=f"{len(r['bots'])} Leduc bots ({cfg['bots_per_archetype']} per archetype). "
+        f"Heroes: the equilibrium, and a restricted Nash response (p = {cfg['rnr_p']}) to the "
+        "bot's true strategy. Every estimator's mean and variance are sums over the game tree, "
+        "so every number is exact; duplicate dealing's variance comes from per-deal moments. "
+        "Pre-registered predictions A1-E1 (seed 2026).",
+    )
+
+
+def aivat_values(r: dict[str, Any]) -> dict[str, Any]:
+    pred = r["predictions"]
+    names = ("aivat", "hero_view", "hero_view_approx")
+    views = {}
+    for hero, hlabel, _ in AV_HEROES:
+        rows = [row for row in r["curve"][hero] if row["value"].startswith("cfr+_")]
+        lp = next(row for row in r["curve"][hero] if row["value"] == "equilibrium")
+        views[hero] = view(
+            line_chart(
+                f"{hlabel}: savings by the quality of the values",
+                axis(
+                    "CFR+ iterations behind the values (1 = uniform play)", scale="log", fmt="int"
+                ),
+                axis("Times fewer hands than the plain result (log)", scale="log", fmt="x"),
+                [
+                    series(
+                        AV_LABEL[n],
+                        AV_COLOR[n],
+                        [
+                            (int(row["value"][5:]), row[n]["median"], row[n]["q25"], row[n]["q75"])
+                            for row in rows
+                        ],
+                    )
+                    for n in names
+                ],
+                subtitle="Self-play values of CFR+'s average strategy; median over the bots, "
+                "bands: the middle half.",
+                refs=[ref(lp["aivat"]["median"], "AIVAT with the exact equilibrium's values (LP)")],
+            )
+        )
+    curve = {h: {row["value"]: row for row in r["curve"][h]} for h, _, _ in AV_HEROES}
+    eq, ex = curve["equilibrium"], curve["exploiter"]
+    best = max((row for row in r["curve"]["exploiter"]), key=lambda row: row["aivat"]["median"])
+    late = [
+        row["aivat"]["median"]
+        for v, row in eq.items()
+        if v.startswith("cfr+_") and int(v[5:]) >= 30
+    ]
+    view_medians = [row["hero_view"]["median"] for c in curve.values() for row in c.values()]
+    view_oracle = max(
+        r["population"][h]["oracle"]["hero_view"]["ratio"]["median"] for h, _, _ in AV_HEROES
+    )
+    takeaways = [
+        f"Values from uniform play, which know nothing about strategy, already give AIVAT "
+        f"{_times(eq['uniform']['aivat']['median'])} for the equilibrium hero, "
+        f"{eq['uniform']['aivat']['median'] / eq['equilibrium']['aivat']['median']:.0%} of the "
+        f"exact equilibrium's {_times(eq['equilibrium']['aivat']['median'])} (D1 "
+        f"{_holds(pred['D1'])}).",
+        f"From 30 CFR+ iterations on (exploitability {eq['cfr+_30']['exploitability']:.3f} "
+        f"chips/hand and below) the savings are at least as good as with the exact "
+        f"equilibrium's values: {_times(min(late))} to {_times(max(late))} against "
+        f"{_times(eq['equilibrium']['aivat']['median'])} (D2 {_holds(pred['D2'])}).",
+        f"For the exploiting hero the savings are not monotone in the values' quality: they "
+        f"peak at {int(best['value'][5:]) if best['value'].startswith('cfr+_') else best['value']}"
+        f" iterations ({_times(best['aivat']['median'])}) and fall to "
+        f"{_times(ex['equilibrium']['aivat']['median'])} with the exact equilibrium's values "
+        "(not pre-registered).",
+        f"The hero's own view stays between {min(view_medians):.2f}× and "
+        f"{max(view_medians):.2f}× at every checkpoint, and reaches only {view_oracle:.2f}× "
+        "with oracle values: better values cannot replace the cards it never sees.",
+    ]
+    return section(
+        "aivat-values",
+        "How good must the value function be?",
+        "AIVAT stays unbiased with any value function; the values change only how much "
+        "variance it removes. Here the values come from CFR+ stopped after 1 to 1,000 "
+        "iterations.",
+        sources=[AIVAT],
+        controls=[control("hero", "Hero", [(h, lab) for h, lab, _ in AV_HEROES])],
+        views=views,
+        takeaways=takeaways,
+        method="One CFR+ run on Leduc; the values at each checkpoint are its average "
+        "strategy's self-play values, and the hero's-view estimators weigh the opponent's cards "
+        "by that profile's reach. Pre-registered predictions D1 and D2.",
+    )
+
+
+def aivat_pushfold(r: dict[str, Any]) -> dict[str, Any]:
+    pred, cfg = r["predictions"], r["meta"]["config"]["pushfold"]
+    pf, rows = r["pushfold_summary"], r["pushfold"]
+    stacks = list(pf)
+    names = ("chips", "duplicate", "aivat", "aivat_duplicate", "hero_view")
+    views = {}
+    for hero, hlabel in AV_PF_HEROES:
+
+        def spread(st: str, name: str, hero: str = hero) -> list[float | None]:
+            hands = [
+                _av_get(x, name)["hands"]
+                for x in rows
+                if str(x["stack"]) == st and x["hero"] == hero and x["opponent"] != "nash"
+            ]
+            lo, hi = min(hands), max(hands)
+            return [pf[st][hero][name]["hands_median"], lo if lo > 0 else None, hi]
+
+        hands = dots_chart(
+            f"{hlabel}: hands for a ±{cfg['half_width']:g} bb/hand 95% interval",
+            [f"{float(st):g} bb" for st in stacks],
+            axis("Hands needed (log scale)", scale="log", fmt="int"),
+            [
+                dot_series(AV_PF_LABEL[n], AV_COLOR[n], [spread(st, n) for st in stacks])
+                for n in names
+            ],
+            subtitle="Median over the five archetype bots at their mean parameters; whiskers: "
+            "the five bots' range. Exact, in the abstract push/fold game.",
+        )
+        checks = [c for c in r["bridge_crosscheck"] if c["hero"] == hero]
+        dropped = [c for c in checks if c["exact_sd"] < AV_ZERO_SD]
+        cross = scatter_chart(
+            f"{hlabel}: P3.3's sampled standard deviations against the exact ones",
+            axis("Exact standard deviation per hand (bb, log)", scale="log", fmt="num"),
+            axis("P3.3's sampled SD / exact SD"),
+            [
+                scatter_group(
+                    AV_PF_LABEL[est],
+                    AV_COLOR[est],
+                    [
+                        (
+                            c["exact_sd"],
+                            c["ratio"],
+                            f"{c['stack']:g} bb, against {_av_opponent(c['opponent'])}",
+                        )
+                        for c in checks
+                        if c["estimator"] == est and c["exact_sd"] >= AV_ZERO_SD
+                    ],
+                )
+                for est in ("chips", "duplicate")
+            ],
+            subtitle="P3.3 played 100,000 real deals per matchup; F1 predicted every ratio "
+            "within 3% of 1.",
+            refs=[ref(0.97, "F1's band"), ref(1.03, "F1's band")],
+        )
+        views[hero] = view(
+            hands,
+            cross,
+            notes=[
+                f"Not shown: {_lower_first(AV_PF_LABEL[c['estimator']])} at {c['stack']:g} bb "
+                f"against {_av_opponent(c['opponent'])}, which has no variance exactly "
+                + (
+                    "and none in P3.3's sample."
+                    if c["sampled_sd"] < AV_ZERO_SD
+                    else f"(P3.3's sampled SD: {c['sampled_sd']:.2g})."
+                )
+                for c in dropped
+            ],
+        )
+    nash = {st: pf[st]["nash"] for st in stacks}
+    view_ratios = [pf[st][h]["hero_view"]["ratio_median"] for st in stacks for h in pf[st]]
+    misses = [c for c in r["bridge_crosscheck"] if not 0.97 <= c["ratio"] <= 1.03]
+    miss_txt = "; ".join(
+        f"{m['stack']:g} bb, {AV_PF_HERO_TEXT[m['hero']]} hero against "
+        f"{_av_opponent(m['opponent'])}, {_lower_first(AV_PF_LABEL[m['estimator']])}: "
+        f"{m['ratio']:.3f} (exact SD {m['exact_sd']:.3f} bb/hand, {m['exact_hands']:,} hands)"
+        for m in misses
+    )
+    takeaways = [
+        "With every hand's cards shown, the Nash hero's win rate needs (median over the five "
+        "archetype bots) "
+        + ", ".join(
+            f"{nash[st]['aivat']['hands_median']:,.0f} hands at {float(st):g} bb (all-in EV: "
+            f"{nash[st]['chips']['hands_median']:,.0f})"
+            for st in stacks
+        )
+        + f" for ±{cfg['half_width']:g} bb/hand (F2 {_holds(pred['F2'])}).",
+        "The best-response hero gains less: "
+        + ", ".join(
+            f"{_times(pf[st]['best_response']['aivat']['ratio_median'])} at {float(st):g} bb"
+            for st in stacks
+        )
+        + ".",
+        f"With folded cards hidden the hero's own view gains {_times(min(view_ratios))} to "
+        f"{_times(max(view_ratios))} over "
+        f"all-in EV (F3 {_holds(pred['F3'])}).",
+        f"F1 {_holds(pred['F1'])}: {len(r['bridge_crosscheck']) - len(misses)} of "
+        f"{len(r['bridge_crosscheck'])} sampled SDs from P3.3 are within 3% of the exact ones; "
+        f"the exception is {miss_txt}.",
+    ]
+    return section(
+        "aivat-pushfold",
+        "AIVAT in push/fold, and a check against P3.3's real hands",
+        "Five of the estimators in P3.3's 33 push/fold matchups, where the plain result is already "
+        "the all-in EV (the luck of the board is gone). P3.3 measured all-in EV and duplicate + "
+        "all-in EV on real deals, so its sampled spreads check the exact ones.",
+        sources=[AIVAT],
+        controls=[control("hero", "Hero", AV_PF_HEROES)],
+        views=views,
+        takeaways=takeaways,
+        method="The abstract push/fold game at 5, 10 and 20 bb with P3.3's heroes and opponents; "
+        "values from the stack's Nash equilibrium. Pre-registered predictions F1-F3.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
     ex = load(EXPLOIT)
-    head = overview(cfr, deep, ex)
+    av = load(AIVAT)
+    head = overview(cfr, deep, ex, av)
     return {
         "id": "phase2",
         "label": "Phase 2",
@@ -934,7 +1341,9 @@ def build(load) -> dict[str, Any]:
         "status": "done",
         "summary": head["summary"],
         "tiles": head["tiles"],
-        "provenance": [provenance(p, d) for p, d in ((CFR, cfr), (DEEP, deep), (EXPLOIT, ex))],
+        "provenance": [
+            provenance(p, d) for p, d in ((CFR, cfr), (DEEP, deep), (EXPLOIT, ex), (AIVAT, av))
+        ],
         "sections": [
             cfr_convergence(cfr),
             sampling(cfr),
@@ -944,5 +1353,8 @@ def build(load) -> dict[str, Any]:
             frontier(ex),
             per_bot(ex),
             model_accuracy(ex),
+            aivat_leduc(av),
+            aivat_values(av),
+            aivat_pushfold(av),
         ],
     }

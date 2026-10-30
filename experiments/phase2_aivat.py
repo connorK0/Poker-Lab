@@ -971,9 +971,9 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
             ax.set_xscale("log")
             ax.set_yticks(y)
             ax.set_yticklabels([SHORT[n] for n in FIGURE_ESTIMATORS], fontsize=8.5)
-            ax.invert_yaxis()
             ax.set_xlabel("Times fewer hands than the plain result (log)")
             ax.set_title(HEROES[hero], loc="left", fontsize=10, color=theme["ink"])
+        axes[0].invert_yaxis()  # once: the panels share the y axis
         title(
             fig,
             theme,
