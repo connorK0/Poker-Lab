@@ -69,6 +69,8 @@ $B(a,b)$ the beta function.
   * [Step 35: Schema v2](#step-35-schema-v2-big-blind-antes-straddles-and-minimum-bets-p310)
   * [Step 36: Opponents that adapt to the hero](#step-36-opponents-that-adapt-to-the-hero-p39)
   * [Step 37: Phase 3 wrap-up](#step-37-phase-3-wrap-up-one-command-reproduced)
+  * Phase 2, completed after Phase 3
+  * [Step 38: Variance reduction with AIVAT](#step-38-variance-reduction-with-aivat-measured-exactly-p211)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -3825,6 +3827,474 @@ of the results will see. Here only the commit messages did.
   `python -m experiments.compare_runs experiments/results/phase3 DIR`. It exits 1 if anything
   is listed.
 
+## Step 38: Variance reduction with AIVAT, measured exactly (P2.11)
+
+**The question.** Phase 5 will measure a win rate at a live home game. Step 28 showed what that
+costs: at 10 bb, a ±0.05 bb/hand interval takes tens of thousands of hands by counting chips, and
+the two remedies it measured fall short at a real table. Duplicate dealing needs a dealer who can
+repeat every deal, and all-in EV covers only all-ins. AIVAT (Burch, Schmid, Moravcik, Morrill and
+Bowling 2018) is the general method: a control variate at every step whose probabilities the
+evaluator knows. This step asks three questions in Leduc and in push/fold, where everything can be
+computed exactly. How much variance does AIVAT remove? How good must its value function be? And how
+much is left when the evaluator sees only what the hero saw, so that folded cards stay hidden, as at
+a home game?
+
+**Control variates along a hand.** A hand is a path $h_0, h_1, \dots, h_T = z$ through the game
+tree, and it pays the hero $u(z)$. After each step the evaluator knows some things and not
+others. Call $S_t$ its *information class* after step $t$: the set of histories it cannot tell
+apart (`observer_classes` groups the tree's nodes this way, from `Game.observer_key`). Some
+steps are taken by an actor whose probabilities the evaluator knows: chance, and the hero, whose
+strategy is ours. For any function $V$ of the class, the *value function*, such a step gets the
+term
+
+$$\delta_t = V(S_{t+1}) - \mathbb E\big[V(S_{t+1}) \mid S_t\big]
+           = V(S_{t+1}) - \sum_{S'} P(S' \mid S_t)\, V(S'),$$
+
+and the estimate subtracts all of them from the result:
+
+$$\hat u = u(z) - \sum_{t \in K} \delta_t,$$
+
+where $K$ holds the steps with known probabilities. The opponent's steps get no term: their
+probabilities are exactly what we do not know. The hero's seat is a fair coin the evaluator
+sees, so it is a chance step too: its term is the value of the seat dealt minus the average of
+the two seats' values.
+
+*Unbiased, whatever $V$ is.* Each term has mean zero given what came before,
+$\mathbb E[\delta_t \mid S_t] = 0$, by construction. The running sums
+$M_t = \sum_{s < t,\, s \in K} \delta_s$ therefore form a *martingale* with respect to the
+evaluator's information: given $S_0, \dots, S_t$ (each class refines the one before), the
+expected next value is the current one, and the first is 0. The condition is on the classes,
+not on the full history: the public card's odds, for one, depend on the hero's hidden card. By the tower property,
+$\mathbb E[\delta_t] = \mathbb E\big[\mathbb E[\delta_t \mid S_t]\big] = 0$, so
+$\mathbb E[\hat u] = \mathbb E[u]$. Nothing in this asks $V$ to be good. A poor $V$ only fails
+to remove variance, or adds some (see the results).
+
+*Low variance, when $V$ is good.* Let $V^\*(S) = \mathbb E[u \mid S]$ be the true expected result
+given what the evaluator knows, and suppose the result is a function of the last class (true
+when the evaluator sees everything, and arranged by imaginary observations, below). Any result
+is its prediction at the start plus every change of prediction along the way; the sum
+telescopes:
+
+$$u(z) = V^\*(S_0) + \sum_{t=0}^{T-1} \big[V^\*(S_{t+1}) - V^\*(S_t)\big].$$
+
+At a known step $V^\*(S_t) = \mathbb E[V^\*(S_{t+1}) \mid S_t]$, so with $V = V^\*$ the bracket
+*is* $\delta_t$ and the correction removes it exactly:
+
+$$\hat u = V^\*(S_0) + \sum_{t \notin K} \big[V^\*(S_{t+1}) - V^\*(S_t)\big].$$
+
+What is left is the prediction before the deal plus the changes at the opponent's decisions. The
+changes of a martingale are uncorrelated, so the variance splits step by step,
+
+$$\operatorname{Var}(\hat u) = \mathbb E\Big[\sum_{t \notin K} \big(V^\*(S_{t+1}) - V^\*(S_t)\big)^2\Big],$$
+
+and with every step corrected it is zero: $\hat u = V^\*(S_0) = \mathbb E[u]$ on every hand. In
+practice $V$ is the value of some strategy profile (the equilibrium's, say), not of the profile
+being played, and the cancellation is partial. All-in EV (Step 28) is a special case, with terms
+only at the cards dealt after a called all-in.
+
+The evaluator computes $P(S' \mid S)$ from reach probabilities. Let $w(h)$ be chance's
+probability of reaching $h$ times the hero's, leaving out the opponent's. When the opponent's
+reach is the same at every history of a class, it cancels from every ratio, and
+$P(S' \mid S) = W(S') / W(S)$ with $W(S) = \sum_{h \in S} w(h)$. That holds whenever the
+evaluator sees the opponent's cards: a class then fixes the opponent's cards and every action,
+which is all the opponent's reach depends on.
+
+**Imaginary observations.** The hero's own cards are luck too. An evaluator who sees the
+opponent's cards and every action, but not the hero's cards, can replace the result by its
+average over every private hand the hero could have held, weighted by how likely chance was to
+deal it and the hero to play the observed actions with it:
+
+$$\bar u(S_T) = \frac{\sum_{z \in S_T} w(z)\, u(z)}{\sum_{z \in S_T} w(z)}.$$
+
+The opponent's reach is the same for all of them (it cannot see the hero's cards), so these weights
+are the exact posterior and $\bar u(S_T) = \mathbb E[u \mid S_T]$. That makes it unbiased (tower
+property) and, as a conditional expectation, never more variable than $u$ (Rao-Blackwell, Step 36).
+It removes the luck of the hero's own deal, given how the hero played. The value function is
+averaged the same way: $V(S)$ is the $w$-weighted average of a value for each full history in $S$.
+Chance terms, hero terms and imaginary observations together are what Burch et al. call AIVAT. The
+evaluator needs two things a live game may not give it: the hero's strategy (for $w$ and the hero's
+terms) and the opponent's cards after every hand.
+
+**Why self-play at an equilibrium leaves nothing.** Burch et al.'s Table 1 evaluates a Leduc
+equilibrium against itself. Here, with the equilibrium's own values (exact, since that is the
+profile being played), AIVAT's standard deviation is exactly zero, and the decomposition above
+says why. The only changes left are at the opponent's decisions. There the evaluator sees what
+the opponent sees (its card, the public card and the actions) and averages over what it does
+not (the hero's card), so $V^\*$ is the value of the opponent's information set. An equilibrium
+strategy is a best response, so at every information set the play reaches, each action it plays
+with positive probability has the same value; otherwise moving probability to the better action
+would gain. Every change at an opponent decision is zero, every other step is corrected, and the
+estimate is the same number on every hand. The paper's standard deviations were small but not
+zero: 0.00643 chips/hand for AIVAT, and 0.00377 for the version that also corrects the
+opponent's steps with its strategy known. With exact values that second version has no variance
+for any profile (a test checks this), so the paper's values were presumably not exactly those of
+the strategies played.
+
+**Exact, not sampled.** A small game needs no sampled hands to measure an estimator. Its value on
+a hand is fixed by the terminal history: the terms along the path and the class average are all
+functions of $z$. So for the profile played with the hero in seat $s$, with reach probabilities
+$\pi_s(z)$, the mean and second moment are sums over terminals (`terminal_moments`),
+
+$$m_s = \sum_z \pi_s(z)\, x_s(z), \qquad q_s = \sum_z \pi_s(z)\, x_s(z)^2,$$
+
+and with the seat a fair coin the variance per hand is $\tfrac12 (q_0 + q_1) - \mu^2$, where
+$\mu = \tfrac12 (m_0 + m_1)$. One pass down the tree and one up give every estimator's value at
+every terminal.
+
+Duplicate dealing takes one more idea. Let $D$ be a deal: every chance outcome, here both private
+cards and the public card. The first table plays it with the hero in seat 0, the second with the
+hero in seat 1, and the unit is the pair's mean $Y = (X_1 + X_2)/2$. Each table draws its actions
+with its own random numbers (Step 23), so given the deal the two results are independent. Write
+$m_s(D)$ and $q_s(D)$ for seat $s$'s first and second moments given the deal; `deal_moments`
+computes them for every deal, with its probability $p_D$. The *law of total variance* splits the
+pair's variance into the spread within a deal and the spread between deals:
+
+$$\operatorname{Var}(Y) = \mathbb E_D\big[\operatorname{Var}(Y \mid D)\big]
+  + \operatorname{Var}_D\big(\mathbb E[Y \mid D]\big).$$
+
+Independence given the deal makes the first part a sum of the two tables' variances,
+$\operatorname{Var}(Y \mid D) = \tfrac14 \big[(q_0 - m_0^2) + (q_1 - m_1^2)\big]$ (the argument
+$D$ dropped), and $\mathbb E[Y \mid D] = \tfrac12 (m_0 + m_1)$, so
+
+$$\operatorname{Var}(Y) = \sum_D p_D \Big[\tfrac14 \big(q_0 - m_0^2 + q_1 - m_1^2\big)
+  + \tfrac14 (m_0 + m_1)^2\Big] - \mu^2.$$
+
+A pair costs two hands: $n$ hands make $n/2$ pairs, whose mean has variance
+$\operatorname{Var}(Y) / (n/2)$, so the variance per hand is $2 \operatorname{Var}(Y)$. The same
+algebra shows where Step 28's correlation $\rho$ comes from: with the tables independent given
+the deal, $\operatorname{Cov}(X_1, X_2) = \operatorname{Cov}\big(m_0(D), m_1(D)\big)$. Pairing
+cancels only the luck the deal fixes. A hand that ends before the public card fits every public
+card, so `deal_moments` forces each public card in turn and weights it by its probability given
+the private cards (Leduc has $6 \times 5 \times 4 = 120$ deals). It supports one later chance node
+per path: Leduc's public card fits, hold'em's flop, turn and river would not.
+
+**The hero's view.** At a home game where folded cards stay hidden, the evaluator knows what the
+hero knows: its own cards, the actions and the public card. Its classes now group histories that
+differ in the *opponent's* cards, and the posterior over those depends on the opponent's
+strategy, which is unknown. So $P(S' \mid S)$ is known only at steps whose probabilities do not
+depend on the opponent's hidden card. `known_transitions` finds them:
+
+* the hero's own decisions;
+* a chance step at which the opponent has not yet acted anywhere in the class (its reach is 1
+  everywhere, so the posterior is chance's alone);
+* a chance step that leads to each next class with the same probability from every history of
+  its class.
+
+In Leduc that leaves the hero's decisions and the private deal. The public card does not
+qualify: it is dealt after the opponent has acted, and its probabilities depend on the
+opponent's card (if the hero holds no king, a king comes with probability 1/4 when the opponent
+holds one and 2/4 when it does not). Imaginary observations are out too, since the average
+would need the opponent's reach. The *hero's view* estimator corrects only the known steps. Its
+$V$ averages over the opponent's possible cards with the reach of the value function's own
+profile, a model of the opponent; any weights keep it unbiased.
+
+The *approximate hero's view* also corrects the public card, with probabilities computed as if
+the opponent's card were uniform over the cards the hero has not seen. The opponent's actions
+say something about its card, so those probabilities are wrong, and the terms no longer have
+mean zero. In a small game the bias can be computed exactly; at a real table it cannot.
+
+Neither version uses cards shown at a showdown: `observer_key` hides the opponent's cards in
+every state. Whether a hand reaches a showdown is decided after the steps being corrected, so a
+term that used those cards only on the hands that showed them would no longer have mean zero.
+(This step does not test other ways of using them.)
+
+**The experiment** (`experiments/phase2_aivat.py`, pre-registered at commit `695cb26`).
+
+* *Leduc.* 50 bots, 10 from each of Phase 2's five archetypes (Step 21), drawn from the seed.
+  Two heroes: the equilibrium (the LP of Step 18), and an exploiting hero, the restricted Nash
+  response with $p = 0.9$ to the bot's true policy (Step 22). Also the equilibrium in self-play,
+  the setting of Burch et al.'s Table 1.
+* *Value functions.* The self-play values of a profile: the exact equilibrium, uniform play, and
+  CFR+'s average strategy after 1, 3, 10, 30, 100, 300 and 1,000 iterations (Step 19). Also the
+  *oracle*: the true values of this hero against this bot, which nobody has in practice (the
+  ceiling). Results use the equilibrium's values unless stated.
+* *Metrics*, all exact: the bias; the *ratio*, the plain result's variance per hand over the
+  estimator's, which is how many times fewer hands the estimator needs for the same interval (a
+  duplicate pair counts as two hands); and the hands needed for a 95% interval of ±0.1 chips,
+  $n = \lceil (1.96\,\sigma / 0.1)^2 \rceil$.
+* *A sampled check.* For the first 2 bots of each archetype and both heroes, 20,000 duplicate
+  deals were played hand by hand. Each hand was recorded as its edge labels and replayed to its
+  terminal with `GameTree.follow`, and every estimator was scored on those hands. Each sample
+  mean is compared with that estimator's exact mean, $z = (\bar x - m) / \widehat{SE}$, so the
+  check tests the exact moments, including a biased estimator's bias.
+* *Push/fold.* P3.3's 33 matchups (5, 10 and 20 bb; Nash and best-response heroes; the five
+  archetypes at their mean parameters, and Nash), in the abstract game of Step 26, whose plain
+  result is P3.3's all-in EV. Hands needed are for ±0.05 bb. P3.3 measured all-in EV and
+  duplicate + all-in EV on 100,000 real duplicate deals per matchup, which the exact numbers
+  must reproduce.
+
+The nine estimators:
+
+| Estimator | Terms at | Averages over the hero's cards | The evaluator needs |
+|---|---|---|---|
+| Chips (the plain result) | nothing | no | nothing |
+| Duplicate dealing | nothing; each deal played in both seats | no | a dealer who repeats deals |
+| Chance terms only (MIVAT) | chance steps, valued at full histories | no | every hand's cards |
+| Chance terms + imaginary observations | chance steps | yes | the opponent's cards; the hero's strategy |
+| AIVAT | chance and hero steps | yes | the opponent's cards; the hero's strategy |
+| AIVAT + duplicate dealing | as AIVAT, on duplicate deals | yes | both |
+| AIVAT, opponent's strategy known too | every step | yes | also the opponent's strategy (a reference) |
+| Hero's view | the hero's deal and decisions | no | what the hero saw; its strategy |
+| Hero's view + public-card terms | also the public card, as if the opponent's card were uniform | no | the same; biased |
+
+**Development.** The design and thresholds were set on seeds 98 and 99, on Leduc. There AIVAT
+gave 26× for the equilibrium hero and 4.4-4.5× for the exploiting hero (medians), the unbiased
+hero's view 1.04-1.05×, and push/fold was computed only at 3 bb, the quick configuration's stack
+(AIVAT 13× for the Nash hero). The stacks of the real run, 5, 10 and 20 bb, were computed for the
+first time in it. Two changes made in development are disclosed in the plan: the sampled check
+first compared every estimator with the true value (see Mistakes), and an estimator with no
+variance left is reported as such ("no variance", 0 hands).
+
+**The run.** `python -m experiments.run_phase2 --seed 2026 --only aivat`, on 2026-10-29 from a
+clean tree at `695cb26`.
+
+| Prediction | Result | Verdict |
+|---|---|---|
+| A1: every estimator but the approximate hero's view is unbiased (bias below $10^{-9}$), in every matchup and with every value function | largest absolute bias $1.4 \times 10^{-13}$ | holds |
+| A2: sampled hands agree with the exact moments: per estimator, no z beyond ±4, mean-z t-test p ≥ 0.01, median sampled/exact SD in [0.97, 1.03] | largest absolute z 3.42; smallest p 0.31; SD ratios 0.999-1.006 | holds |
+| B1: AIVAT, equilibrium hero: median ratio ≥ 15× and every bot ≥ 5× | median 27×, lowest 10× | holds |
+| B2: AIVAT, exploiting hero: median ratio between 3× and 8× | 4.30× | holds |
+| B3: oracle values beat equilibrium values for the equilibrium hero by ≥ 1.4× (ratio of the median ratios) | 1.66× (45× against 27×) | holds |
+| C1: hero's view: median ratio < 1.15× for both heroes | 1.05× and 1.04× | holds |
+| C2: approximate hero's view: median ratio in [1.4×, 2.5×] for both heroes, and its bias reaches at least 0.02 chips/hand against some bot (exploiting hero) | 1.85× and 1.54×; bias up to 0.058 | holds |
+| D1: uniform-play values still give AIVAT a median ratio ≥ 4× (equilibrium hero) | 9.12× | holds |
+| D2: from 30 CFR+ iterations on, AIVAT's median ratio is within 20% of the equilibrium values' (equilibrium hero) | 29×, 30×, 30×, 30× against 27× | holds |
+| E1: duplicate dealing adds < 25% on top of AIVAT (equilibrium hero) | 1.02× | holds |
+| F1: push/fold: exact SDs of all-in EV and duplicate + all-in EV within 3% of P3.3's sampled SDs in every matchup | 66 estimates, sampled/exact 0.957 to 1.022 | **does not hold** |
+| F2: push/fold, Nash hero: AIVAT needs ≥ 4× fewer hands than all-in EV at every stack (median over bots) | 29× at 5 bb, 70× at 10 bb, 22× at 20 bb | holds |
+| F3: push/fold: hero's view gains < 1.3× over all-in EV at every stack, both heroes | 1.14× to 1.20× | holds |
+
+Twelve of the thirteen hold. F1 is taken up after the results.
+
+**Results: Leduc self-play** (SD per hand, chips):
+
+| Estimator | Here (exact) | Burch et al., Table 1 |
+|---|---|---|
+| Chips (the plain result) | 3.497 | 3.513 |
+| Duplicate dealing | 2.070 | |
+| Chance terms only (MIVAT) | 1.463 | 2.327 |
+| Chance terms + imaginary observations | 1.933 | 1.928 |
+| AIVAT | 0 | 0.00643 |
+| AIVAT + duplicate dealing | 0 | |
+| AIVAT, opponent's strategy known too | 0 | 0.00377 |
+| Hero's view | 3.400 | |
+| Hero's view + public-card terms (biased) | 2.449 (bias +0.006) | |
+
+Chips and chance terms with imaginary observations agree with the paper to within 0.5%; AIVAT's
+zeros are the argument above. Only the chance-terms-only estimator departs, 1.463 against
+2.327, so it is probably not quite the paper's MIVAT; this step did not find where they differ.
+The hero's view, even with exact values, takes the SD only from 3.497 to 3.400: what it cannot
+correct (the opponent's card, its decisions as the hero sees them, and the public card) carries
+most of the luck.
+
+**Results: Leduc bots.** Ratios against the plain result, median [interquartile range] over the
+50 bots:
+
+| Estimator | Equilibrium hero | Exploiting hero | Equilibrium hero, oracle values | Exploiting hero, oracle values |
+|---|---|---|---|---|
+| Duplicate dealing | 2.05× [1.82, 2.32] | 2.95× [2.11, 3.50] | 2.05× | 2.95× |
+| Chance terms only (MIVAT) | 3.62× [3.28, 3.92] | 3.40× [2.79, 3.78] | 4.58× | 7.04× |
+| Chance terms + imaginary observations | 2.26× [1.90, 2.88] | 1.86× [1.76, 2.22] | 2.28× | 2.29× |
+| AIVAT | 27× [19, 32] | 4.30× [4.00, 4.65] | 45× [35, 57] | 9.34× [7.06, 12] |
+| AIVAT + duplicate dealing | 28× [19, 33] | 5.33× [4.62, 5.80] | 45× | 9.34× |
+| AIVAT, opponent's strategy known too | 52× [36, 61] | 5.28× [4.43, 7.33] | no variance | no variance |
+| Hero's view | 1.05× [1.05, 1.05] | 1.04× [1.04, 1.05] | 1.09× | 1.05× |
+| Hero's view + public-card terms (biased) | 1.85× [1.74, 1.94] | 1.54× [1.35, 1.74] | 2.31× | 1.77× |
+
+* *With every hand's cards shown, AIVAT removes most of the luck for an equilibrium hero.* A
+  ±0.1 chips/hand interval needs a median of 282 hands instead of a median of 6,332 (separate
+  medians over the bots, so their quotient is not the median ratio), and no bot gives less
+  than 10×. Calling stations give the least (post hoc: an archetype median of 11×, against
+  20-33× for the other four).
+* *For an exploiting hero it removes much less*: 4.30× (1,907 hands instead of 8,074). With
+  the oracle's exact values, what remains is exactly the variance of the opponent's decisions
+  (the decomposition above), so the medians say how much of the plain result's variance those
+  decisions carry: about 1/45 against the equilibrium hero and 1/9.3 against the exploiting
+  hero. Correcting the opponent's steps as well removes the rest, as the "no variance" column
+  shows (post hoc reading).
+* *The value function matters, but a poor one still helps* (curve below). Oracle values beat the
+  equilibrium's by 1.66× for the equilibrium hero.
+* *Duplicate dealing adds little on top of AIVAT*: 1.02× for the equilibrium hero (E1), and
+  1.24× for the exploiting hero (post hoc, the ratio of the two medians). With the oracle's values it adds exactly nothing: AIVAT and AIVAT + duplicate
+  have the same variance in every matchup. Post hoc, the reason: with exact values the expected
+  estimate given the deal is the same for every deal (the deal is corrected exactly, and the
+  opponent's changes have mean zero whatever the deal), so the between-deal part of the
+  variance is zero and pairing has nothing to cancel. With the equilibrium's values duplicate
+  dealing is sometimes worse than AIVAT alone, for 5 of the 50 bots with the equilibrium hero
+  and 2 with the exploiting hero (post hoc, from `aivat.json`): when the two seats' remaining
+  errors are positively correlated, $\sigma^2 (1 + \rho)$ exceeds $\sigma^2$.
+* *The hero's view gains 4-5%* (1.05× and 1.04×; 6,036 hands instead of 6,332 for the
+  equilibrium hero). Even the oracle's values give only 1.09×. With uniform-play values it is
+  worse than the plain result against 38% of the bots for the equilibrium hero (as low as
+  0.96×) and 20% for the exploiting hero (post hoc, from `aivat.json`): unbiased does not mean
+  helpful.
+* *The approximate hero's view gains more, 1.85× and 1.54×, and is biased.* Its largest bias
+  over the bots is 0.019 chips/hand for the equilibrium hero and 0.058 for the exploiting hero
+  with the equilibrium's values; with the oracle's values, 0.040 and 0.21. For scale (post
+  hoc), the exploiting hero's exact win rates range from 0.51 to 1.66 chips/hand (median 1.07),
+  and 0.058 is more than half the ±0.1 interval's half-width.
+* *The sampled check passes.* No z-score reaches 4, every per-estimator t-test has p ≥ 0.31,
+  and the sampled SDs match the exact ones (medians 0.999-1.006). The largest z, 3.42, sits in
+  one matchup, the exploiting hero against one calling station (bot `b005`), where all nine
+  estimators have z from 1.99 to 3.42: they score the same hands, so a sample that runs high
+  runs high for all of them. That matchup holds 9 of the 16 z-scores beyond 1.96, out of 180
+  (post hoc, from `aivat.json`).
+
+**How good must the value function be?** Median AIVAT ratio by the profile the values come from
+(exploitability in chips/hand; CFR+'s average after one iteration is uniform play):
+
+| Values from | Exploitability | Equilibrium hero | Exploiting hero |
+|---|---|---|---|
+| Uniform play (CFR+, 1 iteration) | 2.3736 | 9.12× | 3.95× |
+| CFR+, 3 iterations | 1.7935 | 8.52× | 4.11× |
+| CFR+, 10 | 0.6104 | 13× | 6.18× |
+| CFR+, 30 | 0.0818 | 29× | 5.09× |
+| CFR+, 100 | 0.0134 | 30× | 4.65× |
+| CFR+, 300 | 0.0023 | 30× | 4.52× |
+| CFR+, 1,000 | 0.0003 | 30× | 4.37× |
+| Equilibrium (LP) | 0 | 27× | 4.30× |
+
+For the equilibrium hero, values from 30 CFR+ iterations are as good as the exact equilibrium's,
+and slightly better (29-30× against 27×). For the exploiting hero the curve is not monotone: it
+peaks at 10 iterations (6.18×) and falls toward the LP's 4.30×. Both fit one reading (post hoc,
+not a test): the best value function is the true one for this hero against this bot (the
+oracle), and closeness to an equilibrium is only a proxy for it, a poor one for a hero who is
+not playing the equilibrium. The hero's view stays at 1.00-1.06× with every value function.
+
+**Results: push/fold.** Hands for a ±0.05 bb/hand interval, Nash hero, median over the five
+archetype bots (median ratio to all-in EV in parentheses):
+
+| Stack | All-in EV (the plain result) | Duplicate + all-in EV | AIVAT | AIVAT + duplicate | Hero's view |
+|---|---|---|---|---|---|
+| 5 bb | 1,737 | 578 (3.01×) | 60 (29×) | 53 (33×) | 1,508 (1.14×) |
+| 10 bb | 4,329 | 1,209 (3.26×) | 45 (70×) | 47 (67×) | 3,401 (1.17×) |
+| 20 bb | 10,796 | 4,260 (2.25×) | 206 (22×) | 215 (25×) | 8,654 (1.16×) |
+
+* *AIVAT works on top of all-in EV.* For the Nash hero it needs 22-70× fewer hands, for the
+  best-response hero 13× (5 bb), 12× (10 bb) and 6.95× (20 bb). The hero's view gains 1.14-1.20×
+  for both heroes.
+* *Duplicate dealing on top of AIVAT helps little and sometimes hurts:* at 10 bb its median is
+  slightly worse than AIVAT's alone. Post hoc, from `aivat.json`: with the equilibrium's values
+  it adds variance in 8 of the 33 matchups (up to 14%, Nash against the nit at 5 bb), and with
+  the oracle's values it changes nothing in any.
+* *The exact numbers agree with P3.3's within sampling noise* (post hoc, below). Over the 66
+  estimates P3.3 sampled, sampled/exact SD ratios run from 0.957 to 1.022. Step 28 quoted
+  medians at 10 bb over both heroes of 4,339 hands for all-in EV and 1,572 for duplicate +
+  all-in EV; the exact medians over the same bot matchups are 4,354.5 and 1,571.5 (post hoc).
+
+**F1, the failed prediction.** F1 predicted that every exact SD of all-in EV and of duplicate +
+all-in EV would be within 3% of P3.3's sampled SD. One of the 66 is not: at 5 bb, Nash against
+Nash, duplicate + all-in EV, P3.3's sampled SD is 0.957 of the exact 0.0637 bb/hand (7 hands for
+±0.05 bb exactly, 6 by P3.3's sample). The prediction fails as written.
+
+*Post hoc: how noisy is a sampled SD?* (Computed after the run.) For a mean, 100,000 pairs feel
+like plenty. For a standard deviation, it depends on the tails. With *kurtosis*
+$\kappa = \mathbb E[(X - \mu)^4] / \sigma^4$, the sample variance $s^2$ of $n$ values has
+
+$$\operatorname{Var}(s^2) \approx \frac{(\kappa - 1)\,\sigma^4}{n}, \qquad
+  \frac{\operatorname{SE}(s)}{\sigma} \approx \sqrt{\frac{\kappa - 1}{4n}},$$
+
+the second by the delta method: $s = \sqrt{s^2}$, so a small change in $s^2$ moves $s$ by
+$1/(2\sigma)$ times as much. For normal data $\kappa = 3$ and the relative error is
+$1/\sqrt{2n}$: 0.22% at $n = 100{,}000$, which puts a ±3% band more than 13 standard errors
+away. This matchup is far from normal. Both players use the equilibrium, so the two tables of a
+pair cancel exactly (Step 28) unless a mixed decision goes differently at the two, which happens
+in only 0.58% of pairs. The variance sits in those rare pairs: kurtosis 475, so the
+sampled SD's relative standard error is $\sqrt{(\kappa - 1) / (4n)} = 0.034$ and the miss is
+$z = -1.25$. Drawing P3.3's sample 4,000 times from the exact pair distribution, 95% of
+the sampled/exact ratios fall between 0.934 and 1.067, 10.5% are at or below the
+observed 0.957, and a ±3% band is missed 39% of the time. For the same estimate at
+10 bb, which passed at 1.022, it is missed 62% of the time. (At 20 bb the
+Nash-against-Nash duplicate has no variance at all.) Treating the two as independent, F1 as
+written had about a 23% chance of holding even with the exact model right.
+
+P3.3's tables also meet the exact model's assumption: `duplicate_match` draws a separate action
+seed for each table, so the two plays are independent given the deal, and no systematic gap is
+expected. Scored with this kurtosis-aware standard error, the 65 estimates with variance look
+like noise: the largest |z| is 2.92 (20 bb, Nash against the TAG, duplicate), 5% lie beyond
+1.96, and the z-scores have SD 1.03 and mean -0.28. Were they independent, that mean would be
+2.2 standard errors below zero; estimates in one matchup share deals, so they are not, and how
+much that matters was not computed. Most estimates were never at risk: the median relative standard error is
+0.43%, and only the two Nash-against-Nash duplicates have a 95% sampling interval wider
+than F1's band. The miss is what sampling noise predicts for that estimate; the threshold, not
+the exact model, was too tight. The verdict stays *does not hold*. The check is
+`experiments/phase2_aivat_posthoc.py` (`python -m experiments.phase2_aivat_posthoc --seed 2026`,
+written after the run; results in `aivat_posthoc.json`), and the explorer's "Post hoc: was F1's
+miss sampling noise?" shows every estimate with its sampling interval. It simplifies one thing:
+P3.3's hero alternates seats rather than tossing a coin, so for all-in EV its sample is
+stratified and the standard error above slightly overstates the noise; duplicate pairs play both
+seats and are unaffected.
+
+**What it means.** The question was what a live game can expect, and the answer has two parts
+that are far apart.
+
+* *If every hand's cards are shown afterwards* and the hero's strategy is known, AIVAT needs 27×
+  fewer hands than the plain result for an equilibrium hero in Leduc, 4.3× fewer for an
+  exploiting hero, and 22-70× fewer for the Nash hero in push/fold, on top of all-in EV. A poor
+  value function keeps much of that: uniform play's values still give 9.12×.
+* *If folded cards stay hidden*, the unbiased hero's view gains 1.04-1.20× (Leduc and push/fold,
+  both heroes): nearly as many hands as counting chips. The biased version gains 1.5-1.9× in
+  Leduc with the equilibrium's values, at a bias a live game cannot measure; here it reached
+  0.058 chips/hand with those values and 0.21 with the true ones.
+
+Duplicate dealing is impossible at a real table, and on top of AIVAT it adds little. So what a
+live evaluation can claim depends mostly on whether the opponents' cards are seen after every
+hand. That is a question for the owner, not a decision this step can make: Phase 4 will record
+the home game, so would the players table every hand, folded ones included, to the camera?
+
+**Engineering.** Every estimator is a number per terminal, built with passes over the tree, and
+every moment is a dot product, so the whole step took 22 s (19 s inside the experiment) on 10
+worker processes. The plan had expected minutes. After the run the Leduc figure was redrawn from
+`aivat.json` with fixed figure code (below; no number changed).
+
+**Mistakes.**
+
+* F1's tolerance was a fixed 3% on sampled SDs, which ignores kurtosis (above). The prediction
+  is reported as failed.
+* The Leduc figure's rows were upside down. Its two panels share the y axis, and each called
+  `invert_yaxis()`, which inverted the shared axis twice: the mistake of Step 32 (Part D),
+  repeated. The axis is now inverted once.
+* In development the sampled check compared every estimator's sample mean with the true value,
+  so the biased estimator failed it as well as the bias prediction: one fault counted twice. The
+  check now compares each sample with that estimator's own exact mean, bias included, and bias
+  is judged exactly, by A1 and C2.
+
+**Limitations.**
+
+* AIVAT needs the hero's strategy, mixing included. A human hero who deviates from the advice
+  biases the hero terms.
+* Hold'em has no value function yet; `AIVATEvaluator` still raises without a correction.
+* `deal_moments` supports one later chance node per path, and `known_transitions` is tested only
+  on Leduc.
+* The exploiting hero responds to the bot's true policy, not a fitted model, and the bots do not
+  adapt.
+* A2's nine t-tests have no multiple-testing correction; with the smallest p at 0.31, one could
+  not change the verdict.
+* The sampled check covers 10 of the 50 bots.
+* Why the chance-terms-only estimator differs from the paper's MIVAT is not known.
+
+**Verification.**
+
+* `tests/test_aivat.py` (24 tests, on Kuhn and Leduc): unbiased for random value functions and
+  random profiles, with chance terms, AIVAT, every step and the hero's view; AIVAT's and the
+  hero's view's estimates do not depend on the opponent's strategy; self-play with equilibrium
+  values has no variance, and exact values with every step corrected leave none, with the root
+  value as the mean; the hero's-view corrections are equal at terminals the hero cannot tell
+  apart; `known_transitions` in Leduc (the hero's decisions and the private deal, never the
+  public card or the opponent's decisions); `deal_moments` against brute-force duplicate pairs
+  in Kuhn, and in Leduc that its 120 deals have the right probabilities and their moments add
+  up to the terminal moments; observer classes reject a mismatched game;
+  `GameTree.follow`; `AIVATEvaluator` end to end on 6,000 sampled Leduc hands (its interval
+  covers the exact value and is less than half as wide as the plain one).
+* Experiment: `python -m experiments.run_phase2 --seed 2026 --only aivat` (22 s); smoke test with
+  `--quick`.
+* `tests/test_aivat_posthoc.py` (14 tests): the exact one-hand and pair distributions match the
+  experiment's own moments and the head-to-head value; Nash-against-Nash pairs cancel whenever
+  both tables play alike; the pair distribution matches brute-force duplicate pairs in Kuhn;
+  the relative standard error of a sample SD matches simulation for normal and two-point data;
+  the simulated ratios are centred on 1, reproducible, and the same drawn in blocks.
+* Post hoc check: `python -m experiments.phase2_aivat_posthoc --seed 2026`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -3847,6 +4317,8 @@ of the results will see. Here only the commit messages did.
 | Ablations that prove themselves | the GRU separates two classes that differ only in the order of a hand's tokens; the order-free network cannot (Step 34) | an ablation must remove what it claims to |
 | The old code as the oracle | the schema v1 code, checked out in a git worktree, writes 20,000 hands; the new code must read them back as exactly the hands it makes itself (Step 35) | a migration is tested against what the old version really wrote, not against what we remember it wrote |
 | Shared randomness | two heroes facing copies of one adaptive bot from the same seed get identical deals and differ only in their actions (`tests/test_push_fold_adaptive.py`, 6 tests); each session block's value equals the exact head-to-head value; the experiment's heroes refit on schedule and on their window (`tests/test_adaptive_experiment.py`, 4 tests) (Step 36) | a paired comparison is only as good as its pairing |
+| Exact moments against sampled play | every estimator's mean and variance are sums over the game tree; 20,000 duplicate deals per sampled matchup, each hand recorded as labels and replayed with `GameTree.follow`, must agree with them (z-scores, SD ratios), and per-deal moments must match brute-force duplicate pairs in Kuhn (Step 38) | the exact formulas check the sampler, and the sampler checks the formulas |
+| Properties for any input | AIVAT's estimate is unbiased for a value function of random numbers and does not depend on the opponent's strategy (property tests in `tests/test_aivat.py`, Step 38) | a guarantee that holds for every value function is tested with one that is useless |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
@@ -3854,7 +4326,7 @@ of the results will see. Here only the commit messages did.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
 catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 406 tests and runs in about two minutes (the Deep CFR and
+players). The suite has 444 tests and runs in about two minutes (the Deep CFR and
 sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
 (`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
 
@@ -3915,6 +4387,10 @@ Every figure is rendered in a light and a dark variant (the README picks one wit
 between adjacent series. Lines are 2 px with ringed markers and gridlines are hairlines.
 Interval bands are clipped to the metric's natural range for display only. Every chart has a
 numeric table next to it, so no number depends on reading a color.
+
+Axes shared between panels are one object: with `sharey=True`, calling `invert_yaxis()` on each
+panel inverts the shared axis once per panel, so two panels undo each other (Steps 32 and 38).
+Invert once, and look at every figure before committing it.
 
 ---
 
@@ -3982,6 +4458,9 @@ numeric table next to it, so no number depends on reading a color.
 | A check for sleep looked only for Kernel-Power events 42 and 107; the laptop uses Modern Standby, which writes 506 and 507, so an 18-minute lid closure was missed and a slow test run blamed on the battery | listing every Kernel-Power event during the wrap-up run | check both pairs (C.3) | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
 | A comparison script matched wall-clock keys as substrings, so it would have skipped `fallback_second_half`, a data field | the tool's own test | keys split at underscores and matched as whole words | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
 | Figures redrawn in a results commit by newer code than the commit their JSON records, said only in the commit message | a rerun at the recorded commits, whose figures differed | noted in C.2 and Step 37 | [37](#step-37-phase-3-wrap-up-one-command-reproduced) |
+| A pre-registered ±3% tolerance on sampled SDs ignored kurtosis: for Nash against Nash with duplicate dealing (kurtosis 475 at 5 bb) a sampled SD's relative standard error is 3.4%, and in simulation the band is missed 39% of the time at 5 bb and 62% at 10 bb | the real run: F1 failed at 0.957 | reported as failed; post hoc, z-scores with a kurtosis-aware standard error $\sqrt{(\kappa - 1)/(4n)}$ (largest 2.92); set a tolerance on a sampled SD from its own standard error | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
+| `invert_yaxis()` on both panels of a shared-y figure, again: the Leduc figure's rows were upside down (Step 32's mistake, repeated) | looking at the figure after the run | invert once; the figure redrawn from `aivat.json` (no number changed); C.4 | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
+| The sampled check compared every estimator with the true value, so the biased estimator failed it as well as the bias prediction (one fault counted twice) | development runs on seeds 98 and 99 | compare each sample with that estimator's own exact mean; judge bias exactly (A1, C2); disclosed in the plan | [38](#step-38-variance-reduction-with-aivat-measured-exactly-p211) |
 
 ---
 
@@ -3990,6 +4469,7 @@ numeric table next to it, so no number depends on reading a color.
 | Term | Meaning |
 |---|---|
 | Ablation | a version of a model with one ingredient removed (here: the order within a hand, or the raw tokens), to measure what that ingredient contributes |
+| AIVAT | a win-rate estimator for a player whose strategy is known: control-variate terms at chance and hero steps plus imaginary observations; unbiased for any value function, but it needs the opponent's cards after every hand (Burch et al. 2018; Step 38) |
 | All-in | betting every remaining chip |
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
 | Bayes action | the decision with the highest posterior expected payoff |
@@ -4008,7 +4488,7 @@ numeric table next to it, so no number depends on reading a color.
 | Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
 | Conformal p-value | the rank of a new score among held-out scores, $(1 + \#\{\text{held-out} \ge \text{new}\})/(m + 1)$; valid for exchangeable data whatever the model (Vovk et al. 2005) |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
-| Control variate | a term with known zero mean subtracted from an estimator to cut its variance |
+| Control variate | a term with known zero mean subtracted from an estimator to cut its variance (all-in EV, Step 28; AIVAT, Step 38) |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
 | Credible interval | interval containing the parameter with a given posterior probability |
@@ -4017,6 +4497,7 @@ numeric table next to it, so no number depends on reading a color.
 | Dead money | chips in the pot that no player has to match, such as antes; they are won, never returned as an uncalled bet |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
+| Delta method | the variance of a smooth function of an estimate, from its slope: $\operatorname{Var}(g(\hat\theta)) \approx g'(\theta)^2 \operatorname{Var}(\hat\theta)$ |
 | Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
 | Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
 | ECE | expected calibration error |
@@ -4036,20 +4517,27 @@ numeric table next to it, so no number depends on reading a color.
 | Half-life (of a weighted average) | the age at which an observation's weight has fallen to half; with decay $d$ per step it is $\log 2 / \log(1/d)$ steps, so $d = 2^{-1/h}$ |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
+| Hero's view (evaluation) | an evaluator that knows only what the hero saw (its cards, the actions, the public cards), never the opponent's cards; it can correct only steps whose probabilities do not depend on them (Step 38) |
 | HUD | heads-up display of opponent statistics |
+| Imaginary observations | replacing a hand's result by its average over every private hand the hero could have held, weighted by chance's probability times the hero's probability of playing as it did; exact when the opponent cannot see the hero's cards (Burch et al. 2018) |
 | Importance sampling | estimating averages under a target distribution from draws of an easier proposal, each weighted by target / proposal |
+| Information class (of an evaluator) | the histories an evaluator cannot tell apart at a point of a hand; AIVAT's terms and averages run over them |
 | Information set | the histories a player cannot tell apart when acting |
+| Kurtosis | $\kappa = \mathbb E[(X - \mu)^4] / \sigma^4$, 3 for a normal distribution; large when rare extreme values carry most of the variance, which makes a sample SD noisy: its relative standard error is about $\sqrt{(\kappa - 1)/(4n)}$ |
 | Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
+| Law of total variance | $\operatorname{Var}(Y) = \mathbb E[\operatorname{Var}(Y \mid D)] + \operatorname{Var}(\mathbb E[Y \mid D])$: the spread within groups plus the spread between them |
 | Leave one player out | fit on every player but one, score the one; repeated for each, so no player is in its own training data |
 | Log-loss | mean negative log-probability of the true class |
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
 | Mahalanobis distance | distance scaled by a covariance, $(x - \mu)^\top S^{-1}(x - \mu)$: how many standard deviations away, in every direction at once |
+| Martingale | a sequence whose expected next value, given everything so far, is its current value; its steps have mean zero and are uncorrelated |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
 | Mid-p value | a p-value that counts ties with the observed statistic as half, for discrete statistics |
 | Migration (of a schema) | reading records written in an older version of a format as the current version, filling in what the old version implied |
 | Minimum bet | the smallest bet allowed, which is also the smallest raise increment before anyone raises; usually one big blind |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
+| MIVAT | control-variate terms at chance steps only, valued at full histories: the chance-only method Burch et al. compare AIVAT with, as implemented here; it may differ from the paper's, whose Leduc self-play SD it does not reproduce (Step 38) |
 | Modern Standby | the sleep mode of many recent Windows laptops (S0 low-power idle): the system stays nominally on, and programs run slowly or not at all; logged as Kernel-Power events 506 and 507 |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
@@ -4080,7 +4568,9 @@ numeric table next to it, so no number depends on reading a color.
 | Support check | flags inputs unlike the training data, so a model's output is not trusted where it was never trained |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
 | Token (of a hand) | one of a player's decisions in a hand (situation, action, size), or the hand's closing outcome, as a vector a sequence model reads |
+| Tower property | $\mathbb E\big[\mathbb E[X \mid S]\big] = \mathbb E[X]$: averaging a conditional expectation over what it conditions on gives the plain expectation |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
+| Value function (for control variates) | any number per history or class used to build control-variate terms; the estimate stays unbiased whatever it is, and loses more variance the closer it is to the true expected value |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
 | Winner's curse | the best-looking of several noisy estimates tends to be an overestimate |
 | Worktree (git) | a second checkout of the same repository at another commit, in its own folder, used here to run old code next to new |
@@ -4137,7 +4627,10 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
 * Southey, F. et al. (2005). *Bayes' Bluff* (above) also introduces Bayesian opponent
   modeling with hidden cards in Leduc, the idea behind Step 21's marginal likelihood.
 * Burch, N., Schmid, M., Moravcik, M., Morrill, D., Bowling, M. (2018). *AIVAT: A New Variance
-  Reduction Technique for Agent Evaluation in Imperfect Information Games.* AAAI.
+  Reduction Technique for Agent Evaluation in Imperfect Information Games.* AAAI. (Step 38;
+  Table 1's Leduc self-play numbers)
+* White, M., Bowling, M. (2009). *Learning a Value Analysis Tool for Agent Evaluation.* IJCAI.
+  (MIVAT as we understand it; not checked against the paper; Step 38)
 * Brown, G. W. (1951). *Iterative Solution of Games by Fictitious Play.* In T. C. Koopmans (ed.),
   Activity Analysis of Production and Allocation. Wiley. (Fictitious play; Step 36)
 * Robinson, J. (1951). *An Iterative Method of Solving a Game.* Annals of Mathematics 54.
@@ -4289,3 +4782,14 @@ Software design
   recorded commits. Times come from the run's log, with the lid-closed intervals taken from the
   Windows System log (Kernel-Power 506 and 507). Step 36's run time updated to the measured 1.6
   hours.
+* 2026-10-29: Step 38 (AIVAT, P2.11). Results from the pre-registered run at commit `695cb26`
+  (results commit `0916441`), cross-checked against
+  `experiments/results/phase2/aivat/aivat_summary.md`. Computed from `aivat.json` for this step
+  (post hoc): the archetype medians, the hero's view with uniform-play values, the exploiting
+  hero's win rates, the matchups where duplicate dealing adds variance on top of AIVAT, the
+  z-scores of the matchup that ran high, and the exact 10 bb medians compared with Step 28's.
+  F1's post hoc check was written after the run (`experiments/phase2_aivat_posthoc.py`, results
+  commit `317e8cc`, cross-checked against `aivat_posthoc_summary.md`). The `aivat_leduc`
+  figure was redrawn from `aivat.json` after the run with fixed figure code (its two panels each
+  inverted the shared y axis, so the rows were upside down); no number changed. The step was
+  drafted by a subagent from the results files and checked against them before it was added.
