@@ -32,6 +32,16 @@ the Phase 1 classifier does.
 
 Reproducibility: weights, window draws and batch order come from ``random_state``; results are
 identical for a fixed seed and thread count (``torch.set_num_threads``).
+
+Prediction encodes the hands of 16 players at a time. A fitted classifier keeps those
+embeddings per ``HandSequences`` object and block of players, so repeated predictions on the
+same set of players (other window sizes, other calibrations) skip the encoder. The block is
+the key, not the player: a hand's embedding may differ in the last bit with the batch it was
+computed in, and reusing it only for the same block keeps every probability bit-identical.
+``fit`` clears them. This assumes the weights change only through ``fit``, the thread count
+stays fixed between predictions and a ``HandSequences`` is not changed in place. Nothing is
+freed before the next ``fit``: pass the same ``HandSequences`` object for repeated
+predictions rather than a new one each time.
 """
 
 from __future__ import annotations
@@ -239,6 +249,11 @@ class SequenceClassifier:
         self.history = TrainingHistory()
         self.net: _Net | None = None
         self.val_players: np.ndarray | None = None
+        # id(seqs) -> (seqs, {block of players: (embeddings, offsets)}); seqs held, so ids stay
+        self._embeddings: dict[int, tuple[HandSequences, dict]] = {}
+
+    def __getstate__(self):
+        return {**self.__dict__, "_embeddings": {}}  # keyed by ids, which don't survive a copy
 
     # ------------------------------------------------------------------ helpers
     def _embed(self, seqs: HandSequences, players: np.ndarray):
@@ -256,15 +271,24 @@ class SequenceClassifier:
                 rows += [(p, w * n, n) for w in range(k)]
         return np.array(rows, dtype=np.int64).reshape(-1, 3)
 
-    def _log_proba(self, seqs: HandSequences, windows: np.ndarray, chunk: int = 16) -> np.ndarray:
-        """Uncalibrated log-probabilities for windows (player, start, n), in their order."""
+    def _log_proba(
+        self, seqs: HandSequences, windows: np.ndarray, chunk: int = 16, memo: dict | None = None
+    ) -> np.ndarray:
+        """Uncalibrated log-probabilities for windows (player, start, n), in their order;
+        ``memo`` keeps each block's embeddings for the next call (fixed weights only)."""
         out = np.zeros((len(windows), self.n_classes))
         self.net.eval()
         with torch.no_grad():
             players = np.unique(windows[:, 0])
             for c in range(0, len(players), chunk):
                 block = players[c : c + chunk]
-                emb, offsets = self._embed(seqs, block)
+                key = tuple(block.tolist())
+                if memo is not None and key in memo:
+                    emb, offsets = memo[key]
+                else:
+                    emb, offsets = self._embed(seqs, block)
+                    if memo is not None:
+                        memo[key] = emb, offsets
                 where = {int(p): o for p, o in zip(block, offsets, strict=True)}
                 mask = np.isin(windows[:, 0], block)
                 w = windows[mask]
@@ -283,6 +307,7 @@ class SequenceClassifier:
         import time
 
         t0 = time.perf_counter()
+        self._embeddings = {}  # the weights are about to change
         torch.manual_seed(self.random_state)
         rng = np.random.default_rng(self.random_state)
         labels = np.asarray(labels, dtype=np.int64)
@@ -381,7 +406,8 @@ class SequenceClassifier:
         if calibration not in CALIBRATIONS:
             raise ValueError(f"calibration must be one of {CALIBRATIONS}")
         windows = np.asarray(windows, dtype=np.int64).reshape(-1, 3)
-        log_p = self._log_proba(seqs, windows)
+        memo = self._embeddings.setdefault(id(seqs), (seqs, {}))[1]
+        log_p = self._log_proba(seqs, windows, memo=memo)
         t = np.ones(len(windows))
         if calibration == "by_size" and self.size_temperatures is not None:
             t = np.interp(np.log(windows[:, 2]), *self.size_temperatures)
