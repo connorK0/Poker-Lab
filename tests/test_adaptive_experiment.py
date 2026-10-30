@@ -75,9 +75,9 @@ def test_a_window_limits_the_hands_used(setup):
     seen = []
 
     class Spy:
-        def recommend(self, data, seed=None):
+        def choose(self, data, rule, seed=None):
             seen.append(data.n_hands)
-            return rec.recommend(data, seed=seed)
+            return rec.choose(data, rule=rule, seed=seed)
 
         equilibrium = rec.equilibrium
 

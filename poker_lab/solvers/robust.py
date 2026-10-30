@@ -28,11 +28,16 @@ Notation follows ``poker_lab.solvers.lp``: realization plans ``x`` (hero, ``E x 
   ``c = 0`` everywhere gives an equilibrium; ``c = 1`` everywhere a best response to the model.
   Typically ``c_I`` grows with the number of observations of the opponent at ``I``.
 
-Both are exact (HiGHS) and fast for Leduc (well under a second per solve).
+Both are exact (HiGHS) and fast for Leduc (well under a second per solve). Each process keeps
+the solutions of its last ``SOLVED_SIZE`` LPs, keyed on their exact inputs: refits and tests
+often pose the same LP again, and HiGHS returns the same solution for the same input, so a
+repeat is answered from memory without changing any result.
 """
 
 from __future__ import annotations
 
+import hashlib
+from collections import OrderedDict
 from dataclasses import dataclass
 
 import numpy as np
@@ -54,16 +59,27 @@ class HeroForm:
     opponent: sparse.csr_matrix  # F (opponent constraints)
     hero_global: np.ndarray  # local hero index (>= 1) -> global sequence
     opp_local: np.ndarray  # global sequence -> local opponent index (or -1)
+    key: bytes  # digest of payoff, own and opponent (the LP cache's key)
+
+
+def _matrix_key(m) -> bytes:
+    m = m.tocsr()
+    h = hashlib.sha1(repr((m.shape, m.dtype.str, m.indices.dtype.str)).encode())
+    for part in (m.data, m.indices, m.indptr):
+        h.update(np.ascontiguousarray(part).tobytes())
+    return h.digest()
 
 
 def hero_form(sf: SequenceForm, hero: int) -> HeroForm:
-    a = sf.payoff if hero == 0 else -sf.payoff.T
+    a = (sf.payoff if hero == 0 else -sf.payoff.T).tocsr()
+    own, opponent = sf.constraints[hero], sf.constraints[1 - hero]
     return HeroForm(
-        payoff=a.tocsr(),
-        own=sf.constraints[hero],
-        opponent=sf.constraints[1 - hero],
+        payoff=a,
+        own=own,
+        opponent=opponent,
         hero_global=sf.global_index[hero],
         opp_local=sf.local_index[1 - hero],
+        key=b"".join(_matrix_key(m) for m in (a, own, opponent)),
     )
 
 
@@ -105,8 +121,32 @@ def _confidence_rows(tree: GameTree, form: HeroForm, model: TabularPolicy, hero:
     return sparse.coo_matrix((vals, (rows, cols)), shape=(r, form.opponent.shape[1])).tocsr()
 
 
+SOLVED_SIZE = 2048  # LP solutions kept per process
+_SOLVED: OrderedDict[tuple, np.ndarray] = OrderedDict()
+
+
 def _solve(form: HeroForm, objective_x: np.ndarray, weight_q: float, g=None) -> np.ndarray:
-    """Maximize objective_x . x + weight_q * q[0] over the (possibly restricted) LP."""
+    """Maximize objective_x . x + weight_q * q[0] over the (possibly restricted) LP: the
+    hero part of the solution, read-only, from memory if the same LP was solved recently."""
+    key = (
+        form.key,
+        np.ascontiguousarray(objective_x, dtype=float).tobytes(),
+        np.float64(weight_q).tobytes(),
+        None if g is None else _matrix_key(g),
+    )
+    x = _SOLVED.get(key)
+    if x is not None:
+        _SOLVED.move_to_end(key)
+        return x
+    x = _highs(form, objective_x, weight_q, g)
+    x.flags.writeable = False
+    _SOLVED[key] = x
+    if len(_SOLVED) > SOLVED_SIZE:
+        _SOLVED.popitem(last=False)
+    return x
+
+
+def _highs(form: HeroForm, objective_x: np.ndarray, weight_q: float, g) -> np.ndarray:
     n_x, n_q = form.own.shape[1], form.opponent.shape[0]
     n_r = 0 if g is None else g.shape[0]
     c = np.concatenate([-objective_x, np.zeros(n_q), np.zeros(n_r)])
@@ -123,7 +163,7 @@ def _solve(form: HeroForm, objective_x: np.ndarray, weight_q: float, g=None) -> 
     res = linprog(c, A_ub=a_ub, b_ub=b_ub, A_eq=a_eq, b_eq=b_eq, bounds=bounds, method="highs")
     if res.status != 0:
         raise RuntimeError(f"robust-response LP failed: {res.message}")
-    return res.x[:n_x]
+    return res.x[:n_x].copy()
 
 
 def _to_policy(tree: GameTree, form: HeroForm, x: np.ndarray, model: TabularPolicy, hero: int):
@@ -143,14 +183,31 @@ class RobustResponder:
 
     def restricted_nash(self, model: TabularPolicy, hero: int, p: float) -> TabularPolicy:
         """Hero's ``p``-restricted Nash response (other player's part: the model)."""
-        if not 0.0 <= p <= 1.0:
+        return self._restricted_nash(model, hero, (p,))[0]
+
+    def restricted_nash_sweep(self, model: TabularPolicy, ps) -> list[TabularPolicy]:
+        """``both_seats("rnr", model, p=p)`` for each ``p`` in ``ps``, with the model's
+        realization plan computed once per seat rather than once per ``p``."""
+        ps = tuple(ps)
+        seats = [self._restricted_nash(model, hero, ps) for hero in (0, 1)]
+        return [s0.combine(s1, 0) for s0, s1 in zip(*seats, strict=True)]
+
+    def _restricted_nash(self, model: TabularPolicy, hero: int, ps) -> list[TabularPolicy]:
+        ps = tuple(ps)
+        if any(not 0.0 <= p <= 1.0 for p in ps):
             raise ValueError("p must be in [0, 1]")
-        if p == 1.0:
-            return best_response(model, hero).policy
         form = self.forms[hero]
-        y_fix = _local_plan(form, self.tree, realization_plan(self.tree, model, 1 - hero))
-        x = _solve(form, p * (form.payoff @ y_fix), 1.0 - p)
-        return _to_policy(self.tree, form, x, model, hero)
+        out, payoff_y = [], None  # A y_fix, computed on first use
+        for p in ps:
+            if p == 1.0:
+                out.append(best_response(model, hero).policy)
+                continue
+            if payoff_y is None:
+                plan = realization_plan(self.tree, model, 1 - hero)
+                payoff_y = form.payoff @ _local_plan(form, self.tree, plan)
+            x = _solve(form, p * payoff_y, 1.0 - p)
+            out.append(_to_policy(self.tree, form, x, model, hero))
+        return out
 
     def data_biased(self, model: TabularPolicy, hero: int, confidence) -> TabularPolicy:
         """Hero's data-biased response; ``confidence[I]`` in [0, 1] per information set."""

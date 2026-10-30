@@ -187,15 +187,14 @@ class RecommenderHero:
         else:
             lo = 0 if self.window is None else max(0, n - self.window)
             data = ActionLog.from_hand_log(log.window(lo, n))
-        report = self.rec.recommend(data, seed=self.seed)
-        choice = report.advised if self.rule == "advised" else report.get("best_response")
-        failed = {r.name: r.failed for r in report.fit.results} if report.fit else {}
+        choice = self.rec.choose(data, rule=self.rule, seed=self.seed)
+        failed = {r.name: r.failed for r in choice.fit.results} if choice.fit else {}
         self.records.append(
             {
                 "hand": n,
                 "choice": choice.name,
                 "p": choice.p,
-                "fallback": report.falls_back if self.rule == "advised" else False,
+                "fallback": choice.falls_back if self.rule == "advised" else False,
                 "failed": failed,
             }
         )
