@@ -25,6 +25,7 @@ from poker_lab.games.push_fold_bots import (
     to_z,
     weighted_quantile,
 )
+from poker_lab.games.push_fold_checks import ActionLog
 from poker_lab.strategy import nash_ranges
 
 
@@ -41,6 +42,16 @@ def recommender(prior):
 
 def _log(params, n, seed, order="equity"):
     return simulate(strategy(params, order), nash_ranges(10.0), n, np.random.default_rng(seed))
+
+
+def _assert_same_choice(choice, report, rule="advised"):
+    """``choice`` is the report's advice (or its best response), with the same numbers."""
+    rec = report.advised if rule == "advised" else report.get("best_response")
+    assert (choice.name, choice.p) == (rec.name, rec.p)
+    np.testing.assert_array_equal(choice.push, rec.push)
+    np.testing.assert_array_equal(choice.call, rec.call)
+    assert choice.fit == report.fit
+    assert choice.falls_back == report.falls_back
 
 
 @pytest.mark.parametrize("stack", [3.0, 10.0])
@@ -182,6 +193,29 @@ def test_reports_are_reproducible(prior, recommender):
     assert [r.gain for r in a.ranked] == [r.gain for r in b.ranked]
     other = PushFoldRecommender(10.0, prior, draws=1000, seed=4).recommend(obs)
     assert other.get("best_response").gain != a.get("best_response").gain
+
+
+def test_choose_is_the_reports_advice(recommender):
+    """``choose`` returns the report's advice, or its best response, without the ranking."""
+    strong = _log(PushFoldBotParams(0.9, 0.6, 0.03), 3000, 9)
+    cases = [
+        (_log(PushFoldBotParams(0.55, 0.35, 0.03), 10, 12).observations(10), None),
+        (strong.observations(3000), [5, 1]),  # a seed of its own, as in the experiments
+        (ActionLog.from_hand_log(strong, 300), None),  # in hand order, but no checker
+    ]
+    advised = set()
+    for data, seed in cases:
+        report = recommender.recommend(data, seed=seed)
+        assert report.fit is None
+        _assert_same_choice(recommender.choose(data, seed=seed), report)
+        best = recommender.choose(data, rule="best_response", seed=seed)
+        _assert_same_choice(best, report, "best_response")
+        advised.add(report.advised.name)
+    # every kind of advice was compared: equilibrium, restricted Nash and best response
+    assert {"equilibrium", "best_response"} <= advised
+    assert any(name.startswith("restricted_nash") for name in advised)
+    with pytest.raises(ValueError, match="rule"):
+        recommender.choose(Observations.empty(), rule="best")
 
 
 def test_strong_evidence_recovers_most_of_the_oracle_gain(recommender):

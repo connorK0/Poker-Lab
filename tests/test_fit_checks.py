@@ -1,5 +1,7 @@
 """P3.5: posterior predictive checks of the push/fold opponent model."""
 
+from collections import Counter, OrderedDict
+
 import numpy as np
 import pytest
 
@@ -29,6 +31,7 @@ from poker_lab.games.push_fold_checks import (
     shown_hands_pvalue,
     stability_pvalue,
 )
+from poker_lab.solvers import robust
 from poker_lab.strategy import nash_ranges
 
 
@@ -41,6 +44,52 @@ def prior():
 def _log(params, n, seed, order="equity", hero=None):
     hero = hero or nash_ranges(10.0)
     return simulate(strategy(params, order), hero, n, np.random.default_rng(seed))
+
+
+@pytest.fixture(scope="module")
+def checked(prior):
+    """One opponent's decisions in hand order, and recommenders whose checks all fail, only warn
+    (shown hands fails, stability passes: no fallback by default) or all pass."""
+    actions = ActionLog.from_hand_log(_log(PushFoldBotParams(0.85, 0.6, 0.03), 300, 8))
+    thresholds = {
+        "fails": dict.fromkeys(CHECKS, 1.01),
+        "warns": {"shown_hands": 1.01, "stability": 0.0},
+        "passes": dict.fromkeys(CHECKS, 0.0),
+    }
+    recs = {
+        name: PushFoldRecommender(10.0, prior, draws=500, checker=FitChecker({0: th}, draws=100))
+        for name, th in thresholds.items()
+    }
+    return actions, recs
+
+
+def _counting(calls, name, fn):
+    def counted(*args, **kwargs):
+        calls[name] += 1
+        return fn(*args, **kwargs)
+
+    return counted
+
+
+@pytest.fixture
+def lp_calls(monkeypatch):
+    """Counts the robust-response LPs posed (``_solve``) and solved by HiGHS (``linprog``),
+    starting from an empty LP cache."""
+    monkeypatch.setattr(robust, "_SOLVED", OrderedDict())
+    calls = Counter()
+    for name in ("_solve", "linprog"):
+        monkeypatch.setattr(robust, name, _counting(calls, name, getattr(robust, name)))
+    return calls
+
+
+def _assert_same_choice(choice, report, rule="advised"):
+    """``choice`` is the report's advice (or its best response), with the same numbers."""
+    rec = report.advised if rule == "advised" else report.get("best_response")
+    assert (choice.name, choice.p) == (rec.name, rec.p)
+    np.testing.assert_array_equal(choice.push, rec.push)
+    np.testing.assert_array_equal(choice.call, rec.call)
+    assert choice.fit == report.fit
+    assert choice.falls_back == report.falls_back
 
 
 def _pvalues(prior, log, seed=0, n=None):
@@ -216,3 +265,32 @@ def test_fallback_policy_is_configurable(prior):
     assert "only a failed stability check" in text
     with pytest.raises(ValueError, match="fallback_on"):
         PushFoldRecommender(10.0, prior, fallback_on=("vibes",))
+
+
+@pytest.mark.parametrize("checks", ["fails", "warns", "passes"])
+def test_choose_is_the_reports_advice(checked, checks):
+    """With the checks, ``choose`` returns the report's advice (the equilibrium after a failed
+    stability check, else the top of the ranking) or its best response, with the same numbers."""
+    actions, recs = checked
+    rec = recs[checks]
+    report = rec.recommend(actions)
+    assert report.fit is not None
+    assert report.fit.flagged == (checks != "passes")
+    assert report.falls_back == (checks == "fails")
+    assert report.best.name != "equilibrium"  # so falling back changes the advice
+    _assert_same_choice(rec.choose(actions), report)
+    _assert_same_choice(rec.choose(actions, rule="best_response"), report, "best_response")
+
+
+def test_choose_solves_restricted_nash_lps_only_for_a_ranking(checked, lp_calls):
+    """Falling back means the equilibrium and the best response is closed form: neither needs
+    the restricted Nash LPs, which only the full ranking solves."""
+    actions, recs = checked
+    assert recs["fails"].choose(actions).name == "equilibrium"
+    for rec in recs.values():
+        assert rec.choose(actions, rule="best_response").name == "best_response"
+    assert not lp_calls
+    ranked = recs["passes"]
+    assert ranked.choose(actions).name != "equilibrium"
+    assert lp_calls["_solve"] >= 2 * len(ranked.ps)  # both seats, every p: the spy sees them
+    assert lp_calls["linprog"] >= 2 * len(ranked.ps)
