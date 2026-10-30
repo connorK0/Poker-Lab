@@ -1,6 +1,8 @@
 """Raw action sequences (tokens) and the sequence classifier of P3.8 (needs the ``nn``
 extra; skipped when PyTorch is not installed)."""
 
+import copy
+
 import numpy as np
 import pytest
 
@@ -204,3 +206,120 @@ def test_vectors_make_one_token_per_hand():
     assert np.diff(seqs.hand_ptr).tolist() == [1] * 12
     with pytest.raises(ValueError, match="encoder"):
         SequenceClassifier("lstm")
+
+
+TINY = {"hidden": 8, "epochs": 2, "players_per_batch": 8, "random_state": 5}
+
+
+def _count_encodings(clf, monkeypatch):
+    """Record (id of the sequences, block of players) for every encoder pass of ``clf``."""
+    calls = []
+    embed = clf._embed
+
+    def counted(seqs, players):
+        calls.append((id(seqs), tuple(np.asarray(players).tolist())))
+        return embed(seqs, players)
+
+    monkeypatch.setattr(clf, "_embed", counted)
+    return calls
+
+
+def test_repeated_predictions_reuse_embeddings_bit_for_bit(monkeypatch):
+    """A fitted classifier encodes each block of 16 players of a ``HandSequences`` once; later
+    windows of the same block (other sizes, other calibrations) reuse those embeddings and give
+    the same bytes as a prediction from scratch. A different set of players makes new blocks."""
+    torch.set_num_threads(2)
+    seqs, labels = _order_toy(40, 40, np.random.default_rng(4))
+    clf = SequenceClassifier("gru", **TINY).fit(seqs, labels, [4, 5])
+    assert clf.size_temperatures is not None  # so "by_size" differs from "global"
+    everyone, odd = np.arange(40), np.arange(1, 40, 2)
+    queries = [
+        ([(p, s, n) for p in everyone for s, n in ((0, 4), (7, 10))], "global"),
+        ([(p, 2, 25) for p in everyone[::-1]], "by_size"),  # blocks sort the players
+        ([(p, 0, 40) for p in odd], "none"),  # blocks (1, 3, ..., 31) and (33, ..., 39)
+        ([(p, 3, 5) for p in odd], "global"),
+        ([(p, 1, 20) for p in range(20)], "none"),  # blocks (0, ..., 15) and (16, ..., 19)
+        ([(p, s, 8) for p in everyone for s in (0, 30)], "by_size"),
+    ]
+    fresh = []
+    for windows, calibration in queries:
+        clf._embeddings.clear()
+        fresh.append(clf.predict_proba(seqs, windows, calibration=calibration))
+    clf._embeddings.clear()
+    calls = _count_encodings(clf, monkeypatch)
+    for (windows, calibration), expected in zip(queries, fresh, strict=True):
+        p = clf.predict_proba(seqs, windows, calibration=calibration)
+        assert p.tobytes() == expected.tobytes()
+    blocks = [range(16), range(16, 32), range(32, 40), odd[:16], odd[16:], range(16, 20)]
+    assert calls == [(id(seqs), tuple(int(p) for p in b)) for b in blocks]  # each block once
+
+
+def test_each_hand_sequences_keeps_its_own_embeddings():
+    """Two ``HandSequences`` of the same players (so the same blocks) but different tokens: each
+    prediction comes from its own hands, as from scratch. The classifier holds every object it
+    keeps embeddings for, so an object made after another is gone cannot take its id."""
+    torch.set_num_threads(2)
+    seqs, labels = _order_toy(40, 40, np.random.default_rng(4))
+    other, _ = _order_toy(40, 40, np.random.default_rng(5))
+    clf = SequenceClassifier("gru", **TINY).fit(seqs, labels, [4, 5])
+    windows = np.array([(p, s, n) for p in range(40) for s, n in ((0, 10), (5, 30))])
+    mine = clf.predict_proba(seqs, windows)
+    theirs = clf.predict_proba(other, windows)
+    assert not np.array_equal(theirs, mine)
+    twin = copy.deepcopy(clf)  # a copy (or a pickle) starts without them: they are keyed by ids
+    assert clf._embeddings
+    assert twin._embeddings == {}
+    assert twin.predict_proba(seqs, windows).tobytes() == mine.tobytes()
+    assert clf.predict_proba(seqs, windows).tobytes() == mine.tobytes()
+    clf._embeddings.clear()
+    assert clf.predict_proba(other, windows).tobytes() == theirs.tobytes()
+
+    def predict_new(seed):  # the sequences are gone after this, unless the classifier holds them
+        return clf.predict_proba(_order_toy(40, 40, np.random.default_rng(seed))[0], windows)
+
+    seeds = range(6, 12)
+    fresh = []
+    for seed in seeds:
+        clf._embeddings.clear()
+        fresh.append(predict_new(seed))
+    clf._embeddings.clear()
+    for seed, expected in zip(seeds, fresh, strict=True):
+        assert predict_new(seed).tobytes() == expected.tobytes()
+
+
+def test_refitting_forgets_the_old_embeddings():
+    """After a refit (on other data, or with another seed) predictions on sequences seen before
+    equal those of a classifier fitted afresh with the same settings, not the old weights'."""
+    torch.set_num_threads(2)
+    seqs, labels = _order_toy(40, 40, np.random.default_rng(4))
+    other, other_labels = _order_toy(40, 40, np.random.default_rng(9))
+    windows = np.array([(p, s, n) for p in range(40) for s, n in ((0, 10), (5, 30))])
+    clf = SequenceClassifier("gru", **TINY).fit(seqs, labels, [4, 5])
+    old = clf.predict_proba(seqs, windows)
+    clf.fit(other, other_labels, [4, 5])
+    assert clf._embeddings == {}
+    new = clf.predict_proba(seqs, windows)
+    refit = SequenceClassifier("gru", **TINY).fit(other, other_labels, [4, 5])
+    assert new.tobytes() == refit.predict_proba(seqs, windows).tobytes()
+    assert not np.array_equal(new, old)
+    clf.random_state = 6
+    clf.fit(seqs, labels, [4, 5])
+    reseeded = SequenceClassifier("gru", **{**TINY, "random_state": 6}).fit(seqs, labels, [4, 5])
+    expected = reseeded.predict_proba(seqs, windows)
+    assert clf.predict_proba(seqs, windows).tobytes() == expected.tobytes()
+
+
+def test_fit_encodes_its_held_out_players_afresh_each_time(monkeypatch):
+    """fit scores its held-out players with weights that change every epoch: it neither keeps
+    nor reuses their embeddings. The encoder reads the held-out block after every epoch and once
+    more for the temperatures, and nothing is left for ``predict_proba``."""
+    torch.set_num_threads(2)
+    seqs, labels = _order_toy(40, 40, np.random.default_rng(4))
+    clf = SequenceClassifier("gru", **{**TINY, "epochs": 3, "patience": 3})
+    calls = _count_encodings(clf, monkeypatch)
+    clf.fit(seqs, labels, [4, 5])
+    assert clf._embeddings == {}
+    assert len(clf.val_players) <= 16  # one block
+    held_out = (id(seqs), tuple(np.sort(clf.val_players).tolist()))
+    assert len(clf.history.val_loss) == 3
+    assert calls.count(held_out) == 3 + 1
