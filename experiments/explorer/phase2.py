@@ -34,7 +34,8 @@ CFR = "experiments/results/phase2/cfr/cfr_convergence.json"
 DEEP = "experiments/results/phase2/deep_cfr/deep_cfr.json"
 EXPLOIT = "experiments/results/phase2/exploit/exploit.json"
 AIVAT = "experiments/results/phase2/aivat/aivat.json"
-SOURCES = (CFR, DEEP, EXPLOIT, AIVAT)
+AIVAT_POSTHOC = "experiments/results/phase2/aivat/aivat_posthoc.json"
+SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -1328,11 +1329,111 @@ def aivat_pushfold(r: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def _f1_row(e: dict[str, Any]) -> str:
+    return f"{_av_opponent(e['opponent'])}, {_lower_first(AV_PF_LABEL[e['estimator']])}"
+
+
+def aivat_f1(ph: dict[str, Any]) -> dict[str, Any]:
+    cfg, s = ph["meta"]["config"], ph["summary"]
+    lo, hi = cfg["band"]
+    views = {}
+    for hero, hlabel in AV_PF_HEROES:
+        for st in sorted({e["stack"] for e in ph["estimates"]}):
+            rows = [e for e in ph["estimates"] if e["hero"] == hero and e["stack"] == st]
+            views[f"{hero}|{st:g}"] = view(
+                dots_chart(
+                    f"{hlabel} at {st:g} bb: P3.3's sampled SD against the exact one",
+                    [_f1_row(e) for e in rows],
+                    axis("P3.3's sampled SD / exact SD"),
+                    [
+                        dot_series(
+                            "Sampled / exact, with its 95% sampling interval",
+                            "c1",
+                            [
+                                None
+                                if e["rel_se"] is None
+                                else [
+                                    e["ratio"],
+                                    e["ratio"] - 1.96 * e["rel_se"],
+                                    e["ratio"] + 1.96 * e["rel_se"],
+                                ]
+                                for e in rows
+                            ],
+                        )
+                    ],
+                    ranges=[[lo, hi] for _ in rows],
+                    range_label="F1's pre-registered band",
+                    refs=[ref(1.0, "exact", axis_name="x")],
+                    subtitle=f"Whiskers: ±1.96 × the sample SD's standard error at "
+                    f"{cfg['n_units']:,} units, sqrt((kurtosis - 1) / (4n)).",
+                ),
+                notes=[
+                    f"No dot for {_f1_row(e)}: no variance." for e in rows if e["rel_se"] is None
+                ],
+            )
+    worst = next(e for e in ph["estimates"] if not lo <= e["ratio"] <= hi)
+    sims = {x["stack"]: x for x in ph["simulated"]}
+    sim = sims[worst["stack"]]
+    others = [x for x in ph["simulated"] if x["stack"] != worst["stack"]]
+    q = sim["quantiles"]
+    takeaways = [
+        f"A sample SD is much noisier than a sample mean when the data have heavy tails: its "
+        f"relative standard error is about sqrt((kurtosis - 1) / (4n)). F1's ±{hi - 1:.0%} band "
+        "ignored this.",
+        f"F1's one miss ({worst['ratio']:.3f}, the Nash hero against Nash at "
+        f"{worst['stack']:g} bb, duplicate + all-in EV) has kurtosis {worst['kurtosis']:,.0f}: "
+        "with the same strategy on both sides, the two tables of a pair cancel exactly unless a "
+        f"mixed decision goes differently at the two, which happens in "
+        f"{worst['nonzero_share']:.2%} of pairs. Its relative SE is "
+        f"{worst['rel_se']:.1%}, so the miss is z = {worst['z']:+.2f}.",
+        f"Drawing P3.3's sample {cfg['reps']:,} times from the exact distribution, 95% of "
+        f"ratios fall in [{q['0.025']:.3f}, {q['0.975']:.3f}] and "
+        f"{sim['share_at_or_below_observed']:.0%} are at or below {worst['ratio']:.3f}; the "
+        f"band is missed {sim['share_outside_band']:.0%} of the time even with exact agreement"
+        + "".join(
+            f" ({x['share_outside_band']:.0%} at {x['stack']:g} bb, where the observed "
+            f"{x['observed']:.3f} passed)"
+            for x in others
+        )
+        + ".",
+        f"Over all {s['with_variance']} estimates with variance the z-scores look standard "
+        f"normal: largest |z| {s['max_abs_z']:.2f}, {s['share_abs_z_above_1_96']:.0%} beyond "
+        f"1.96, SD {s['sd_z']:.2f}, mean {s['mean_z']:+.2f} (estimates from the same matchup "
+        "share deals, so they are not independent). The exact moments agree with P3.3's real "
+        f"hands; only {s['interval_wider_than_band']} estimates had a sampling interval wider "
+        "than F1's band.",
+    ]
+    return section(
+        "aivat-f1",
+        "Post hoc: was F1's miss sampling noise?",
+        "F1 predicted that P3.3's sampled spreads would match the exact ones within 3% in every "
+        "matchup, and one of 66 did not. This check, chosen after seeing the miss, asks how "
+        "precise each sampled spread could be.",
+        sources=[AIVAT_POSTHOC],
+        controls=[
+            control("hero", "Hero", AV_PF_HEROES),
+            control(
+                "stack",
+                "Stack",
+                [(f"{st:g}", f"{st:g} bb") for st in sorted({e["stack"] for e in ph["estimates"]})],
+            ),
+        ],
+        views=views,
+        takeaways=takeaways,
+        method="For each of F1's estimates, the exact distribution of P3.3's unit (one hand, or "
+        "a duplicate pair's mean with the two plays independent given the deal) in the "
+        "abstract push/fold game; its exact SD matches aivat.json. The two Nash-against-Nash "
+        "duplicate estimates with variance are also simulated from that distribution.",
+        post_hoc=True,
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
     ex = load(EXPLOIT)
     av = load(AIVAT)
+    ph = load(AIVAT_POSTHOC)
     head = overview(cfr, deep, ex, av)
     return {
         "id": "phase2",
@@ -1342,7 +1443,14 @@ def build(load) -> dict[str, Any]:
         "summary": head["summary"],
         "tiles": head["tiles"],
         "provenance": [
-            provenance(p, d) for p, d in ((CFR, cfr), (DEEP, deep), (EXPLOIT, ex), (AIVAT, av))
+            provenance(p, d)
+            for p, d in (
+                (CFR, cfr),
+                (DEEP, deep),
+                (EXPLOIT, ex),
+                (AIVAT, av),
+                (AIVAT_POSTHOC, ph),
+            )
         ],
         "sections": [
             cfr_convergence(cfr),
@@ -1356,5 +1464,6 @@ def build(load) -> dict[str, Any]:
             aivat_leduc(av),
             aivat_values(av),
             aivat_pushfold(av),
+            aivat_f1(ph),
         ],
     }
