@@ -244,6 +244,7 @@ def test_transfer_reuses_part_a_embeddings_of_the_held_out_bots(tiny_replicate, 
 
 
 @pytest.mark.slow
+@pytest.mark.long
 def test_two_replicate_jobs_write_what_one_writes(tmp_path, monkeypatch, capsys):
     """The step with two replicates trained at once (one process each, with the configured
     torch threads; the last replicate's results delivered first) writes the same JSON, summary

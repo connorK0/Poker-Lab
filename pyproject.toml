@@ -32,9 +32,10 @@ poker_lab = ["bots/data/*.json", "games/data/*.npz"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q --strict-markers -n 4 --dist loadfile"  # four processes, one file each at a time
+addopts = "-q --strict-markers -n 4 --dist worksteal"  # four processes; idle ones take tests
 markers = [
     "slow: long-running statistical or end-to-end tests (deselect with -m 'not slow')",
+    "long: one of the longest tests, started first (tests/conftest.py)",
 ]
 filterwarnings = [
     "error::UserWarning:pokerkit.*",
