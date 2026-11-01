@@ -32,7 +32,9 @@ is rebuilt):
 9. ``sequence``: an archetype classifier on raw action sequences (PyTorch: a GRU over each
    hand's decisions, learned shrunk rates over hands) against Phase 1's classifier on Phase 1's
    replicates and windows, with order and input ablations, five times the training bots, and
-   P3.7's consistency check on the professionals (P3.8).
+   P3.7's consistency check on the professionals (P3.8). ``--sequence-jobs N`` (default 1)
+   trains N of Phase 1's replicates at once, one process each; the results are the same for
+   any N (by construction, and checked on the quick configuration).
 10. ``schema``: schema v2 (big-blind antes, straddles, other minimum bets): round trips through
     the engine, PokerKit, JSON and PHH at v2 tables; the schema v1 code's own output (run in a
     temporary git worktree) read and migrated by the current code; the WSOP hold'em hands
@@ -49,7 +51,7 @@ import argparse
 import time
 from pathlib import Path
 
-from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
+from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config, positive_int
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
 STEPS = (
@@ -74,6 +76,7 @@ def run(
     steps: tuple[str, ...] = STEPS,
     workers: int | None = None,
     out_dir: Path | None = None,
+    sequence_jobs: int = 1,
 ) -> dict[str, float]:
     # Imported here: worker processes re-import this module (Windows spawn).
     from experiments import (
@@ -109,11 +112,13 @@ def run(
         print(f"[{k}/{len(steps)}] {step}", flush=True)
         t0 = time.perf_counter()
         section = cfg[step]
+        options = {"replicate_jobs": sequence_jobs} if step == "sequence" else {}
         modules[step].run(
             master_seed,
             cfg=section,
             workers=workers or section.get("workers"),
             out_dir=out_dir / step,
+            **options,
         )
         elapsed[step] = round(time.perf_counter() - t0, 1)
         print(f"      done in {elapsed[step]:.0f}s", flush=True)
@@ -128,6 +133,15 @@ def main() -> None:
     ap.add_argument("--workers", type=int, default=None, help="worker processes")
     ap.add_argument("--only", choices=STEPS, nargs="+", default=None, help="run some steps only")
     ap.add_argument(
+        "--sequence-jobs",
+        type=positive_int,
+        default=1,
+        metavar="N",
+        help="sequence step: train N Phase 1 replicates at once, one process each with the "
+        "config's torch threads (default 1: one after another, in this process); the results "
+        "are the same for any N, by construction and checked on the quick configuration",
+    )
+    ap.add_argument(
         "--out",
         type=Path,
         default=None,
@@ -140,7 +154,14 @@ def main() -> None:
     cfg = load_config(path)
     steps = tuple(args.only) if args.only else STEPS
     out_dir = args.out or RESULTS_ROOT / cfg["name"]
-    elapsed = run(args.seed, cfg, steps=steps, workers=args.workers, out_dir=out_dir)
+    elapsed = run(
+        args.seed,
+        cfg,
+        steps=steps,
+        workers=args.workers,
+        out_dir=out_dir,
+        sequence_jobs=args.sequence_jobs,
+    )
     timing = ", ".join(f"{k} {v:.0f}s" for k, v in elapsed.items())
     print(f"wrote {out_dir} ({timing})")
     from experiments.explorer.build import refresh

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import dataclasses
 import datetime as dt
 import json
@@ -108,3 +109,11 @@ def save_json(obj: Any, path: str | Path) -> Path:
 def derive_seeds(master_seed: int, n: int) -> list[int]:
     """``n`` independent 32-bit seeds derived from one master seed."""
     return [int(s) for s in np.random.SeedSequence(master_seed).generate_state(n)]
+
+
+def positive_int(text: str) -> int:
+    """An argparse type: an integer of at least 1."""
+    n = int(text)
+    if n < 1:
+        raise argparse.ArgumentTypeError(f"must be at least 1, not {n}")
+    return n

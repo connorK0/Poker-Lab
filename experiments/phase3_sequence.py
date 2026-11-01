@@ -87,16 +87,21 @@ C. More training players: part A's ``lr``, ``gbm``, ``bag`` and ``counters`` ref
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
+import io
+import os
+import sys
 import time
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import FIRST_COMPLETED, Future, ProcessPoolExecutor, wait
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 
-from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
+from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config, positive_int
 from experiments.phase1_data import CACHE_DIR, generate, simulation_fingerprint
 from poker_lab.bots import GroundTruth, make_population
 from poker_lab.bots.league import LeagueConfig, run_league
@@ -198,13 +203,17 @@ def _load_pools(path: Path, names: tuple[str, ...]) -> dict[str, SeqPool]:
     }
 
 
+def _load_sequences(path: Path, seed: int) -> SeqSeedData:
+    pools = _load_pools(path, ("train", "test"))
+    return SeqSeedData(seed, pools["train"], pools["test"])
+
+
 def generate_sequences(seed: int, p1: dict, *, workers=None, use_cache=True) -> SeqSeedData:
     """Phase 1's replicate ``seed`` (same populations, seeds and hands as
     ``phase1_data.generate``), with every hand's tokens."""
     path = _cache_path(seed, p1)
     if use_cache and path.exists():
-        pools = _load_pools(path, ("train", "test"))
-        return SeqSeedData(seed, pools["train"], pools["test"])
+        return _load_sequences(path, seed)
     rng = np.random.default_rng(seed)  # as in phase1_data.generate
     train_pop = make_population(p1["n_train_per_archetype"], rng, id_prefix="a")
     test_pop = make_population(p1["n_test_per_archetype"], rng, id_prefix="b")
@@ -219,17 +228,24 @@ def generate_sequences(seed: int, p1: dict, *, workers=None, use_cache=True) -> 
     return data
 
 
+def _extra_path(seed: int, p1: dict, per_archetype: int) -> Path:
+    path = _cache_path(seed, p1)
+    return path.with_name(
+        path.name.replace("phase3_sequence_", f"phase3_sequence_extra{per_archetype}_")
+    )
+
+
+def _load_extra(path: Path) -> SeqPool:
+    return _load_pools(path, ("extra",))["extra"]
+
+
 def generate_extra(seed: int, p1: dict, per_archetype: int, *, workers=None, use_cache=True):
     """Extra training bots for replicate ``seed``: ``per_archetype`` more players of each
     archetype, drawn and simulated as Phase 1's training pool is, in a league of their own,
     from seeds derived from (seed, 7). Disjoint from the replicate's players."""
-    path = _cache_path(seed, p1).with_name(
-        _cache_path(seed, p1).name.replace(
-            "phase3_sequence_", f"phase3_sequence_extra{per_archetype}_"
-        )
-    )
+    path = _extra_path(seed, p1, per_archetype)
     if use_cache and path.exists():
-        return _load_pools(path, ("extra",))["extra"]
+        return _load_extra(path)
     ss = np.random.SeedSequence([seed, 7])
     pop = make_population(per_archetype, np.random.default_rng(ss), id_prefix="c")
     pool = _simulate_pool(pop, p1, int(ss.generate_state(2)[1]), workers)
@@ -252,12 +268,14 @@ def combine(a: SeqPool, b: SeqPool) -> SeqPool:
     )
 
 
-def check_against_phase1(data: SeqSeedData, p1: dict, workers=None) -> dict[str, Any]:
+def check_against_phase1(data: SeqSeedData, p1: dict, workers=None, ref=None) -> dict[str, Any]:
     """The re-simulated hands are Phase 1's: identical players, labels, parameters and
-    counters, and the situation columns of the tokens equal Phase 1's decision rows."""
+    counters, and the situation columns of the tokens equal Phase 1's decision rows. ``ref``:
+    Phase 1's pools for the seed if already loaded (else simulated or loaded here)."""
     from poker_lab.profiling import SITUATION_FEATURES
 
-    ref = generate(data.seed, p1, workers=workers)
+    if ref is None:
+        ref = generate(data.seed, p1, workers=workers)
     out: dict[str, Any] = {}
     for name in ("train", "test"):
         a, b = getattr(data, name), getattr(ref, name)
@@ -555,11 +573,13 @@ def _metrics(y: np.ndarray, probs: dict[str, np.ndarray]) -> dict:
 
 
 def part_a(
-    data: SeqSeedData, p1: dict, cfg: dict, variants=None
+    data: SeqSeedData, p1: dict, cfg: dict, variants=None, test_view: PoolView | None = None
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """Hands-to-identify on Phase 1's test windows: Phase 1's classifiers and the neural
     variants, with paired per-window differences against the logistic model. Returns the
-    results and the fitted models (for part B)."""
+    results and the fitted models (for part B). With ``test_view`` (a ``PoolView`` of
+    ``data.test``) the neural models read the test bots through that view's inputs, so later
+    predictions through the same view reuse the hands' embeddings (``SequenceClassifier``)."""
     from poker_lab.evaluation.metrics import per_row_log_loss
 
     hands = data.train.counters.shape[1]
@@ -570,7 +590,8 @@ def part_a(
     for variant in cfg["variants"] if variants is None else variants:
         clf = fit_neural(data, variant, sizes, p1, cfg)
         models[variant] = clf
-        inputs = neural_inputs(data.test, NEURAL[variant][1])
+        kind = NEURAL[variant][1]
+        inputs = neural_inputs(data.test, kind) if test_view is None else test_view.inputs(kind)
         probs[variant] = {mode: {} for mode in MODES}
         for n in sizes:
             w = held_out_windows(data.test, n, p1["test_windows_max"])
@@ -992,14 +1013,250 @@ def predictions(a: dict[str, Any], b: dict[str, Any], c: dict[str, Any] | None) 
     return out
 
 
-def run(
-    seed: int, *, cfg: dict[str, Any], workers: int | None = None, out_dir: Path | None = None
+# ---------------------------------------------------------------------------- replicates
+def replicate(
+    rep_seed: int, p1: dict, cfg: dict, views: dict, players: dict, *, data, reference, extra
 ) -> dict[str, Any]:
+    """One Phase 1 replicate: the check against Phase 1, part A, part B on each population of
+    ``views`` and part C. ``data``, ``reference`` and ``extra`` return the replicate's pools
+    with tokens, Phase 1's pools (for the check) and the extra training bots; they are called
+    in that order, ``extra`` only when part C is configured."""
+    t0 = time.perf_counter()
+    d = data()
+    check = {"seed": rep_seed, **check_against_phase1(d, p1, ref=reference())}
+    if not check["identical"]:
+        raise AssertionError(f"replicate {rep_seed} differs from Phase 1's: {check}")
+    bots = PoolView(d.test)  # part A predicts through it too: transfer reuses its embeddings
+    a, models = part_a(d, p1, cfg, test_view=bots)
+    b = {k: transfer_rep(models, v, players[k], bots, a["sizes"], cfg) for k, v in views.items()}
+    del models, bots  # part A's classifiers and their embeddings: part C fits its own
+    out: dict[str, Any] = {"check": check, "a": a, "b": b, "c": None}
+    if cfg.get("extra_per_archetype"):
+        big = SeqSeedData(rep_seed, combine(d.train, extra()), d.test)
+        out["c"] = part_a(big, p1, cfg, variants=cfg["scale_variants"])[0]
+        out["training_players_c"] = len(big.train.player_ids)
+    print(f"      {time.perf_counter() - t0:.0f}s", flush=True)
+    return out
+
+
+def run_replicates(
+    p1_seeds: list[int],
+    p1: dict,
+    cfg: dict,
+    pops: dict,
+    views: dict,
+    players: dict,
+    *,
+    workers: int | None = None,
+    jobs: int = 1,
+) -> list[dict[str, Any]]:
+    """Every replicate's ``replicate`` output, in replicate order. With ``jobs`` = 1 (or one
+    replicate) they run here, one after another, each simulated (or loaded from the cache)
+    with ``workers`` processes just before it is used. With more, see ``_in_parallel``."""
+    jobs = min(jobs, len(p1_seeds))
+    if jobs > 1:
+        return _in_parallel(p1_seeds, p1, cfg, pops, players, workers=workers, jobs=jobs)
+    outs = []
+    for rep, rep_seed in enumerate(p1_seeds):
+        print(f"replicate {rep + 1}/{len(p1_seeds)} ({rep_seed})", flush=True)
+        outs.append(
+            replicate(
+                rep_seed,
+                p1,
+                cfg,
+                views,
+                players,
+                data=partial(generate_sequences, rep_seed, p1, workers=workers),
+                reference=partial(generate, rep_seed, p1, workers=workers),
+                extra=partial(
+                    generate_extra, rep_seed, p1, cfg.get("extra_per_archetype"), workers=workers
+                ),
+            )
+        )
+    return outs
+
+
+def cache_replicate(seed: int, p1: dict, cfg: dict, workers: int | None = None) -> dict:
+    """The cache files of replicate ``seed``: its pools with tokens, Phase 1's pools (for the
+    check) and, with part C, the extra training bots. Any that is missing is simulated first,
+    with ``workers`` processes."""
+    from experiments.phase1_data import _cache_path as phase1_cache_path
+
+    paths = {"sequence": _cache_path(seed, p1), "phase1": phase1_cache_path(seed, p1)}
+    if not paths["sequence"].exists():
+        generate_sequences(seed, p1, workers=workers)
+    if not paths["phase1"].exists():
+        generate(seed, p1, workers=workers)
+    if cfg.get("extra_per_archetype"):
+        paths["extra"] = _extra_path(seed, p1, cfg["extra_per_archetype"])
+        if not paths["extra"].exists():
+            generate_extra(seed, p1, cfg["extra_per_archetype"], workers=workers)
+    return paths
+
+
+_WORKER: dict[str, Any] = {}  # a replicate worker's populations (``_init_worker``)
+
+
+def _init_worker(threads: int, pops: dict, players: dict) -> None:
+    import torch
+
+    torch.set_num_threads(threads)  # as ``run`` does: a fit's bytes depend on the thread count
+    _WORKER.update(views={k: PoolView(p) for k, p in pops.items()}, players=players)
+
+
+def _replicate_from_cache(rep_seed: int, paths: dict, p1: dict, cfg: dict) -> dict[str, Any]:
+    """``replicate`` in a worker process, reading only the cache files ``paths`` (nothing is
+    simulated here). What it prints comes back under ``"log"`` (on an error, as a note on the
+    exception), and the worker's torch thread count under ``"torch_threads"`` (for checks; not
+    saved in the results)."""
+    import torch
+
+    from experiments.phase1_data import load
+
+    log = io.StringIO()
+    try:
+        with contextlib.redirect_stdout(log):
+            out = replicate(
+                rep_seed,
+                p1,
+                cfg,
+                _WORKER["views"],
+                _WORKER["players"],
+                data=partial(_load_sequences, paths["sequence"], rep_seed),
+                reference=partial(load, paths["phase1"], rep_seed),
+                extra=partial(_load_extra, paths.get("extra")),
+            )
+    except Exception as exc:
+        exc.add_note(f"replicate {rep_seed}'s output before the error:\n{log.getvalue()}")
+        raise
+    return {**out, "log": log.getvalue(), "torch_threads": torch.get_num_threads()}
+
+
+def _in_parallel(
+    p1_seeds: list[int], p1: dict, cfg: dict, pops: dict, players: dict, *, workers, jobs: int
+) -> list[dict[str, Any]]:
+    """``jobs`` replicates at once. First, here and one replicate after another, whatever the
+    cache lacks is simulated with ``workers`` processes (so simulations never run inside the
+    training processes, and never two at once); then ``jobs`` processes train one replicate
+    each, with the configured torch threads, reading the cache files. The populations of part
+    B go to each process once. A replicate is handed to a process only when one is free, so
+    after a failure no new replicate starts: the running ones finish, then the first error is
+    raised. A replicate's lines print when it finishes; the results come back in replicate
+    order, whichever finishes first."""
+    n = len(p1_seeds)
+    paths = []
+    for rep, seed in enumerate(p1_seeds):
+        t0 = time.perf_counter()
+        paths.append(cache_replicate(seed, p1, cfg, workers))
+        print(
+            f"replicate {rep + 1}/{n} ({seed}): hands ready, {time.perf_counter() - t0:.0f}s",
+            flush=True,
+        )
+    print(f"training {jobs} replicates at a time; each one's lines print when it ends", flush=True)
+    todo = list(range(n))  # replicates not handed to a process yet, in order
+    running: dict[Future, int] = {}
+    done: dict[int, dict[str, Any]] = {}
+    failed: list[Exception] = []
+    init = (cfg["torch_threads"], pops, players)
+    with ProcessPoolExecutor(jobs, initializer=_init_worker, initargs=init) as ex:
+        while todo or running:
+            while todo and not failed and len(running) < jobs:
+                rep = todo.pop(0)
+                print(f"replicate {rep + 1}/{n} ({p1_seeds[rep]}): training starts", flush=True)
+                running[ex.submit(_replicate_from_cache, p1_seeds[rep], paths[rep], p1, cfg)] = rep
+            if not running:
+                break
+            finished, _ = wait(running, return_when=FIRST_COMPLETED)
+            for fut in finished:
+                rep = running.pop(fut)
+                label = f"replicate {rep + 1}/{n} ({p1_seeds[rep]})"
+                try:
+                    out = fut.result()
+                except Exception as exc:
+                    failed.append(exc)
+                    more = "; waiting for the running ones" if running else ""
+                    print(f"{label} failed: {exc!r}{more}", flush=True)
+                    continue
+                done[rep] = out
+                print(f"{label}: done ({len(done)}/{n} done)", flush=True)
+                print(out.pop("log"), end="", flush=True)
+    if failed:
+        raise failed[0]
+    return [done[rep] for rep in range(n)]
+
+
+#: About a full-size replicate's peak committed memory in its own process (Step 39's profile).
+GB_PER_JOB = 5.0
+ONE_AT_A_TIME = (
+    "--sequence-jobs 1 in run_phase3, --replicate-jobs 1 in phase3_sequence: one replicate "
+    "at a time"
+)
+
+
+def _free_memory_gb() -> float | None:
+    """Available physical memory in GB (Windows' ``GlobalMemoryStatusEx``); None elsewhere."""
+    if sys.platform != "win32":
+        return None
+    import ctypes
+
+    class MemoryStatus(ctypes.Structure):
+        _fields_ = [
+            ("dwLength", ctypes.c_ulong),
+            ("dwMemoryLoad", ctypes.c_ulong),
+            *((name, ctypes.c_ulonglong) for name in (
+                "ullTotalPhys", "ullAvailPhys", "ullTotalPageFile", "ullAvailPageFile",
+                "ullTotalVirtual", "ullAvailVirtual", "ullAvailExtendedVirtual",
+            )),
+        ]  # fmt: skip
+
+    status = MemoryStatus()
+    status.dwLength = ctypes.sizeof(MemoryStatus)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
+        return None
+    return status.ullAvailPhys / 2**30
+
+
+def resource_warnings(jobs: int, threads: int) -> list[str]:
+    """Warnings (not errors) for ``jobs`` replicates at once with ``threads`` torch threads
+    each: more threads than logical processors, or less free memory than about
+    ``GB_PER_JOB`` per replicate."""
+    if jobs <= 1:
+        return []
+    out = []
+    cpus = os.cpu_count()
+    if cpus and jobs * threads > cpus:
+        out.append(
+            f"{jobs} replicates at once x {threads} torch threads = {jobs * threads} threads on "
+            f"{cpus} logical processors: they will slow each other down ({ONE_AT_A_TIME})"
+        )
+    free = _free_memory_gb()
+    if free is not None and free < jobs * GB_PER_JOB:
+        out.append(
+            f"{free:.1f} GB of physical memory available; {jobs} full-size replicates at once "
+            f"need about {jobs * GB_PER_JOB:.0f} GB and may page ({ONE_AT_A_TIME})"
+        )
+    return out
+
+
+def run(
+    seed: int,
+    *,
+    cfg: dict[str, Any],
+    workers: int | None = None,
+    out_dir: Path | None = None,
+    replicate_jobs: int = 1,
+) -> dict[str, Any]:
+    """The whole step. ``replicate_jobs``: Phase 1 replicates trained at once, each in its own
+    process with ``cfg["torch_threads"]`` threads (``run_replicates``); 1 runs them one after
+    another in this process. The results are the same for any value (by construction, and
+    checked on the quick configuration). Recorded in ``meta``, not in the config."""
     import torch
 
     from experiments.common import derive_seeds, run_metadata, save_json
     from experiments.phase3_priors import random_seating
 
+    if replicate_jobs < 1:
+        raise ValueError("replicate_jobs must be at least 1")
     out_dir = out_dir or RESULTS_ROOT / "phase3" / "sequence"
     out_dir.mkdir(parents=True, exist_ok=True)
     torch.set_num_threads(cfg["torch_threads"])
@@ -1010,6 +1267,10 @@ def run(
     ss = [int(x) for x in np.random.SeedSequence([seed, 38]).generate_state(4)]
     p1 = load_config(REPO_ROOT / cfg["phase1_config"])
     p1_seeds = cfg.get("replicate_seeds") or derive_seeds(cfg["phase1_master_seed"], p1["n_seeds"])
+    jobs = min(replicate_jobs, len(p1_seeds))
+    meta["replicate_jobs"] = jobs
+    for warning in resource_warnings(jobs, cfg["torch_threads"]):
+        print(f"WARNING: {warning}", flush=True)
     if cfg["real_source"] == "pluribus":
         humans = load_pluribus(cfg, workers)
     else:
@@ -1028,26 +1289,11 @@ def run(
             f"{k}: {len(players[k])} players, {int(views[k].hands[players[k]].sum())} player-hands"
         )
 
-    reps_a, reps_c, checks = [], [], []
-    reps_b: dict[str, list] = {k: [] for k in pops}
-    for rep, rep_seed in enumerate(p1_seeds):
-        t0 = time.perf_counter()
-        print(f"replicate {rep + 1}/{len(p1_seeds)} ({rep_seed})", flush=True)
-        data = generate_sequences(rep_seed, p1, workers=workers)
-        checks.append({"seed": rep_seed, **check_against_phase1(data, p1, workers)})
-        if not checks[-1]["identical"]:
-            raise AssertionError(f"replicate {rep_seed} differs from Phase 1's: {checks[-1]}")
-        a, models = part_a(data, p1, cfg)
-        reps_a.append(a)
-        bots = PoolView(data.test)
-        for k in pops:
-            reps_b[k].append(transfer_rep(models, views[k], players[k], bots, a["sizes"], cfg))
-        if cfg.get("extra_per_archetype"):
-            extra = generate_extra(rep_seed, p1, cfg["extra_per_archetype"], workers=workers)
-            big = SeqSeedData(rep_seed, combine(data.train, extra), data.test)
-            reps_c.append(part_a(big, p1, cfg, variants=cfg["scale_variants"])[0])
-            n_train_c = len(big.train.player_ids)
-        print(f"      {time.perf_counter() - t0:.0f}s", flush=True)
+    outs = run_replicates(p1_seeds, p1, cfg, pops, views, players, workers=workers, jobs=jobs)
+    checks = [o["check"] for o in outs]
+    reps_a = [o["a"] for o in outs]
+    reps_b = {k: [o["b"][k] for o in outs] for k in pops}
+    reps_c = [o["c"] for o in outs if o["c"] is not None]
 
     sizes = reps_a[0]["sizes"]
     ref = phase1_reference(p1, p1_seeds, sizes)
@@ -1081,7 +1327,7 @@ def run(
     if reps_c:
         r["c"] = {
             "extra_per_archetype": cfg["extra_per_archetype"],
-            "training_players": n_train_c,
+            "training_players": outs[-1]["training_players_c"],
             **aggregate_a(reps_c),
             "improvement": improvement(reps_a, reps_c),
         }
@@ -1433,10 +1679,25 @@ def main() -> None:
     ap.add_argument("--quick", action="store_true", help="use configs/phase3_quick.yaml")
     ap.add_argument("--workers", type=int, default=None)
     ap.add_argument("--out", type=Path, default=None)
+    ap.add_argument(
+        "--replicate-jobs",
+        type=positive_int,
+        default=1,
+        metavar="N",
+        help="train N Phase 1 replicates at once, one process each (default 1: one after "
+        "another, in this process); the results are the same for any N, by construction and "
+        "checked on the quick configuration",
+    )
     args = ap.parse_args()
     path = CONFIG.with_name("phase3_quick.yaml") if args.quick else args.config
     cfg = load_config(path)["sequence"]
-    r = run(args.seed, cfg=cfg, workers=args.workers or cfg.get("workers"), out_dir=args.out)
+    r = run(
+        args.seed,
+        cfg=cfg,
+        workers=args.workers or cfg.get("workers"),
+        out_dir=args.out,
+        replicate_jobs=args.replicate_jobs,
+    )
     print(f"done in {r['seconds']:.0f}s")
 
 
