@@ -34,7 +34,7 @@ is rebuilt):
    replicates and windows, with order and input ablations, five times the training bots, and
    P3.7's consistency check on the professionals (P3.8). ``--sequence-jobs N`` (default 1)
    trains N of Phase 1's replicates at once, one process each; the results are the same for
-   any N (by construction, and checked on the quick configuration).
+   any N (by construction, and checked at full size with two).
 10. ``schema``: schema v2 (big-blind antes, straddles, other minimum bets): round trips through
     the engine, PokerKit, JSON and PHH at v2 tables; the schema v1 code's own output (run in a
     temporary git worktree) read and migrated by the current code; the WSOP hold'em hands
@@ -139,7 +139,7 @@ def main() -> None:
         metavar="N",
         help="sequence step: train N Phase 1 replicates at once, one process each with the "
         "config's torch threads (default 1: one after another, in this process); the results "
-        "are the same for any N, by construction and checked on the quick configuration",
+        "are the same for any N, by construction and checked at full size with two",
     )
     ap.add_argument(
         "--out",

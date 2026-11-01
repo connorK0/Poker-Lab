@@ -1249,7 +1249,10 @@ def run(
     """The whole step. ``replicate_jobs``: Phase 1 replicates trained at once, each in its own
     process with ``cfg["torch_threads"]`` threads (``run_replicates``); 1 runs them one after
     another in this process. The results are the same for any value (by construction, and
-    checked on the quick configuration). Recorded in ``meta``, not in the config."""
+    checked at full size with two). Recorded in ``meta``, not in the config. At full size on a
+    16-thread, 15 GB laptop, two at once trained the five replicates in about 13% less time than
+    one at a time, but free memory fell to 1.4 GB (3.0 GB one at a time; build log Step 40);
+    hence the default of 1."""
     import torch
 
     from experiments.common import derive_seeds, run_metadata, save_json
@@ -1686,7 +1689,7 @@ def main() -> None:
         metavar="N",
         help="train N Phase 1 replicates at once, one process each (default 1: one after "
         "another, in this process); the results are the same for any N, by construction and "
-        "checked on the quick configuration",
+        "checked at full size with two",
     )
     args = ap.parse_args()
     path = CONFIG.with_name("phase3_quick.yaml") if args.quick else args.config
