@@ -73,11 +73,12 @@ def _counting(calls, name, fn):
 
 @pytest.fixture
 def lp_calls(monkeypatch):
-    """Counts the robust-response LPs posed (``_solve``) and solved by HiGHS (``linprog``),
-    starting from an empty LP cache."""
+    """Counts the restricted Nash sweeps posed (``_solve_sweep``, one per seat) and the LPs
+    solved by HiGHS (``_run`` through SciPy's bindings, ``linprog`` otherwise), starting from
+    an empty LP cache."""
     monkeypatch.setattr(robust, "_SOLVED", OrderedDict())
     calls = Counter()
-    for name in ("_solve", "linprog"):
+    for name in ("_solve_sweep", "_run", "linprog"):
         monkeypatch.setattr(robust, name, _counting(calls, name, getattr(robust, name)))
     return calls
 
@@ -292,5 +293,5 @@ def test_choose_solves_restricted_nash_lps_only_for_a_ranking(checked, lp_calls)
     assert not lp_calls
     ranked = recs["passes"]
     assert ranked.choose(actions).name != "equilibrium"
-    assert lp_calls["_solve"] >= 2 * len(ranked.ps)  # both seats, every p: the spy sees them
-    assert lp_calls["linprog"] >= 2 * len(ranked.ps)
+    assert lp_calls["_solve_sweep"] >= 2  # both seats: the spy sees them
+    assert lp_calls["_run"] + lp_calls["linprog"] >= 2 * len(ranked.ps)  # every p
