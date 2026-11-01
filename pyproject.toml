@@ -20,7 +20,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8", "ruff>=0.6"]
+dev = ["pytest>=8", "pytest-xdist>=3.6", "ruff>=0.6"]
 nn = ["torch>=2.14,<3"]  # tested with 2.14.1 (CPU); the version is recorded in results
 
 [tool.setuptools.packages.find]
@@ -32,7 +32,7 @@ poker_lab = ["bots/data/*.json", "games/data/*.npz"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
-addopts = "-q --strict-markers"
+addopts = "-q --strict-markers -n 4 --dist loadfile"  # four processes, one file each at a time
 markers = [
     "slow: long-running statistical or end-to-end tests (deselect with -m 'not slow')",
 ]
