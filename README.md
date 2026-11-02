@@ -404,7 +404,13 @@ as recommendations (every number identical). Rerun at the commits their results 
 three steps reproduce exactly too. The committed results are the original runs. Three later
 speed-ups (build log Step 39) change no result: every step that uses the changed code gives the
 same results as before them. Run back to back with the old code, the adaptive step's quick
-configuration takes 48% less time and the sequence step's about 12% less.
+configuration takes 48% less time and the sequence step's about 12% less. A fourth (build log
+Step 40) solves each LP of a restricted Nash sweep after the first starting from the previous
+one's solution. A rerun with it changes digits in four steps' JSON files (adaptive,
+recommendation, fit check and confirmation; the largest gap is 7.3e-5, in one bot's
+exploitability); every summary line, figure, choice and prediction verdict stays the same. Back
+to back, it cuts the adaptive step's quick configuration from 27 to 16 s. Its other changes (two
+replicates at once, the transfer reuse) change no result.
 `python -m experiments.compare_runs` lists every difference between two runs
 ([build log, Step 37](docs/BUILD_LOG.md#step-37-phase-3-wrap-up-one-command-reproduced)).
 
@@ -755,6 +761,7 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 python -m experiments.run_phase3 --seed 2026          # ~4 h on 16 cores
 python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence, schema or adaptive
 python -m experiments.run_phase3 --seed 2026 --out ../rerun/phase3   # write elsewhere, to check a reproduction
+python -m experiments.run_phase3 --seed 2026 --only sequence --sequence-jobs 2   # two replicates at once: same results, needs about 10 GB free
 python -m experiments.compare_runs experiments/results/phase3 ../rerun/phase3   # every difference outside provenance and timing
 python -m poker_lab.importers DIR --out hands.jsonl.gz --no-rake   # import PHH files (completed hands, batch)
 python -m poker_lab.games.preflop                     # optional: regenerate the matchup table (~5 min)
@@ -921,9 +928,10 @@ Next tasks:
 
 ## Development
 
-* Tests: `python -m pytest` (444 tests, ~2 min: unit, contract, firewall, differential-vs-PokerKit,
-  solver-vs-reference, explorer and end-to-end tests; the Deep CFR and sequence-model tests
-  skip without PyTorch).
+* Tests: `python -m pytest` (471 tests in four processes with pytest-xdist, about a minute: unit,
+  contract, firewall, differential-vs-PokerKit, solver-vs-reference, explorer and end-to-end
+  tests; the Deep CFR and sequence-model tests skip without PyTorch). Add `-n 0` to run one file
+  in a single process or to debug with `--pdb`.
   Lint/format: `python -m ruff check .` and `python -m ruff format .`.
 * Every results file records the seed, the full config, the git commit, whether the working
   tree was dirty, and package versions. Experiments are reproducible from the master seed:
