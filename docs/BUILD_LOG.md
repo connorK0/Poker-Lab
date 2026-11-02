@@ -73,6 +73,7 @@ $B(a,b)$ the beta function.
   * [Step 38: Variance reduction with AIVAT](#step-38-variance-reduction-with-aivat-measured-exactly-p211)
   * Performance
   * [Step 39: Faster code, identical results](#step-39-faster-code-identical-results)
+  * [Step 40: A hot start, parallel replicates and a split test suite](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -204,7 +205,7 @@ the sanity check ([Step 9](#step-9-the-sanity-check-tuning-against-pre-registere
 | matplotlib | figures |
 | PokerKit 0.7.7 (MIT) | no-limit hold'em rules engine |
 | phevaluator 0.6 (Apache-2.0) | fast 5-7 card hand evaluation in C |
-| pytest, ruff | tests, lint and formatting |
+| pytest, pytest-xdist, ruff | tests (in four processes, Step 40), lint and formatting |
 | PyYAML | experiment configs |
 | PyTorch 2.14.1 (CPU; optional `nn` extra) | Deep CFR networks (Phase 2) |
 
@@ -4384,7 +4385,8 @@ to the end, a new entry goes at the end, and above 2,048 entries the first, the 
 ago, is dropped; each step costs $O(1)$. Recency is the usual bet: what was used recently tends to
 be used again soon. The bound caps memory. A push/fold solution has 339 entries (169 classes × 2
 actions, plus the empty sequence); with the objective in the key, an entry takes about 5.4 kB,
-about 11 MB in all.
+about 11 MB in all. (Since Step 40 a sweep is one entry holding a solution per $p$, and the
+bound counts solutions.)
 
 The same commit moves one computation out of a loop. The LP of Step 22 maximizes
 $p\,(A y_{\text{fix}})^\top x + (1-p)\,f^\top q$, and $A y_{\text{fix}}$ does not depend on $p$.
@@ -4517,7 +4519,8 @@ does not count cache hits, so how much each gave is not known.
 
 * Transfer reads the test bots through `bots.inputs`, a different `HandSequences` object from part
   A's `inputs` for the same players, so the memo misses and those players are encoded once more
-  per model.
+  per model. Fixed in [Step 40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite):
+  part A now predicts through the view that transfer reads, with the same bytes.
 * Refitting a `SequenceClassifier` keeps its old `history` (new losses are appended to it) and,
   when the refit fits no per-size temperatures, its old `size_temperatures`. This is older than
   this step and has nothing to do with speed; the experiments fit a new classifier every time, so
@@ -4566,7 +4569,8 @@ faster machine. A speedup is measured with old and new code in one session.
   responder compiled again, with HiGHS's own read-only solution (a fresh solve gives the same
   bytes); LPs one ulp apart in an objective entry or the weight, with other $G$ values, for the
   other seat or for another tree's payoffs do not share an entry; least-recently-used eviction;
-  the sweep equals the single responses bit for bit, with the memo warm and cold.
+  the sweep equals the single responses bit for bit, with the memo warm and cold (replaced in
+  Step 40, when later $p$ became hot-started; only the first $p$ is still bit for bit).
 * `tests/test_sequence_model.py` (4 new tests): repeated predictions encode each block once and
   give the bytes of predictions from scratch; two `HandSequences` of the same players keep their
   own embeddings, and a new object never inherits a freed one's; a refit forgets the old
@@ -4580,6 +4584,622 @@ faster machine. A speedup is measured with old and new code in one session.
 * Same-session timing: `python -m experiments.run_phase3 --quick --seed 2026 --only sequence
   --out DIR` from a worktree of the old commit (`f3d628c`) and one of the new (`eea6815`),
   alternating, with `compare_runs` between each pair.
+
+## Step 40: A hot start, parallel replicates and a split test suite
+
+**The question.** After Step 39 the owner asked for three more changes: "implement the hot
+start, split the test suite and run two sequence replications at once. Make the rest of the
+decisions." Two of them can keep every result bit for bit, as Step 39's changes did. The hot
+start cannot. It starts each LP of a sweep from the previous one's optimal basis, and a
+different path through the simplex method rounds differently and can stop at a different
+optimal answer, so some numbers move in their last digits. The project's rule is that a change
+which alters floating-point results needs the owner's sign-off, and asking for the hot start
+was that sign-off. The rule exists for the reason Step 39 gave: `compare_runs` compares floats
+exactly, so after such a change every rerun lists thousands of differences, and each comparison
+with the committed results needs an argument that they are rounding and nothing more. A
+sign-off accepts that cost on purpose, and this step owes the argument: Results classifies all
+83,784 differences. A new development dependency, pytest-xdist, came with "split the test
+suite". A fourth change, in the same commit as the parallel replicates, fixes the first item of
+Step 39's "What was left".
+
+**1. A hot start for the restricted Nash sweeps.**
+
+*Bases and vertices.* Write an LP with its inequalities turned into equalities by slack
+variables: minimize $c^\top z$ subject to $Mz = b$, $z \ge 0$, with $m$ rows. ($M$ is the
+constraint matrix here; $A$ stays the payoff matrix of Steps 18 and 22.) A *basis* is a set $B$
+of $m$ columns whose square matrix $M_B$ is invertible. Setting every other variable to zero
+leaves one solution, $z_B = M_B^{-1} b$; if it is non-negative it is a vertex of the feasible
+set, and every vertex arises this way. If the LP has an optimum, one is at a vertex. The
+*simplex method* (Dantzig 1963) walks from vertex to adjacent vertex. At each basis it prices
+the rows, $y = M_B^{-\top} c_B$, and computes the *reduced cost* of each variable outside the
+basis,
+
+$$d_j = c_j - M_j^\top y,$$
+
+the change in the objective per unit of $z_j$ brought in. If every $d_j \ge 0$, no neighbor is
+cheaper and the basis is optimal. Otherwise a variable with $d_j < 0$ enters, the basic variable
+that would first turn negative leaves (one *pivot*), and the walk goes on. Real solvers, HiGHS among
+them, also handle bounds other than zero and keep a factorization of $M_B$ instead of its inverse;
+the logic is the same. HiGHS runs the *dual* simplex method here (`linprog`'s option), which keeps
+the reduced costs non-negative and pivots toward feasibility; how it continues after a change of
+costs, from a basis that is feasible but no longer optimal, was not examined. The tests check only
+that it starts from that basis (no presolve) and reaches an optimum.
+
+*What a change of costs keeps.* Whether a basis is feasible, $M_B^{-1} b \ge 0$, involves $M$
+and $b$ but not $c$. Whether it is optimal involves $c$. The restricted Nash LP of Step 22,
+
+$$\max_{x,q}\ p\,(A y_{\text{fix}})^\top x + (1-p)\,f^\top q \quad\text{s.t.}\quad
+F^\top q - A^\top x \le 0,\ Ex = e,\ x \ge 0,$$
+
+has the same constraints for every $p$; only the objective moves. So the optimal basis for one
+$p$ is a feasible basis for the next. The walk can start there, and when the optimum moves
+little, a few pivots finish it. A solve from scratch must first find a feasible basis, then walk
+to the optimum. Starting from an earlier solve is called a *warm start* when a starting point,
+such as a basis, is handed to a solver, and a *hot start* when the solver instance also keeps
+its working data from the last solve. The code does the second.
+
+*How the code does it.* `linprog` cannot keep a solver between calls: each call builds a new HiGHS
+instance. So the LPs now reach HiGHS through SciPy's own bindings (`scipy.optimize._highspy._core`,
+a private module of SciPy 1.18.0), built exactly as `linprog(method="highs")` builds them: the rows
+of $A_{ub}$ then those of $A_{eq}$, the matrix stored column by column, $-\infty$ as the lower bound
+of each inequality row, and the options `linprog` passes (presolve on, the dual simplex method).
+`restricted_nash_sweep` poses, for each seat, one LP per $p$ below 1; the recommender (Step 29),
+which recommend, fitcheck, confirm and adaptive use, sweeps $p$ = 0.1, 0.25, 0.5, 0.75 and 0.9 in
+that order. A new HiGHS instance per seat solves the first $p$ from scratch. For each later $p$ the
+code changes the costs (`changeColsCost`) and runs the same instance again, which starts from the
+basis it holds. An LP solved from scratch is built and solved as `linprog` would solve it, so it
+gives `linprog`'s bytes (a test compares every array passed to HiGHS, and the result). Single
+responses, data-biased responses and the first $p$ of every sweep are therefore unchanged. The
+restricted Nash LP without its costs is built once per form and kept (an LRU of 8 forms), since only
+the costs depend on the model and $p$. The hot-start agent measured a sweep about 3.7× faster on the
+development seeds.
+
+*Why presolve is skipped.* A solve from scratch first runs *presolve*. It simplifies the LP
+(removes redundant rows and fixed columns, tightens bounds; some reductions depend on the
+costs), solves the smaller LP and maps the answer back (*postsolve*). A basis of the original LP
+is not a basis of the reduced one. So when HiGHS holds a valid basis, it solves the original LP
+from that basis and does not presolve. A test reads HiGHS's presolve status: `kNotPresolved` for
+every hot-started solve and for no solve from scratch.
+
+*Why the digits change.* A hot start computes its answer by another route even when it ends at
+the same optimal basis as a solve from scratch: the original LP, a factorization built up over
+other pivots, no postsolve. Every operation rounds, so the last bits differ. Step 39 saw the
+same effect with presolve turned off (solutions up to $1.28 \times 10^{-11}$ apart). Here the
+later $p$ usually agree with solves from scratch to about $10^{-11}$.
+
+*Alternative optima, and why some differ by more.* An LP can have several optimal vertices. The
+simplex method stops at the first basis it finds optimal, so two starting points can end at
+different ones. And optimality is tested within a tolerance: HiGHS's primal and dual
+feasibility tolerances are $10^{-7}$ by default, so a reduced cost above $-10^{-7}$ counts as
+non-negative. An illustration, made up for this log (it is also the LP the code's start-up check
+solves, below): minimize $c_1 z_1 + c_2 z_2$ subject to $z_1 + z_2 \ge 1$, $z \ge 0$. The
+vertices are $(1, 0)$ and $(0, 1)$. At the basis $\{z_1\}$, the vertex $(1, 0)$, the row's
+price is $y = c_1$, so the reduced cost of $z_2$ is $d_2 = c_2 - c_1$ (the surplus variable's is
+$c_1 > 0$).
+
+| Costs $c$ | $d_2$ at $(1, 0)$ | A hot start from $(1, 0)$ |
+|---|---|---|
+| $(1, 2)$ | $1$ | stays: $(1, 0)$ is optimal |
+| $(2, 1)$ | $-1$ | $(1, 0)$ is still feasible (the constraint did not change); one pivot reaches $(0, 1)$ |
+| $(1, 1)$ | $0$ | stays at $(1, 0)$; $(0, 1)$ and every point between cost the same |
+| $(1, 1 - 10^{-8})$ | $-10^{-8}$, inside the tolerance | stays at $(1, 0)$, though $(0, 1)$ is cheaper by $10^{-8}$ |
+
+In the last two rows a solve from scratch has no reason to start at $(1, 0)$ and can end at
+$(0, 1)$. The "strategies" then differ by 1 in each coordinate while the objective values agree
+exactly, or within $10^{-8}$. A zero reduced cost at an optimum, as in the third row, is the sign of
+such ties: the LP is *dual degenerate*, and unless the vertex is also primal degenerate it has
+*alternative optima*. (*Primal* degeneracy is the other kind: one vertex described by several bases,
+with a basic variable at zero; it can make the simplex method pivot without moving.) Some of the
+project's LPs have such ties, exact or within the tolerance. In the hot-start agent's development
+checks the hot path sometimes stopped at another optimal vertex, with strategies differing by up to
+about $3 \times 10^{-4}$ and objective values within the tolerance. Two strategies with the same
+objective can still score differently on what the experiments report. The objective mixes the gain
+against the model and the worst case (weights $p$ and $1 - p$), and another optimal vertex can trade
+one for the other. That is the likely source of the largest differences in Results; they were not
+traced one by one.
+
+*Still deterministic.* A hot-started sweep is not the same function as five single solves, but
+it is a function. Each sweep makes its own HiGHS instance and makes the same calls in the same
+order, so its result depends only on its inputs (the form, $A y_{\text{fix}}$ and the $p$
+values in order), never on what the process solved before. That matters in a process pool. The
+steps that sweep run their tasks in pools of 12 worker processes, and which worker gets which
+task depends on timing. Suppose instead a worker kept one HiGHS instance and hot-started each
+sweep from the last one's basis. A result would then depend on what that worker happened to
+solve before, and a rerun could differ from itself. A test runs the same sweep fresh, after
+other LPs and sweeps in two orders (another model, another tree, the same $p$ in reverse order,
+the LPs one at a time), and in a spawned process, and requires the same bytes every time. In the
+quick-configuration reruns, new code against new code gave 0 differences.
+
+*The memo keeps the two kinds apart.* Step 39's memo is exact when the key determines the input and
+the function is deterministic. A hot-started solution at $p = 0.5$ is not the one a solve from
+scratch gives, so the LP alone no longer determines the answer: how it was solved does too. A sweep
+of two or more LPs is therefore stored under its own key (a sweep of one LP is that LP solved from
+scratch, under the single LP's key): the form, $A y_{\text{fix}}$, the $p$ values in order, and
+whether the bindings are in use. The two kinds of key never meet. Otherwise
+`both_seats("rnr", model, p=0.5)` would return different bytes depending on whether a sweep had run
+earlier in the process: a memo that changes results. The key holds $p$ as Python floats and
+$A y_{\text{fix}}$ as float64, and the LPs are built from those same values. So equal inputs of
+different dtypes share an entry, and the key determines the LPs exactly. The memo's bound (2,048)
+now counts solutions, since a sweep's entry holds one per $p$. Like the memo, the stored models
+belong to one process and are not safe to share between threads; the experiments use processes.
+
+*When the fast path fails.* Three guards keep it from being less safe than `linprog`:
+
+* A solution is accepted on `linprog`'s terms. HiGHS must report an optimal status, then the
+  solution must pass `linprog`'s own check of the result (SciPy's `_check_result`): no NaN, and the
+  bounds and constraints met within $\sqrt{10^{-9}} \times 10 \approx 3.2 \times 10^{-4}$. HiGHS's
+  $10^{-7}$ tolerances decide when the simplex method stops; this looser check only rejects answers
+  that are plainly wrong. So a solution from the bindings must pass the same check as one from
+  `linprog`.
+* If a hot start fails, that LP is solved from scratch on a new instance, and the later ones are
+  hot-started from there. The failure is itself a function of the inputs, so the result still
+  is. A failure from scratch raises an error that names the $p$ and how the LP was solved.
+* The bindings are private and may change in any SciPy release. At first use each process tries
+  them on the illustration's LP: costs $(1, 2)$ from scratch must give $(1, 0)$, then costs
+  $(2, 1)$ hot-started must give $(0, 1)$. If the import or this check fails, every LP falls
+  back to `linprog`, solved from scratch, with one `RuntimeWarning` per process. After a
+  successful check, a failure raises. A test requires the bindings to be in use with the
+  installed SciPy, so an upgrade that breaks them fails a test instead of quietly making
+  everything slower.
+
+**2. Two replicates at once: processes, threads and throughput.** The sequence step (Step 34)
+trains five Phase 1 replicates one after another, each with 8 PyTorch threads at full size.
+`run_phase3 --sequence-jobs N` (`phase3_sequence --replicate-jobs N`) trains up to N at once.
+
+*Processes, not threads.* Each replicate runs in its own process from a `ProcessPoolExecutor`.
+Processes share no memory, so two replicates cannot touch each other's caches or settings. Each
+worker sets the configured torch thread count when it starts (`_init_worker`). A fit's bytes
+depend on its number of threads (Steps 34 and 39), so the obvious alternative, one replicate
+with 16 threads, would change results. Running whole replicates side by side, each with its
+8 threads, uses more of the processor and keeps the bytes.
+
+*Spawned workers.* Windows cannot copy a running process (it has no `fork`). Python starts each
+worker with *spawn*: a fresh interpreter that imports the main module under another name
+(`__mp_main__`) and receives its task by pickling. This has three consequences, met in Steps 8
+and 24 and again here:
+
+* A script that starts a pool keeps its top-level work under `if __name__ == "__main__":`.
+  Otherwise each worker would try to start the run again, and multiprocessing stops that with an
+  error.
+* The function a worker runs must be importable by name from a module (`_replicate_from_cache`;
+  in the tests, `_sweep_bytes_in_this_process`).
+* Each worker starts with empty caches and default settings, hence the thread count in the
+  initializer.
+
+Starting a worker also takes time, for example to import PyTorch (not measured separately). In
+the quick configuration on the development seeds 98 and 99 (two replicates, 4 threads each), two
+replicates at once were slower than one after another (38.6 s against 33.6-34.3 s), probably
+because process start-up outweighs the gain when the models are small.
+
+*The order of work.* With N > 1 the parent first makes sure every replicate's hands are in the
+simulation cache. It goes one replicate after another, simulating what is missing with the
+simulation's own worker processes. Only then do N training processes start, and they read cache
+files only. So two simulations never run at once, and no training process starts a pool of its
+own (two replicates each simulating with 12 workers would put far more processes than
+processors on the machine). The populations that part B needs reach each worker once, through
+the pool's initializer, not with every task.
+
+*Results in a fixed order.* Replicates finish in whatever order they finish. The parent stores
+each result under its replicate number and aggregates them in replicate order. Aggregates are
+sums over replicates, and floating-point sums depend on their order (Step 39), so aggregating in
+completion order would make the last digits depend on which replicate finished first. A test
+makes the last replicate's results arrive first and requires the same files. The number of jobs
+is recorded as `meta.replicate_jobs`, outside `meta.config`. It says how a run was executed, not
+what it computed, so `compare_runs`, which requires the configs to match, treats one-job and
+two-job runs as the same experiment. Both full-size runs gave "sequence: 0 differences".
+
+*Lazy submission.* Submitting all five replicates at once would queue them in the pool. A failure in
+one would surface only when its result was read, after the others had finished training (up to about
+half an hour later at full size), and queued replicates would keep starting. Instead the parent
+keeps at most N replicates in flight and waits for the first to finish
+(`wait(..., FIRST_COMPLETED)`). A failure prints at once and no new replicate starts; the running
+ones finish, and the first error is raised with the worker's output attached as a note. A worker's
+printed lines are captured and printed when it finishes, so two replicates' lines never interleave.
+
+*Throughput and latency.* *Latency* is how long one job takes; *throughput* is how many jobs finish
+per hour. Running jobs side by side trades one for the other. If one replicate alone takes $T$ and
+each of two running together takes $sT$ (the slowdown $s \ge 1$ comes from sharing the machine),
+then two back to back take $2T$ and two together $sT$. The pair finishes sooner whenever $s < 2$,
+and throughput rises by $2/s$, while each replicate takes $s$ times as long. Here $s$ was 1.65-1.71
+(Results), so throughput rose by about $2/1.7 \approx 1.18$. With five replicates and two slots the
+fifth runs alone, so training takes $(2s + 1)T$ instead of $5T$: with $s = 1.7$, $4.4/5 = 0.88$, 12%
+less. Measured (post hoc check): about 1,746 s against 2,003 s, a ratio of 0.87. With an even number
+of replicates the ratio would be $s/2 \approx 0.85$ (with many replicates it approaches that).
+
+*Why the slowdown is about 1.7, not 1 (a likely explanation, not measured).* The laptop's processor,
+an AMD Ryzen 9 8945HS, has 16 *logical processors*: 8 physical cores with two hardware threads each
+(*simultaneous multithreading*, SMT; Intel calls it hyper-threading). Two threads on one core share
+its execution units, caches and memory bandwidth, so the second thread adds much less than a second
+core would. One replicate's 8 threads can each have a core to themselves; two replicates' 16 threads
+fill both hardware threads of every core. The two also share memory bandwidth and the L3 cache, and
+a laptop processor runs at a lower clock with every core busy; how much each contributed was not
+measured. With 16 threads busy, the machine did about 1.18 times the training work per second that
+it did with 8. Running more threads than logical processors (*oversubscription*) would make the
+operating system time-slice them. Parallel numeric code, whose threads wait for each other at every
+step, slows down sharply when one of its threads is switched out. The step warns when jobs × threads
+exceeds the logical processors; here $2 \times 8 = 16$, exactly the limit.
+
+*Memory.* A full-size replicate peaks at about 4.4-4.5 GB in its own process (Step 39's profile:
+about 4.1 GB plus 0.27-0.38 GB for the embedding memo), rounded up to `GB_PER_JOB = 5`. Two at once
+need about 10 GB, on a 15 GB laptop that the owner's applications share. The step warns when free
+physical memory is below 5 GB per job, and it did at the start of the two-job run ("4.7 GB of
+physical memory available; 2 full-size replicates at once need about 10 GB and may page"). Free
+memory then fell to 1.42 GB (Results). When physical memory runs out, Windows moves pages to disk
+and back, and a process waiting on that runs far slower. Whether it happened here was not measured.
+
+*The decision* (post hoc, after the full-size runs; made under the owner's "make the rest of the
+decisions"). The default stays one job. About 12% of a full-size step is not worth taking free
+memory down to 1.4 GB on a laptop shared with the owner's applications, and the project runs one
+heavy job at a time. The option stays for machines with more memory.
+
+**3. Splitting the test suite across processes.**
+
+*How pytest-xdist schedules.* `-n 4` starts four worker processes. Each collects the suite and
+runs the tests the controller hands it. The `--dist` mode decides how:
+
+* `load` hands out tests in batches as workers become free.
+* `loadfile` hands out whole files. Every test of a file runs in one worker, so a module-scoped
+  fixture (built once per module in each process) is built once.
+* `worksteal` gives each worker an equal, contiguous share of the tests up front. A worker that
+  runs out takes some of the pending tests from the end of a busy worker's queue (*work
+  stealing*, Blumofe and Leiserson 1999).
+
+`loadfile` was chosen first, to keep module fixtures built once per file. On a quiet machine, four
+processes took the 457-test suite from 64.1 s to 33.2 s; eight took 28.2 s, with twice as many
+worker processes (so presumably about twice the memory; not measured).
+
+*Makespan.* The suite's time is its *makespan*: the time until the last worker finishes. On $m$
+workers with jobs of lengths $t_1, \dots, t_n$, no schedule can beat
+
+$$C \ \ge\ \max\Big(\max_i t_i,\ \frac{1}{m}\sum_i t_i\Big),$$
+
+since the longest job runs on one worker and the total work is shared by at most $m$. Graham
+(1966) showed that giving each job, in any order, to the first free worker (*list scheduling*)
+is never worse than $2 - 1/m$ times the best schedule. The bad cases put a long job last: it
+starts when the others are nearly done and runs while they sit idle. Sorting the jobs longest
+first (*LPT*, longest processing time first) brings the guarantee down to $4/3 - 1/(3m)$ times
+the best (Graham 1969), 1.25 for $m = 4$.
+
+*What happened.* The new test `test_two_replicate_jobs_write_what_one_writes` runs the tiny sequence
+step twice from empty caches, once with one job and once with two spawned workers. It takes 31.8-33
+s alone and 44.2 s under the load of the rest of the suite. Its file (10 tests) took 44.6 s
+serially. Under `loadfile` that file is one job. xdist 3.8 hands out files by their number of tests,
+so a 10-test file is not started first, and most likely it finished last (the order was not logged).
+The suite went from 33-36 s to 65-67 s, although the 471 tests' total serial time is only 98.7 s.
+`load` (69.9 s) and `worksteal` alone (64.0 s) did no better, presumably because neither started
+that test early.
+
+*The fix (post hoc).* Tests marked `long` (one so far) move to the front of the collection
+(`tests/conftest.py`). The sort is stable, so every other test keeps its order. The suite now uses
+`--dist worksteal`. The first worker's share begins with the long test; the other three work through
+their shares, then take tests from the end of the first worker's queue. Three runs took 53.5, 53.9
+and 53.6 s, with the same tests and results: LPT applied to the one job that matters. The bound:
+$98.7/4 = 24.7$ s of work per worker, but the longest test takes 44 s under the load of the rest of
+the suite, so while the rest runs beside it, about 44 s plus the workers' start-up is the floor.
+(The bound assumes fixed job lengths; here a test's length depends on what runs beside it.) The
+measured 53.5-53.9 s is within about 10 s of it. Going lower would take a shorter test;
+`-m "not slow"` skips it (it is also marked `slow`). Work stealing has a price: a file's tests can
+now run in several workers, each building that file's module fixtures. The times above include that
+cost.
+
+*One process when needed.* `-n 0` runs everything in the main process: for a single file
+(`python -m pytest -n 0 tests/test_leduc_exploit.py`: 19 passed in 5.0 s), and for the debugger,
+since xdist refuses `--pdb` when it distributes tests.
+
+**4. Transfer reuses part A's embeddings.** Step 39's embedding memo keys on the identity of a
+`HandSequences` object and the block of players encoded together. Part A predicted the held-out
+bots through `neural_inputs(data.test, kind)`, one object. Transfer (part B) read the same
+players through `PoolView(data.test).inputs(kind)`, another object. So the memo missed and those
+players were encoded once more per model (Step 39's first "What was left" item). Now `replicate`
+makes one `PoolView` of the test bots, part A predicts through it (`test_view`), and transfer
+reads the same view. The objects are identical, so the memo hits. The result is bit-identical,
+for Step 39's reason: a reused embedding is one computed in exactly the block that would compute
+it again. A test counts the encodings of the 30 held-out bots: two blocks of 16, once each,
+before; none after. The full-size runs gave "sequence: 0 differences". The time saved was not
+measured separately; it is a part of prediction, which Step 39 put at 6.6% of the step. The same
+commit releases part A's models before part C (`del models, bots`) to lower peak memory; that
+effect was not measured separately either.
+
+**How it was done.** Each change was made by a subagent in its own git worktree outside OneDrive
+(`poker-lab-xdist`, `poker-lab-hotstart`, `poker-lab-seqpar`). A reviewer subagent read each diff
+before its commit, and its findings were fixed before the commits (Mistakes). The commits were
+cherry-picked onto a branch (`perf2`) on top of `1137e8a`: `80f2152` (pytest-xdist), `03b3b4f` (the
+hot start) and `3fa49aa` (parallel replicates and the transfer reuse). Two more commits, `505e16a`
+and `9f877e5`, change the help text to "checked at full size with two", record the full-size
+measurement in a docstring, start tests marked `long` first and switch to work stealing. They change
+no code path of an experiment, so the verification at `3fa49aa` covers them. The suite went from 457
+to 471 tests, all passing. The verification ran from a clean worktree at `3fa49aa`, one step at a
+time, while a sampler logged free physical memory every 10 s.
+
+**Results.**
+
+*Reruns on seed 2026, full configuration* (perf2 at `3fa49aa`):
+
+| Step | Compared with | `compare_runs` |
+|---|---|---|
+| sequence, two jobs | committed results | 0 differences |
+| sequence, one job | committed results | 0 differences |
+| exploit (Phase 3) | committed results | 0 differences |
+| Phase 2 exploit | committed results | 0 differences |
+| Phase 2 aivat | committed results | 0 differences, apart from its two post hoc files, which a rerun does not make (as in Step 39) |
+| adaptive | committed results | 7,255 differences |
+| recommend | committed results | 20,939 differences |
+| fitcheck | Step 37's rerun of the old code | 27,915 differences |
+| confirm | Step 37's rerun of the old code | 27,675 differences |
+
+Exploit and Phase 2's steps pose single LPs only, which keep `linprog`'s bytes. Recommend,
+fitcheck, confirm and adaptive sweep. As in Step 39, fitcheck and confirm are compared with
+Step 37's rerun, because the committed files already differ from the current code by Step 37's
+53 and 23 wording differences.
+
+*What kind of differences* (classified for this step, post hoc, by a script that walks both
+files):
+
+| | adaptive | recommend | fitcheck | confirm |
+|---|---|---|---|---|
+| Float differences | 7,255 | 20,939 | 27,915 | 27,675 |
+| Other differences (strings, integers, booleans, list lengths) | 0 | 0 | 0 | 0 |
+| Relative gap below $10^{-12}$ | 7,197 (99.2%) | 20,841 (99.5%) | 27,662 (99.1%) | 27,453 (99.2%) |
+| Largest absolute gap | $2.6 \times 10^{-7}$ | $2.0 \times 10^{-6}$ | $7.3 \times 10^{-5}$ | $1.7 \times 10^{-6}$ |
+| Largest relative gap | $7.0 \times 10^{-6}$ | $6.9 \times 10^{-4}$ | $4.9 \times 10^{-3}$ | $2.1 \times 10^{-3}$ |
+| Float differences under `aggregate` | 316 | 182 | 231 | 233 |
+| Summary lines that differ | 0 | 0 | 0 | 0 |
+| Figures | pixel-identical | pixel-identical | pixel-identical | pixel-identical |
+
+* No string, integer, boolean or list length differs, so no choice, count, flag or prediction
+  verdict changed. The floats that differ under adaptive's and confirm's `predictions` (12 and
+  7) are measured values; the verdicts are booleans and did not change.
+* The largest absolute gap is fitcheck's exploitability of a restricted Nash response at
+  $p = 0.75$ for one bot at 30 hands: 0.0741832 against 0.0742564. The largest relative gaps are
+  on values near zero, such as a lower bound of $-2.5559 \times 10^{-5}$ against
+  $-2.5435 \times 10^{-5}$ (0.49%).
+* Aggregates differ too, but every summary line rounds to the same text.
+* In recommend, no difference falls under $p = 0.1$, the first value of each sweep, solved from
+  scratch. The per-bot differences fall under 0.25 (6,839), 0.5 (7,655), 0.75 (4,630) and 0.9
+  (1,633), and 182 under aggregates (counted for this step, post hoc). This is what the design
+  says: a sweep's first LP keeps `linprog`'s bytes.
+
+The committed results stay the original runs, as after Step 37; replacing them would be the
+owner's decision. A rerun with today's code reproduces sequence, exploit and Phase 2 exactly, and
+adaptive, recommend, fitcheck and confirm to the digits above.
+
+*Same-session timing, quick configuration* (`run_phase3 --quick --seed 2026 --only adaptive`;
+old is `1137e8a`, new is `3fa49aa`; alternating, four rounds; "step" is the step's own
+whole-second time, "process" the whole command's wall time):
+
+| Round | Old: step, process | New: step, process |
+|---|---|---|
+| 1 | 27 s, 32.1 s | 16 s, 18.6 s |
+| 2 | 27 s, 30.0 s | 16 s, 18.7 s |
+| 3 | 27 s, 29.9 s | 16 s, 18.7 s |
+| 4 | 27 s, 30.0 s | 16 s, 18.7 s |
+
+The step took 41% less time. Old against old and new against new gave 0 differences: both are
+deterministic. Old against new gave 552 float differences and no summary line. The largest
+absolute gap was $2.3 \times 10^{-7}$, the largest relative gap $6.8 \times 10^{-5}$, and 532 of
+the 552 were below $10^{-12}$. Step 39 measured this step at 54 s before its changes and 28 s
+after, in another session; today the old code took 27 s.
+
+Post hoc, Amdahl's law (Step 39) links this to the sweep's speedup. If sweeps took a fraction
+$f$ of the step and became 3.7× faster, $16/27 = 0.593 = (1 - f) + f/3.7$ gives $f \approx 0.56$.
+No profile of the code after Step 39 measured that share, so this says only that the two
+measurements fit together if sweeps were a little over half of the quick step.
+
+*Full-size sequence step* (training times, ratios and whole-step estimates computed post hoc from
+the logs). A caveat comes first. The two-job run went first, in a new worktree, with an empty
+simulation cache: its "hands ready" lines took 199-204 s per replicate, 1,008 s for five. The
+one-job run went second and reused that cache. So the whole-step times (2,782 s with two jobs, 2,023
+s with one) cannot be compared; the training times can:
+
+| Replicate | One job (s) | Two jobs (s) | Ratio |
+|---|---|---|---|
+| 1 | 403 | 688, with 2 | 1.71 |
+| 2 | 401 | 686, with 1 | 1.71 |
+| 3 | 399 | 659, with 4 | 1.65 |
+| 4 | 399 | 659, with 3 | 1.65 |
+| 5 | 401 | 399, alone | 1.00 |
+| Training, all five | 2,003 | about 1,746 | 0.87 |
+
+| Fit (seconds per replicate) | Alone (one job) | Paired (two jobs, replicates 1-4) |
+|---|---|---|
+| Sequence model (GRU) | 140-142 | 234-255 |
+| Order dropped | 26-27 | 44-45 |
+| Counters network | 15 | 23-24 |
+| Part C, order dropped | 130-131 | 218-222 |
+| Part C, counters network | 71-73 | 114-117 |
+
+Training took 13% less with two jobs. For the whole step, add the same simulation time to both
+(an assumption: the one-job path simulates the same hands with the same workers). With a warm
+cache, about 12% less (2,782 − 1,008 = 1,774 s against 2,023 s). With an empty cache, about 8%
+less (2,782 s against 1,008 + 2,023 = 3,031 s). The second pair ran about 4% faster than the
+first, for reasons not examined.
+
+*Memory* (post hoc statistics of free physical memory from `Win32_OperatingSystem` every 10 s, with
+the owner's applications open; 4.97 GB free at the start):
+
+| Run | Lowest free | Mean free |
+|---|---|---|
+| sequence, two jobs (simulation and training) | 1.42 GB | 3.44 GB |
+| sequence, one job | 3.00 GB | 4.49 GB |
+| adaptive | 3.69 GB | 4.13 GB |
+
+In the quick configuration on the development seeds 98 and 99 (a development benchmark on
+2026-10-31), two jobs raised the peak private memory of the whole process tree from 3.32 to 4.2 GB.
+They took 38.6 s twice, against 34.3 and 33.6 s for one job, with 0 differences.
+
+*Test suite* (pytest's own times; the 457-test settings were run twice, the first time on a
+busier machine):
+
+| Tests | Options | Time (s) |
+|---|---|---|
+| 457 | `-n 0` (one process) | 115.7, 64.1 |
+| 457 | `-n 2 --dist loadfile` | 60.7, 51.2 |
+| 457 | `-n 4 --dist loadfile` | 36.2, 33.2 |
+| 457 | `-n 8 --dist loadfile` | 28.5, 28.2 |
+| 457 | `-n 4 --dist load` | 36.1, 34.0 |
+| 471 | `-n 0` | 98.7 |
+| 471 | `-n 4 --dist loadfile` | 66.6, 67.0, 67.4, 65.1 |
+| 471 | `-n 4 --dist load` | 69.9 |
+| 471 | `-n 4 --dist worksteal` | 64.0 |
+| 471 | `-n 4 --dist worksteal`, `long` tests first (committed) | 53.5, 53.9, 53.6 |
+
+On the quiet round, four processes ran the 457 tests 1.9× faster than one, and eight 2.3×
+faster. Candidates for the gap to 4× and 8×, not measured separately: worker start-up, fixtures
+built in each process, the longest file, and tests that use several threads or processes
+themselves.
+
+*Full-size step times of the verification run* (single runs):
+
+| Step | Seconds |
+|---|---|
+| sequence, two jobs (empty cache) | 2,782 |
+| sequence, one job (warm cache) | 2,023 |
+| adaptive | 1,633 (Step 39's run, on another day: 2,492) |
+| exploit | 134 |
+| recommend | 53 |
+| fitcheck | 214 |
+| confirm | 214 |
+| Phase 2 exploit | 95 |
+| Phase 2 aivat | 19 |
+
+Adaptive took 34% less time than in Step 39's run, but on another day. Step 39 found that the
+machine's speed varies between days by more than some effects, so the same-session 41% of the
+quick configuration is the clean number.
+
+**Run times, awake only** (C.3).
+
+* The verification ran from 14:38:59 to 16:38:39 on 2026-11-01: 7,180 s of wall time, of which
+  the steps account for 7,167 s. Every Modern Standby interval in that window had the reason Idle
+  Timeout (screen off), with a keep-awake request held. The memory sampler wrote 699 samples,
+  never more than 11 s apart, so the machine ran throughout. As in Steps 37 and 39, idle-timeout
+  standby counts as awake.
+* The quick-configuration comparison ran right after, between 16:40 and 16:44.
+* Apart from the four quick rounds and the repeated suite timings, every time here is from a
+  single run; none has a confidence interval.
+
+**What was left.**
+
+* The committed results are still the original runs. A rerun now matches adaptive, recommend,
+  fitcheck and confirm to the digits in Results, not bit for bit; replacing the committed results
+  is the owner's decision.
+* The hot start's gain at full size was not measured in one session; 1,633 s against Step 39's
+  2,492 s spans two days.
+* Two jobs stay off by default. On a machine with more memory and cores they may pay more; that
+  was not measured.
+* `refit_recent` got no memo of its own: Step 39's LP memo already answers its repeated LPs.
+* Step 39's second item (a refit keeps the old `history` and `size_temperatures`) still stands.
+
+**What it means.** Step 39 asked whether a change moves any result. This step had to ask how far one
+moves, and answer as exactly. A hot start reaches the optimum by another path, so it rounds
+differently, and where an LP has several optimal vertices it may stop at another one. Both are
+properties of the simplex method, not bugs. Neither reached a summary, a figure or a verdict here:
+99% of the changed floats moved by less than $10^{-12}$ relative, and the rest by at most
+$7.3 \times 10^{-5}$ in absolute value. What made the change acceptable is that the result is still
+a function of its inputs, the same in any process, whatever the process solved before; without that,
+a rerun could not even reproduce itself. The other three changes keep the bytes, for Step 39's
+reasons: each fit's thread count stays fixed, results are combined in a fixed order, and a reused
+embedding is one the same block would compute. Parallel work pays only as far as the parallel pieces
+do not share. Two replicates on 16 hardware threads that are really 8 cores ran 1.7 times slower
+each and saved 13% together. And a test suite on four processes is never faster than its longest
+test, and slower still unless that test starts first.
+
+**Mistakes.**
+
+* A failed hot start first aborted the whole sweep. The reviewer caught it; that LP is now solved
+  from scratch on a new instance, and the sweep continues.
+* The first draft accepted a solution from the bindings on HiGHS's status alone, so it could
+  pass where `linprog` fails. The reviewer caught it; `linprog`'s own check now runs too.
+* The sweep memo first hashed $p$ and $A y_{\text{fix}}$ as given, so equal values of different
+  dtypes got different keys. The reviewer caught it; both are converted (Python floats, float64)
+  before hashing, and the LPs are built from the converted values.
+* The first tests did not check that a sweep's later LPs are really hot-started. The reviewer
+  caught it; a test now reads HiGHS's presolve status.
+* The first parallel draft reported a failing replicate only after the others had finished training,
+  up to about half an hour later at full size. The reviewer caught it; submission is now lazy.
+* The same draft defaulted to two jobs without a full-size measurement and did not consider
+  memory. The reviewer caught it; the default is one, and the step warns about threads and
+  memory.
+* The first comparison of the two full-size runs set 2,782 s against 2,023 s, which made two
+  jobs look about 38% slower. The two-job run had gone first and filled the empty simulation
+  cache (1,008 s) that the one-job run then reused. The training times in the logs are the fair
+  comparison. When runs share a cache, fill it first or plan the order, as Step 39's first quick
+  round, with an empty cache, already showed.
+* The new two-replicate test doubled the suite's time (65-67 s against 33-36 s), because a
+  whole-file scheduler started its file late. It was found by timing the suite before the commit
+  and fixed, post hoc, by starting `long` tests first under work stealing (53.5-53.9 s).
+
+**Limitations.**
+
+* Full-size times are single runs, and the hot start's full-size gain spans two days.
+* Three numbers come from the hot-start agent's development checks, not from this step's runs:
+  the 3.7× per sweep, the usual agreement to about $10^{-11}$, and the strategy differences of up
+  to about $3 \times 10^{-4}$.
+* Which optimal vertex a hot start reaches is deterministic but otherwise arbitrary. The
+  differences seen are bounded by measurement, not by proof; another LP could differ more, with
+  its objective still within tolerance.
+* The fast path depends on a private SciPy module. It is guarded by the start-up check, a test
+  and the fallback, not by any promise from SciPy.
+* Memory was measured for the whole system, with the owner's applications open. Paging was not
+  measured, and the per-replicate peak comes from Step 39's profile.
+* Parallel replicates were checked bit for bit at full size on one seed and in the tiny and
+  quick configurations, and only on Windows, where workers are spawned.
+* The suite's time depends on the machine's load; the long test alone sets a floor of about 44 s
+  plus start-up.
+
+**Verification.**
+
+* `tests/test_leduc_exploit.py` (11 → 19 tests; Step 39's sweep test replaced):
+  * An LP solved from scratch through the bindings gets exactly the arrays, options and (empty)
+    integrality that `linprog` passes to HiGHS, and gives `linprog`'s bytes. This holds for both
+    seats, for several costs in a row on one form (its model built once), and for a data-biased
+    LP.
+  * A sweep's first LP per seat equals the single response bit for bit. The later ones are
+    hot-started (HiGHS reports `kNotPresolved` for exactly those) and agree with LPs solved from
+    scratch: the objective within $10^{-7}$, and for these LPs the strategy within $10^{-9}$.
+    Every strategy is valid, the best response stands at $p = 1$, and invalid $p$ raise.
+  * A failed hot start is solved from scratch on a new instance (the single LP's bytes), and the
+    next LP is hot-started from it; the result is still a function of the inputs. A failure from
+    scratch raises with the $p$ and how the LP was solved, and an infeasible LP's message names
+    HiGHS's status.
+  * `linprog`'s check accepts a bound, the inequality and the equality at 0.9 times the
+    tolerance and rejects them at 1.1 times; NaN is rejected.
+  * float32 values of $p$ and the same values as Python floats share one entry; the float64 values
+    nearest 0.1 and 0.9 are other LPs (0.5 is exact in both), so that sweep is another entry.
+  * The same sweep gives the same bytes fresh, after other LPs and sweeps in two orders, and in
+    a spawned process.
+  * Single LPs and sweeps never answer for each other. Eviction counts solutions, and an entry
+    larger than the bound is kept alone until the next one.
+  * The bindings are in use with the installed SciPy, without a warning.
+  * Without them there is one warning per process, and every LP, a sweep's included, is
+    `linprog`'s, solved from scratch.
+* `tests/test_fit_checks.py`: the spy now counts `_solve_sweep`, `_run` and `linprog`. A ranking
+  poses at least one sweep per seat and solves at least seats × $p$ LPs.
+* `tests/test_sequence_experiment.py` (4 → 10 tests):
+  * `--sequence-jobs` reaches the sequence step only, and 0 is rejected.
+  * One job, or one replicate, runs the old loop in this process; more jobs than replicates are
+    capped at the number of replicates.
+  * The step warns about threads above the logical processors and memory below about 5 GB per
+    job, and never warns for one job.
+  * Transfer encodes none of the 30 held-out bots again (two blocks before, none after), and
+    every number equals the old wiring's, float for float.
+  * (`slow`, `long`) With two replicate processes, and the last replicate's results delivered
+    first, the step writes the same JSON, summary and figures as with one job, each run starting
+    from an empty cache. The parallel path simulates the same cache files, each worker has the
+    configured thread count, and `meta` records the jobs.
+  * A worker's error reaches the parent with the worker's output as a note. At most `jobs`
+    replicates are in flight, and none starts after a failure.
+* `tests/conftest.py` puts tests marked `long` first; `pyproject.toml` registers the marker and
+  sets `-n 4 --dist worksteal`.
+* Reruns: `python -m experiments.run_phase3 --seed 2026 --only sequence --sequence-jobs 2 --out
+  DIR`, the same with `--sequence-jobs 1`, then `python -m experiments.compare_runs
+  experiments/results/phase3 DIR sequence`. The same for adaptive, exploit and recommend, and for
+  fitcheck and confirm against Step 37's rerun. Phase 2's exploit and aivat ran through
+  `run_phase2.run(..., out_dir=DIR)`.
+* Same-session timing: `python -m experiments.run_phase3 --quick --seed 2026 --only adaptive
+  --out DIR`, from a worktree at `1137e8a` and one at `3fa49aa`, alternating, with
+  `compare_runs` between runs.
+* Suite: `python -m pytest` (471 passed, 53.5-53.9 s) and `python -m pytest -n 0
+  tests/test_leduc_exploit.py` (19 passed in 5.0 s).
 
 ---
 
@@ -4608,15 +5228,21 @@ faster machine. A speedup is measured with old and new code in one session.
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
-| Bit-for-bit optimization | each faster path checked against the slow one exactly: `choose` against the full report (by value), repeated predictions against predictions from scratch, a cached LP against a fresh HiGHS solve, a sweep against single responses; each changed step rerun and compared by `compare_runs` (Step 39) | a speedup that moves a result is a change of method |
-| Counting the expensive calls | spies wrap `linprog`, `_solve` and the encoder: no LP on a fallback or for the best response, an evicted LP solved again, each block of players encoded once (Step 39) | checks that the work is skipped, not only that the answer is right |
+| Bit-for-bit optimization | each faster path checked against the slow one exactly: `choose` against the full report (by value), repeated predictions against predictions from scratch, a cached LP against a fresh HiGHS solve (Step 39); an LP solved from scratch through SciPy's HiGHS bindings against `linprog`, array by array; two replicate processes against one (Step 40); each changed step rerun and compared by `compare_runs` | a speedup that moves a result is a change of method |
+| Changes signed off as moving digits | a hot-started sweep against LPs solved from scratch: the first $p$ bit for bit, later ones with the same objective within HiGHS's tolerance; every `compare_runs` difference classified by kind and size, with summary lines, figures and verdicts unchanged (Step 40) | a change allowed to move digits must still be shown to move nothing else |
+| History independence | the same LP sweep fresh, after other LPs and sweeps in two orders, and in a spawned process gives the same bytes; two replicate processes with the last replicate's results delivered first write the same files (Step 40) | a result that depends on what a process did before depends on scheduling |
+| Counting the expensive calls | spies wrap the LP calls and the encoder: no LP on a fallback or for the best response, an evicted LP solved again, each block of players encoded once (Step 39); a sweep's later LPs hot-started, with HiGHS reporting that it did not presolve them, and a failed hot start solved again from scratch (Step 40) | checks that the work is skipped, not only that the answer is right |
 | End-to-end | simulate -> advise -> profile -> evaluate -> round-trip | proves the seams fit |
 
-Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to
-catch real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated
-players). The suite has 457 tests and runs in about two minutes (the Deep CFR and
-sequence-model tests skip without PyTorch). The explorer's browser behavior has its own check
-(`python -m experiments.explorer.browser_check`, Step 25), since it needs Chrome or Edge.
+Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
+real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
+suite has 471 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`) in
+about a minute (53.5-53.9 s on a quiet machine). `tests/conftest.py` starts the tests marked `long`
+first, so the longest test does not start late and finish last (Step 40). `-m "not slow"` skips the
+slowest tests, and `-n 0` runs everything in one process, for a single file or for `--pdb`. The
+explorer's browser behavior has its own check (`python -m experiments.explorer.browser_check`, Step
+25), since it needs Chrome or Edge.
 
 ## C.2 Reproducibility and provenance
 
@@ -4639,6 +5265,17 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   bytes; the embedding memo keys on objects it holds, under preconditions its docstring states.
   Both die with their process; a cache on disk would also need the code and solver versions in
   its key, as the simulation cache has its fingerprint (Step 39).
+* Parallel work must not change a result. Worker processes get their seeds from the task
+  (Step 8), each fit its configured thread count (Steps 34 and 40), and nothing from the process's
+  history: a hot-started LP sweep makes its own HiGHS instance, so its result depends only on its
+  inputs, whichever worker runs it. Results are combined in task order, never completion order,
+  since floating-point sums depend on their order (Steps 39 and 40). The number of jobs is
+  recorded (`meta.replicate_jobs`) outside `meta.config`: it is how a run was executed, not what
+  it computed.
+* The committed results stay the original runs. Since Step 40's hot start, a rerun of adaptive,
+  recommend, fitcheck and confirm matches them in every summary line, figure and verdict, but not
+  bit for bit (99% of the changed floats within $10^{-12}$ relative); the other steps still
+  reproduce exactly. Replacing committed results is the owner's decision.
 
 ## C.3 Platform lessons (Windows, PowerShell, OneDrive)
 
@@ -4675,6 +5312,21 @@ sequence-model tests skip without PyTorch). The explorer's browser behavior has 
   in the committed Step 34 run, for reasons not found (Step 39). Measure a speedup with old and new
   code in one session, and check a step-level comparison against Amdahl's bound. A process
   suspended on purpose (`NtSuspendProcess`) is subtracted like a closed lid.
+* *Spawned workers need a guarded main module and start slowly:* on Windows every worker process
+  starts as a new interpreter that imports the main module (Steps 8 and 24). So a script that starts
+  a pool keeps its top-level work under `if __name__ == "__main__":`, the function a worker runs is
+  defined at module level, and each worker sets per-process state (torch's thread count) itself.
+  Start-up takes time in every worker: in the quick configuration two replicate processes were
+  slower than one, probably for that reason (Step 40).
+* *Logical processors are not cores:* this laptop's 16 logical processors are 8 cores with two
+  hardware threads each (an AMD Ryzen 9 8945HS with SMT). Two trainings of 8 threads each ran
+  1.65-1.71× slower each (Step 40). Before running jobs side by side, count jobs × threads against
+  the logical processors, and the memory (15 GB, shared with the owner's applications; two full-size
+  replicates took free memory down to 1.42 GB).
+* *Idle-timeout standby while a keep-awake request is held:* during Step 40's two-hour verification
+  every Modern Standby interval had the reason Idle Timeout, and a memory sampler that logged every
+  10-11 s never skipped. So that time counts as awake, as in Steps 37 and 39. A sampler writing on a
+  fixed interval is a simple check that a machine kept running.
 
 ## C.4 Figures
 
@@ -4761,6 +5413,14 @@ Invert once, and look at every figure before committing it.
 | `restricted_nash_sweep` iterated over its `p` values once per seat, so a generator would have failed | the reviewer subagent | make a tuple first | [39](#step-39-faster-code-identical-results) |
 | A pickle or deep copy of a `SequenceClassifier` would have carried its embedding memo, keyed by the ids of the original's objects | the reviewer subagent | `__getstate__` drops the memo; a test checks that a copy starts empty and predicts the same bytes | [39](#step-39-faster-code-identical-results) |
 | The first report of the sequence rerun credited the embedding memo with the step's 34%; unchanged training code took 27-39% less time that day | Amdahl's bound from the profile: the memo can save at most 6.6% (post hoc) | a same-session comparison of old and new code; C.3 | [39](#step-39-faster-code-identical-results) |
+| A failed hot-started LP aborted the whole restricted Nash sweep | the reviewer subagent's reading of the diff | that LP solved from scratch on a new HiGHS instance, the sweep continues; a test forces the failure | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| Solutions from SciPy's HiGHS bindings were accepted on HiGHS's status alone, so they could pass where `linprog` fails | the reviewer subagent | `linprog`'s own check (no NaN; bounds and constraints within about $3.2 \times 10^{-4}$); a test at 0.9 and 1.1 times the tolerance | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| The sweep memo hashed $p$ and $A y_{\text{fix}}$ as given, so equal values of different dtypes got different keys | the reviewer subagent | convert to Python floats and float64 before hashing, and build the LPs from the converted values; a float32 test | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| No test checked that a sweep's later LPs were really hot-started | the reviewer subagent | a test reads HiGHS's presolve status (`kNotPresolved` for exactly the hot-started solves) | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| A failing replicate was reported only after the others finished training (up to about half an hour later at full size) | the reviewer subagent | lazy submission: at most N in flight; the failure prints at once and no new replicate starts | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| Parallel replicates defaulted to two jobs without a full-size measurement, and memory was not considered | the reviewer subagent | default 1 before the full-size measurement, kept after it; warnings for threads above logical processors and free memory below about 5 GB per job | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| One and two jobs compared by whole-step time (2,782 s against 2,023 s), though the two-job run had filled the empty simulation cache (1,008 s) that the one-job run reused | the two-job log's "hands ready" times, 199-204 s per replicate | compare training times (2,003 s against about 1,746 s); add the simulation to both for whole-step estimates | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| A new 33 s test doubled the suite's time (65-67 s against 33-36 s): a whole-file scheduler started its file late | timing the suite before the commit | tests marked `long` start first, under `--dist worksteal` (post hoc): 53.5-53.9 s | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
 
 ---
 
@@ -4772,7 +5432,9 @@ Invert once, and look at every figure before committing it.
 | AIVAT | a win-rate estimator for a player whose strategy is known: control-variate terms at chance and hero steps plus imaginary observations; unbiased for any value function, but it needs the opponent's cards after every hand (Burch et al. 2018; Step 38) |
 | All-in | betting every remaining chip |
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
+| Alternative optima | several optimal solutions of one LP: when the objective is parallel to a face of the feasible set, every point of that face is optimal, and the simplex method stops at whichever optimal vertex it reaches first (Step 40) |
 | Amdahl's law | if a fraction $f$ of the time is made $s$ times faster, the whole is $1/((1 - f) + f/s)$ times faster, never more than $1/(1 - f)$ (Amdahl 1967; Step 39) |
+| Basis (of an LP) | as many columns as the LP has rows, with an invertible matrix; setting every other variable to its bound leaves one solution, a vertex of the feasible set if it also satisfies the bounds. Feasibility depends on the constraints only, not on the costs (Step 40) |
 | Bayes action | the decision with the highest posterior expected payoff |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
 | Best response | a strategy that maximizes payoff against a fixed opponent |
@@ -4798,6 +5460,7 @@ Invert once, and look at every figure before committing it.
 | Dead money | chips in the pot that no player has to match, such as antes; they are won, never returned as an uncalled bet |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
+| Degenerate LP | primal degenerate: one vertex described by several bases (a basic variable at zero), so the simplex method can pivot without moving; dual degenerate: a zero reduced cost of a nonbasic variable at an optimum; then there are alternative optima unless the vertex is also primal degenerate (Step 40) |
 | Delta method | the variance of a smooth function of an estimate, from its slope: $\operatorname{Var}(g(\hat\theta)) \approx g'(\theta)^2 \operatorname{Var}(\hat\theta)$ |
 | Digest (hash) | a short fixed-size fingerprint of a byte string (here SHA-1, 160 bits); equal inputs give equal digests, and different inputs share one with negligible probability unless built to by an attacker (Step 39) |
 | Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
@@ -4820,6 +5483,7 @@ Invert once, and look at every figure before committing it.
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | Hero's view (evaluation) | an evaluator that knows only what the hero saw (its cards, the actions, the public cards), never the opponent's cards; it can correct only steps whose probabilities do not depend on them (Step 38) |
+| Hot start (warm start) | starting a solver from an earlier solve instead of from scratch: a warm start hands it a starting point such as a basis; a hot start keeps the solver instance and its working data and changes only the data, here the costs (Step 40) |
 | HUD | heads-up display of opponent statistics |
 | Imaginary observations | replacing a hand's result by its average over every private hand the hero could have held, weighted by chance's probability times the hero's probability of playing as it did; exact when the opponent cannot see the hero's cards (Burch et al. 2018) |
 | Importance sampling | estimating averages under a target distribution from draws of an easier proposal, each weighted by target / proposal |
@@ -4830,10 +5494,14 @@ Invert once, and look at every figure before committing it.
 | Law of total variance | $\operatorname{Var}(Y) = \mathbb E[\operatorname{Var}(Y \mid D)] + \operatorname{Var}(\mathbb E[Y \mid D])$: the spread within groups plus the spread between them |
 | Lazy evaluation | computing a value only when it is needed; skipping unneeded work is exact when that work is pure (changes no state that later work reads, a shared random generator included) (Step 39) |
 | Leave one player out | fit on every player but one, score the one; repeated for each, so no player is in its own training data |
+| Linear program (LP) | optimizing a linear function subject to linear equalities and inequalities; the feasible set is a polyhedron, and if an optimum exists and the feasible set has a vertex (always so when every variable is bounded below, as in standard form), one optimum is at a vertex |
 | Log-loss | mean negative log-probability of the true class |
+| Logical processor | a hardware thread that the operating system can schedule; with SMT, two per physical core |
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
+| LPT scheduling | longest processing time first: sort jobs longest first and give each to the first free worker; the makespan is at most $4/3 - 1/(3m)$ times the best on $m$ workers (Graham 1969; Step 40) |
 | LRU cache | a cache of bounded size that, when full, drops the entry used longest ago (Step 39) |
 | Mahalanobis distance | distance scaled by a covariance, $(x - \mu)^\top S^{-1}(x - \mu)$: how many standard deviations away, in every direction at once |
+| Makespan | the time from the start of a set of jobs to the end of the last; on $m$ workers at least $\max(\text{longest job}, \text{total work}/m)$ (Step 40) |
 | Martingale | a sequence whose expected next value, given everything so far, is its current value; its steps have mean zero and are uncorrelated |
 | mbb/hand | milli-big-blinds per hand |
 | MCCFR | Monte Carlo CFR: CFR on sampled parts of the tree |
@@ -4851,36 +5519,47 @@ Invert once, and look at every figure before committing it.
 | Odd chip | the chip left over when a pot does not split evenly; rules give it to one winner, some records split it in halves |
 | Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
+| Oversubscription | more runnable threads than logical processors: the operating system time-slices them, and parallel numeric code whose threads wait for each other slows down sharply (Step 40) |
 | Perfect recall | players never forget their own actions or observations |
 | Paired comparison | two methods scored on the same units, so variation between units cancels in the difference |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
+| Presolve | an LP solver's first pass: simplify the LP (redundant rows, fixed columns, tighter bounds), solve the smaller LP, map the answer back (postsolve); HiGHS skips it when it starts from a basis (Step 40) |
+| Process pool | a fixed set of worker processes that run submitted tasks (`ProcessPoolExecutor`); each process has its own memory, so tasks share only what is sent to them (Steps 8 and 40) |
 | Profiler | a tool that measures where a program spends its time; Python's is `cProfile` (Steps 1, 39) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Rao-Blackwell | replacing an estimator by its conditional expectation given some information never increases its variance (here: scoring each block by its exact expected value instead of the chips won) |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
+| Reduced cost | the change in an LP's objective per unit of a variable brought into the basis, $d_j = c_j - M_j^\top y$; a basis is optimal when none is negative (for minimization), within the solver's tolerance (Step 40) |
 | Regret matching | play actions in proportion to their positive cumulative regret |
 | Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
 | Restricted Nash response | best response to a model, hedged against an adversary with probability 1-p |
 | Sequence | an (information set, action) pair |
 | Shrinkage | pulling noisy estimates toward a population mean |
+| Simplex method | the classic LP algorithm: move from vertex to adjacent vertex of the feasible set, one basis change (pivot) at a time, while the objective improves; stop when no reduced cost is negative (Dantzig 1963; Step 40) |
 | Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
+| Simultaneous multithreading (SMT) | one physical core runs two hardware threads that share its execution units and caches, so the second thread adds much less than a second core; Intel calls it hyper-threading. This laptop's AMD Ryzen 9 8945HS has 8 cores, 16 logical processors (Step 40) |
 | Side pot | pot that an all-in player for less is not eligible for |
+| Spawn (start method) | starting a worker process as a fresh interpreter that imports the main module and receives its task by pickling; the only start method on Windows, hence the `if __name__ == "__main__":` guard (Steps 8 and 40) |
+| Stable sort | a sort that keeps equal elements in their original order; Python's is stable (Step 40) |
 | Stationarity | the data-generating process does not change over time |
 | Straddle | a voluntary blind posted before the cards, usually twice the big blind, by the player after the big blind (or the button); the straddler acts last preflop |
 | Stratified sampling | splitting a Monte Carlo estimate into strata (here: combo pairs) sampled equally, removing the variance between strata |
 | Street | betting round: preflop, flop, turn, river |
 | Support check | flags inputs unlike the training data, so a model's output is not trusted where it was never trained |
 | Temperature scaling | dividing log-probabilities by $T$ to fix confidence |
+| Throughput and latency | how many jobs finish per unit of time, and how long one job takes; two jobs side by side that each run $s$ times slower raise throughput by $2/s$ while each takes longer (Step 40) |
 | Token (of a hand) | one of a player's decisions in a hand (situation, action, size), or the hand's closing outcome, as a vector a sequence model reads |
+| Tolerance (LP solver) | how far a solver lets constraints (primal) and reduced costs (dual) miss and still calls a solution feasible and optimal; $10^{-7}$ by default in HiGHS, so a vertex whose reduced costs miss by less than that can be returned as optimal, though another is slightly better (Step 40) |
 | Tower property | $\mathbb E\big[\mathbb E[X \mid S]\big] = \mathbb E[X]$: averaging a conditional expectation over what it conditions on gives the plain expectation |
 | ulp | unit in the last place: the gap between a floating-point number and the next; just above 1 it is $2^{-52}$ for 64-bit floats and $2^{-23}$ for 32-bit floats (Step 39) |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
 | Value function (for control variates) | any number per history or class used to build control-variate terms; the estimate stays unbiased whatever it is, and loses more variance the closer it is to the true expected value |
 | VPIP / PFR / WTSD / W\$SD | see [A.3](#a3-hud-statistics-and-why-denominators-matter) |
 | Winner's curse | the best-looking of several noisy estimates tends to be an overestimate |
+| Work stealing | scheduling in which an idle worker takes pending work from the end of a busy worker's queue (Blumofe and Leiserson 1999); pytest-xdist's `--dist worksteal` (Step 40) |
 | Worktree (git) | a second checkout of the same repository at another commit, in its own folder, used here to run old code next to new |
 | z-score | (estimate - true value) / standard error; about standard normal when the estimator is unbiased |
 
@@ -4912,7 +5591,7 @@ Equilibrium, exploitation, evaluation (Phase 2 and 5)
 * Koller, D., Megiddo, N., von Stengel, B. (1996). *Efficient Computation of Equilibria for
   Extensive Two-Person Games.* Games and Economic Behavior 14. (The sequence form)
 * Huangfu, Q., Hall, J. A. J. (2018). *Parallelizing the dual revised simplex method.*
-  Mathematical Programming Computation 10. (HiGHS, SciPy's LP solver)
+  Mathematical Programming Computation 10. (HiGHS, SciPy's LP solver; hot-started in Step 40)
 * Hart, S., Mas-Colell, A. (2000). *A Simple Adaptive Procedure Leading to Correlated
   Equilibrium.* Econometrica 68. (Regret matching)
 * Zinkevich, M., Johanson, M., Bowling, M., Piccione, C. (2007). *Regret Minimization in Games
@@ -5026,6 +5705,23 @@ Performance and numerics
 * Michie, D. (1968). *"Memo" Functions and Machine Learning.* Nature 218. (Memoization; Step 39)
 * Goldberg, D. (1991). *What Every Computer Scientist Should Know About Floating-Point
   Arithmetic.* ACM Computing Surveys 23(1). (Rounding, ulps, non-associativity; Step 39)
+* Dantzig, G. B. (1963). *Linear Programming and Extensions.* Princeton University Press. (The
+  simplex method; Step 40)
+* Bertsimas, D., Tsitsiklis, J. N. (1997). *Introduction to Linear Optimization.* Athena
+  Scientific. (Bases, degeneracy, and what a change of costs keeps: chapters 3 and 5; Step 40)
+* Graham, R. L. (1966). *Bounds for Certain Multiprocessing Anomalies.* Bell System Technical
+  Journal 45(9). (List scheduling within $2 - 1/m$ of the best; Step 40)
+* Graham, R. L. (1969). *Bounds on Multiprocessing Timing Anomalies.* SIAM Journal on Applied
+  Mathematics 17(2). (Longest processing time first within $4/3 - 1/(3m)$; Step 40)
+* Blumofe, R. D., Leiserson, C. E. (1999). *Scheduling Multithreaded Computations by Work
+  Stealing.* Journal of the ACM 46(5). (Step 40)
+* Tullsen, D. M., Eggers, S. J., Levy, H. M. (1995). *Simultaneous Multithreading: Maximizing
+  On-Chip Parallelism.* ISCA. (Simultaneous multithreading, AMD's SMT and Intel's hyper-threading;
+  Step 40)
+* pytest-xdist, github.com/pytest-dev/pytest-xdist: the `--dist` modes `load`, `loadfile` and
+  `worksteal`. (Step 40)
+* Python documentation, *multiprocessing*: "Contexts and start methods" and "Safe importing of
+  main module", docs.python.org/3/library/multiprocessing.html. (Spawned workers; Step 40)
 
 ---
 
@@ -5120,3 +5816,18 @@ Performance and numerics
   comparison of the sequence step. C.1's test count updated (457). The step was drafted by a
   subagent from the diffs, run logs and results files and checked against them before it was
   added.
+* 2026-11-01: Step 40 (the HiGHS hot start, signed off by the owner as changing floating-point
+  results; two sequence replicates at once, default one; the test suite in four processes; transfer
+  reusing part A's embeddings; commits `80f2152`, `03b3b4f`, `3fa49aa`, `505e16a` and `9f877e5`).
+  Reruns on seed 2026 at `3fa49aa` compared with `compare_runs`: sequence (one and two jobs),
+  exploit and Phase 2's exploit and aivat match the committed results; adaptive and recommend differ
+  from them, and fitcheck and confirm from Step 37's rerun of the old code, in floats only. Times
+  come from the runs' logs, with standby from the Windows System log (Kernel-Power 506 and 507,
+  reason Idle Timeout) and a memory sampler's 10-second log. Computed for this step (post hoc): the
+  classification of every difference by kind and size, recommend's differences by $p$, the
+  training-only times and per-replicate slowdowns of the two sequence runs, the whole-step estimates
+  with the simulation added to both, the memory statistics, the Amdahl check of the quick
+  comparison, and the suite's makespan bound. C.1 (471 tests), C.2, C.3, A.5 and Parts D, E and F
+  updated; Step 39's first "What was left" item marked fixed, and its memo bound and sweep test
+  annotated. The step was drafted by a subagent from the diffs, run logs and results files and
+  checked against them before it was added.
