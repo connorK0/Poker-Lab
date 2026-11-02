@@ -56,8 +56,35 @@ def test_duplicate_pairs_cancel_shared_luck():
     naive = WinRateEvaluator().evaluate(interleaved)
     assert dup.half_width < 0.2 * naive.half_width
     assert dup.lower <= 10.0 <= dup.upper
+    assert dup.method == "duplicate_paired_t"
+    assert DuplicateDealEvaluator(group_size=2).evaluate(interleaved) == dup
     with pytest.raises(ValueError, match="pairs"):
         DuplicateDealEvaluator().evaluate(interleaved[:-1])
+
+
+def test_duplicate_groups_cancel_shared_luck():
+    """Three seatings per deal whose luck sums to zero: the per-deal mean keeps only the edge."""
+    rng = np.random.default_rng(3)
+    luck = rng.normal(0, 10, (1000, 3))
+    luck -= luck.mean(axis=1, keepdims=True)
+    grouped = [
+        HandResult(f"d{i}t{r}", "hero", round(2 * (0.1 + x)), 2)
+        for i, deal in enumerate(luck)
+        for r, x in enumerate(deal)
+    ]
+    dup = DuplicateDealEvaluator(group_size=3).evaluate(grouped)
+    naive = WinRateEvaluator().evaluate(grouped)
+    assert dup.half_width < 0.2 * naive.half_width
+    assert dup.lower <= 10.0 <= dup.upper
+    assert dup.n_hands == 3000
+    assert dup.method == "duplicate_grouped_t"
+    with pytest.raises(ValueError, match="groups of 3"):
+        DuplicateDealEvaluator(group_size=3).evaluate(grouped[:-1])
+    for size in (1, 0):
+        with pytest.raises(ValueError, match="group_size >= 2"):
+            DuplicateDealEvaluator(group_size=size)
+    with pytest.raises(TypeError):
+        DuplicateDealEvaluator(group_size=2.0)
 
 
 def test_aivat_hook_refuses_without_value_function_and_reduces_variance_with_one():

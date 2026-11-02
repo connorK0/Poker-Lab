@@ -4,9 +4,12 @@ Poker results are extremely noisy (per-hand SD ~ 8-12 big blinds in no-limit), s
 rates need tens of thousands of hands for tight intervals. Phase 5 will rely on variance
 reduction:
 
-* duplicate dealing: replay the same cards with seats swapped, so card luck cancels in the
-  paired difference. ``DuplicateDealEvaluator`` implements the paired estimator.
-  TODO(Phase 5): engine hook to replay a recorded deck sequence with permuted seats.
+* duplicate dealing: play each deal at n tables with the n players' seats rotated, so every
+  player holds every seat's cards once per deal and card luck largely cancels in the per-deal
+  mean (exactly for copies of one deterministic agent that ignores player ids, since the
+  seats' results sum to zero). ``poker_lab.engine.duplicate`` deals the matches;
+  ``DuplicateDealEvaluator`` implements the estimator over the per-deal means. Simulation
+  only: a live table cannot deal the same cards twice.
 * AIVAT (Burch et al., 2018): subtract control variates built from a value function and the
   known strategies of chance and of the hero. ``AIVATEvaluator`` applies them;
   ``poker_lab.evaluation.aivat`` builds them for games compiled to a tree (P2.11).
@@ -16,6 +19,7 @@ reduction:
 
 from __future__ import annotations
 
+import operator
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
@@ -109,29 +113,39 @@ class WinRateEvaluator(Evaluator):
 
 
 class DuplicateDealEvaluator(Evaluator):
-    """Paired estimator for duplicate matches.
+    """Grouped estimator for duplicate matches, a Student-t interval over per-deal means.
 
-    ``pairs[i]`` holds the hero's results on the same cards from the two seatings, so the
-    per-pair mean removes most card luck. ``evaluate`` expects results ordered as
-    [a0, b0, a1, b1, ...].
+    Each group of ``group_size`` consecutive results holds the hero's results on the same cards
+    from the seatings of one deal, so the per-deal mean removes most card luck. ``evaluate``
+    expects results ordered deal by deal, as ``DuplicateMatch.grouped_results`` gives them:
+    [a0, b0, a1, b1, ...] heads-up (``group_size=2``, the paired estimator).
+    ``sd_bb_per_hand`` is the SD of the raw per-hand results, as for ``WinRateEvaluator``, not
+    the spread of the per-deal means behind the interval.
     """
 
-    def __init__(self, confidence: float = 0.95) -> None:
+    def __init__(self, confidence: float = 0.95, group_size: int = 2) -> None:
+        group_size = operator.index(group_size)  # an integer, not 2.0
+        if group_size < 2:
+            raise ValueError(f"a duplicate deal needs group_size >= 2 seatings, not {group_size}")
         self.confidence = confidence
+        self.group_size = group_size
 
     def evaluate(self, results: Sequence[HandResult]) -> WinRateEstimate:
-        if len(results) % 2:
-            raise ValueError("duplicate results must come in pairs [a0, b0, a1, b1, ...]")
-        bb = np.array([r.net_bb for r in results], dtype=float).reshape(-1, 2)
-        per_pair = bb.mean(axis=1)
-        iv = t_interval(per_pair, self.confidence)
+        k = self.group_size
+        if len(results) % k:
+            if k == 2:
+                raise ValueError("duplicate results must come in pairs [a0, b0, a1, b1, ...]")
+            raise ValueError(f"duplicate results must come in groups of {k}, one per deal")
+        bb = np.array([r.net_bb for r in results], dtype=float).reshape(-1, k)
+        per_deal = bb.mean(axis=1)
+        iv = t_interval(per_deal, self.confidence)
         return WinRateEstimate(
             bb_per_100=100 * iv.estimate,
             lower=100 * iv.lower,
             upper=100 * iv.upper,
             n_hands=len(results),
             sd_bb_per_hand=float(bb.std(ddof=1)),
-            method="duplicate_paired_t",
+            method="duplicate_paired_t" if k == 2 else "duplicate_grouped_t",
             confidence=self.confidence,
         )
 
