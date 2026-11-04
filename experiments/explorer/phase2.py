@@ -35,7 +35,8 @@ DEEP = "experiments/results/phase2/deep_cfr/deep_cfr.json"
 EXPLOIT = "experiments/results/phase2/exploit/exploit.json"
 AIVAT = "experiments/results/phase2/aivat/aivat.json"
 AIVAT_POSTHOC = "experiments/results/phase2/aivat/aivat_posthoc.json"
-SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC)
+DUPLICATE = "experiments/results/phase2/duplicate/duplicate.json"
+SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -79,7 +80,11 @@ ARCH_OPTIONS = [("all", "All bots"), *[(a, ARCHETYPE_LABELS[a]) for a in ARCHETY
 
 
 def overview(
-    cfr: dict[str, Any], deep: dict[str, Any], ex: dict[str, Any], av: dict[str, Any]
+    cfr: dict[str, Any],
+    deep: dict[str, Any],
+    ex: dict[str, Any],
+    av: dict[str, Any],
+    dup: dict[str, Any],
 ) -> dict[str, Any]:
     leduc = cfr["full_width"]["leduc"]
     cfrp = leduc["cfr+"][-1]
@@ -118,6 +123,12 @@ def overview(
                 "equilibrium hero, every hand's cards shown; "
                 f"{av['population']['equilibrium']['equilibrium']['hero_view']['ratio']['median']:.2f}"
                 "× with folded cards hidden",
+            ),
+            tile(
+                "Duplicate dealing at six seats, random mix of bots",
+                f"{dup['aggregates']['by_kind']['mixed_6']['ratio']['median']:.2f}× fewer",
+                "hands than independent dealing; heads-up push/fold: "
+                f"{dup['bridge']['all']['ratio_median']:.2f}×",
             ),
         ],
         "summary": (
@@ -1428,13 +1439,157 @@ def aivat_f1(ph: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+DUP_KINDS = (
+    ("mixed_6", "Six bots, random mix"),
+    ("mirror_6", "Six bots of one archetype"),
+    ("clones_6", "Six copies of one bot"),
+    ("mixed_3", "Three bots, random mix"),
+    ("mixed_2", "Two bots, random mix"),
+)
+DUP_RATIO = axis("Times fewer hands than independent dealing (log)", scale="log", fmt="x")
+
+
+def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
+    by, pred, cfg = r["aggregates"]["by_kind"], r["predictions"], r["meta"]["config"]
+    bridge = r["bridge"]["all"]["ratio_median"]
+
+    def quartiles(q: dict[str, float]) -> list[float]:
+        return [q["median"], q["q25"], q["q75"]]
+
+    def held(key: str) -> str:
+        return f"{key} {'holds' if pred[key]['passed'] else 'does not hold'}"
+
+    def cancelled(kind: str) -> float:
+        """The share of the possible cancellation: -(n - 1) rho, 1 at perfect cancellation."""
+        return -(by[kind]["n"] - 1) * by[kind]["rho"]["median"]
+
+    labels = [lab for _, lab in DUP_KINDS]
+    overall = dots_chart(
+        "How many times fewer hands duplicate dealing needs",
+        [*labels, "Heads-up push/fold (Step 28)"],
+        DUP_RATIO,
+        [
+            dot_series(
+                "Bots at 100 bb: median over players, whiskers the middle half",
+                "c1",
+                [*[quartiles(by[k]["ratio"]) for k, _ in DUP_KINDS], None],
+            ),
+            dot_series(
+                "Median over the matchups against the bots",
+                "c2",
+                [*[None] * len(DUP_KINDS), [bridge]],
+            ),
+        ],
+        subtitle="Per hand played: a deal at n tables costs n hands. Variance per hand with "
+        "independent deals over n times the variance of a deal's mean.",
+        refs=[ref(1.0, "independent dealing", axis_name="x")],
+    )
+    share = dots_chart(
+        "How much of the possible cancellation happens (post hoc)",
+        labels,
+        axis("Share of perfect cancellation: -(n - 1) x correlation", lo=0, hi=1, fmt="pct"),
+        [dot_series("Median over players", "c3", [[cancelled(k)] for k, _ in DUP_KINDS])],
+        subtitle="A player's results at two tables of one deal have correlation rho, and the "
+        "ratio is 1 / (1 + (n - 1) rho). At -(n - 1) rho = 100% the deal's mean never varies, "
+        "as for the always-call check.",
+    )
+    views = {}
+    for kind, label in DUP_KINDS:
+        archetypes = by[kind]["by_archetype"]
+        rows = [a for a in ARCHETYPES if a in archetypes]
+        note = (
+            [
+                "Heads-up the two players' results are opposite, so their ratios are equal: a "
+                "ratio by archetype describes the pair, not the player."
+            ]
+            if kind == "mixed_2"
+            else []
+        )
+        views[kind] = view(
+            overall,
+            dots_chart(
+                f"By the player's archetype: {label.lower()}",
+                [ARCHETYPE_LABELS[a] for a in rows],
+                DUP_RATIO,
+                [
+                    dot_series(
+                        "Median over players, whiskers the middle half",
+                        "c1",
+                        [quartiles(archetypes[a]["ratio"]) for a in rows],
+                    )
+                ],
+                refs=[ref(1.0, "independent dealing", axis_name="x")],
+            ),
+            share,
+            notes=note,
+        )
+    mix, mirror, clones = by["mixed_6"], by["mirror_6"], by["clones_6"]
+    mixed_n = r["aggregates"]["mixed_by_n"]
+    needed = mix["hands_needed"]
+    below = [by[k]["share_below_1"] for k in ("clones_6", "mirror_6", "mixed_6")]
+    takeaways = [
+        f"With six bots in a random mix, duplicate dealing needs {_times(mix['ratio']['median'])} "
+        f"fewer hands than independent dealing (middle half of the players "
+        f"{_times(mix['ratio']['q25'])}-{_times(mix['ratio']['q75'])}, 95% CI of the median "
+        f"{_times(mix['ratio_ci']['lower'])}-{_times(mix['ratio_ci']['upper'])}; {held('B1')}). "
+        f"Heads-up push/fold, where every hand is an all-in or a fold, saved "
+        f"{_times(bridge)} (Step 28).",
+        f"Identical players do not rescue it: six copies of one bot save "
+        f"{_times(clones['ratio']['median'])} ({held('B2')}), six bots of one archetype "
+        f"{_times(mirror['ratio']['median'])}, the random mix {_times(mix['ratio']['median'])} "
+        f"({held('B3')}). The bots randomize their actions and their Monte Carlo equity, so the "
+        "plays of a deal part early in the hand: a likely reason, not tested here.",
+        "The gain stays about flat with the number of players: "
+        + ", ".join(
+            f"{_times(mixed_n[n]['ratio_median'])} at n = {n} (rho {mixed_n[n]['rho_median']:+.3f})"
+            for n in ("6", "3", "2")
+        )
+        + f" ({held('E1')}; {held('E2')}). A smaller rho at six seats is not less cancellation: "
+        "the ratio depends on (n - 1) rho, which comes to "
+        + ", ".join(f"{cancelled(k):.0%}" for k in ("mixed_6", "mixed_3", "mixed_2"))
+        + " of perfect cancellation at each size (post hoc).",
+        f"Nits gain least: {_times(mix['by_archetype']['nit']['ratio']['median'])} in the random "
+        f"mix ({held('C1')}) and {_times(clones['by_archetype']['nit']['ratio']['median'])} among "
+        f"copies ({held('C2')}). Which seat the other table's player holds barely matters: the "
+        f"correlations at offsets 1, 2 and 3 stay within 0.03 of each other ({held('D1')}; "
+        f"{held('D2')}; {held('D3')}).",
+        f"Almost every player gains: {max(below):.1%} or fewer have a ratio below 1 in any "
+        f"six-player kind ({held('B4')}). Six always-call agents cancel exactly: every "
+        f"per-deal mean over {r['calling_check']['deals']} deals is 0 chips ({held('A1')}).",
+        f"It does not make 6-max win rates cheap: for +/-{cfg['half_width']} bb/100 with a random "
+        f"mix the median player needs {needed['naive']:,.0f} independent hands and "
+        f"{needed['duplicate']:,.0f} duplicate ones. And it stays a simulation tool: a live table "
+        "cannot deal the same cards twice.",
+    ]
+    return section(
+        "duplicate-n",
+        "Duplicate dealing at more than two seats",
+        "Heads-up, duplicate dealing plays each deal twice with the seats swapped. With n players "
+        "it plays each deal at n tables with the seats rotated, so every player holds every "
+        "seat's cards and position once per deal, and card luck can cancel in the mean of those n "
+        "results. The same cards are dealt, but each table has its own decision randomness.",
+        sources=[DUPLICATE],
+        controls=[control("lineups", "Archetypes for", DUP_KINDS)],
+        views=views,
+        takeaways=takeaways,
+        method=f"{cfg['replicates']} replicates of {cfg['population_per_archetype']} bots per "
+        f"archetype (Phase 1's bots, {cfg['equity_samples']} equity samples), blinds 1/2, 100 bb "
+        f"stacks, {cfg['deals']:,} deals per lineup; {sum(by[k]['lineups'] for k, _ in DUP_KINDS)} "
+        "lineups. CIs resample lineups; a bot can sit in several mixed lineups of a replicate, so "
+        "they are a little narrow. The rotation keeps who sits to whose left, so a lineup measures "
+        "its seating order; the aggregates average over the orders drawn. Pre-registered "
+        "predictions A1-E2 (seed 2026), thresholds from development on seeds 98 and 99.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
     ex = load(EXPLOIT)
     av = load(AIVAT)
     ph = load(AIVAT_POSTHOC)
-    head = overview(cfr, deep, ex, av)
+    dup = load(DUPLICATE)
+    head = overview(cfr, deep, ex, av, dup)
     return {
         "id": "phase2",
         "label": "Phase 2",
@@ -1450,6 +1605,7 @@ def build(load) -> dict[str, Any]:
                 (EXPLOIT, ex),
                 (AIVAT, av),
                 (AIVAT_POSTHOC, ph),
+                (DUPLICATE, dup),
             )
         ],
         "sections": [
@@ -1465,5 +1621,6 @@ def build(load) -> dict[str, Any]:
             aivat_values(av),
             aivat_pushfold(av),
             aivat_f1(ph),
+            duplicate_dealing(dup),
         ],
     }
