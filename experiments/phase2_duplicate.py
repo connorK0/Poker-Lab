@@ -870,7 +870,7 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
         ax.set_yticklabels([LABELS[k] for k in kinds], fontsize=8.5)
         ax.invert_yaxis()
         ax.set_xlabel("Times fewer hands than independent dealing (log; right of 1: it pays)")
-        legend(ax, theme, loc="lower right", markerscale=1.6)
+        legend(ax, theme, loc="upper right", markerscale=1.6)
         title(
             fig,
             theme,
