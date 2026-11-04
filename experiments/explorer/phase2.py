@@ -1538,8 +1538,9 @@ def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
         f"Identical players do not rescue it: six copies of one bot save "
         f"{_times(clones['ratio']['median'])} ({held('B2')}), six bots of one archetype "
         f"{_times(mirror['ratio']['median'])}, the random mix {_times(mix['ratio']['median'])} "
-        f"({held('B3')}). The bots randomize their actions and their Monte Carlo equity, so the "
-        "plays of a deal part early in the hand: a likely reason, not tested here.",
+        f"({held('B3')}). Copies can differ only through the bots' own randomness, since each "
+        "table draws its own random numbers; how that divides between mixed actions, bet sizes "
+        "and Monte Carlo equity was not tested.",
         "The gain stays about flat with the number of players: "
         + ", ".join(
             f"{_times(mixed_n[n]['ratio_median'])} at n = {n} (rho {mixed_n[n]['rho_median']:+.3f})"
@@ -1634,10 +1635,11 @@ def duplicate_posthoc(ph: dict[str, Any]) -> dict[str, Any]:
         f"[{mix['lineups']['lower']:.3f}, {mix['lineups']['upper']:.3f}] in the random mix of six, "
         f"which is {mix['width_ratio']:.2f} times as wide. Players at a table share cards and "
         "opponents, so they are not independent draws.",
-        f"Heads-up, who plays alike cancels more: lineups of one archetype have a median of "
-        f"{hu['same_archetype']['median']:.2f}×, mixed pairs "
-        f"{hu['different_archetypes']['median']:.2f}×. These groups were chosen after seeing the "
-        "results.",
+        f"Heads-up, who plays alike tends to cancel more, with exceptions: lineups of one "
+        f"archetype have a median of {hu['same_archetype']['median']:.2f}×, mixed pairs "
+        f"{hu['different_archetypes']['median']:.2f}×, but the two highest pairs are "
+        f"{pair_label(pairs[-1][0])} and {pair_label(pairs[-2][0])}. These groups were chosen "
+        "after seeing the results.",
         f"A single player's ratio is noisy: six copies of one bot differ only by sampling noise, "
         f"and within a lineup their ratios have a median relative SD of "
         f"{copies['within_lineup_relative_sd_median']:.1%}. Between bots the spread is wider: "
