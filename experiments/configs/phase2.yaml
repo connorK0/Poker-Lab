@@ -36,3 +36,14 @@ aivat:
     stacks: [5, 10, 20]     # P3.3's matchups, computed exactly
     half_width: 0.05        # bb/hand, as in P3.3
   workers: 10
+duplicate:
+  replicates: 10              # bot populations, each from its own seed (derive_seeds)
+  population_per_archetype: 12
+  lineups: {clones_6: 5, mirror_6: 5, mixed_6: 10, mixed_3: 10, mixed_2: 20}  # per replicate
+  deals: 2000                 # per lineup; a deal is played at n tables (n hands)
+  chunk_deals: 250            # deals per worker task (one duplicate match)
+  calling_deals: 200          # the always-call check
+  equity_samples: 150         # the bots' Monte Carlo equity samples, as in Phase 1
+  half_width: 5               # bb/100: hands needed for a 95% interval this wide
+  bootstrap: 2000             # resamples of lineups for the CI of a median ratio
+  workers: 12

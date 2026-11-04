@@ -14,6 +14,8 @@ summary and light/dark figures under ``experiments/results/<name>/``):
    them with best, restricted Nash and data-biased responses, evaluated exactly (P2.6-P2.7).
 4. ``aivat``: AIVAT control variates against the plain result and duplicate dealing, exact
    variances in Leduc and in P3.3's push/fold matchups, and the hero's own view (P2.11).
+5. ``duplicate``: duplicate dealing for n players with the seats rotated, at 6-max no-limit
+   hold'em with Phase 1's archetype bots: how many times fewer hands it needs (P2.11b).
 """
 
 from __future__ import annotations
@@ -26,7 +28,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("cfr", "deep_cfr", "exploit", "aivat")
+STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate")
 
 
 def run(
@@ -39,7 +41,13 @@ def run(
 ) -> dict[str, float]:
     # Experiment modules are imported here: worker processes re-import this module (Windows
     # spawn) and should not each load matplotlib, scikit-learn or torch.
-    from experiments import phase2_aivat, phase2_cfr, phase2_deep_cfr, phase2_exploit
+    from experiments import (
+        phase2_aivat,
+        phase2_cfr,
+        phase2_deep_cfr,
+        phase2_duplicate,
+        phase2_exploit,
+    )
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
     modules = {
@@ -47,6 +55,7 @@ def run(
         "deep_cfr": phase2_deep_cfr,
         "exploit": phase2_exploit,
         "aivat": phase2_aivat,
+        "duplicate": phase2_duplicate,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

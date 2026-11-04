@@ -36,3 +36,14 @@ aivat:
     stacks: [3]             # not a stack of the full run
     half_width: 0.05
   workers: 4
+duplicate:
+  replicates: 1
+  population_per_archetype: 6
+  lineups: {clones_6: 5, mirror_6: 5, mixed_6: 3, mixed_3: 3, mixed_2: 3}
+  deals: 100
+  chunk_deals: 50
+  calling_deals: 20
+  equity_samples: 150
+  half_width: 5
+  bootstrap: 200
+  workers: 4
