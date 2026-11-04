@@ -36,7 +36,8 @@ EXPLOIT = "experiments/results/phase2/exploit/exploit.json"
 AIVAT = "experiments/results/phase2/aivat/aivat.json"
 AIVAT_POSTHOC = "experiments/results/phase2/aivat/aivat_posthoc.json"
 DUPLICATE = "experiments/results/phase2/duplicate/duplicate.json"
-SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE)
+DUPLICATE_POSTHOC = "experiments/results/phase2/duplicate/duplicate_posthoc.json"
+SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE, DUPLICATE_POSTHOC)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -1482,7 +1483,7 @@ def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
         ],
         subtitle="Per hand played: a deal at n tables costs n hands. Variance per hand with "
         "independent deals over n times the variance of a deal's mean.",
-        refs=[ref(1.0, "independent dealing", axis_name="x")],
+        refs=[ref(1.0, "no gain", axis_name="x")],
     )
     share = dots_chart(
         "How much of the possible cancellation happens (post hoc)",
@@ -1518,7 +1519,7 @@ def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
                         [quartiles(archetypes[a]["ratio"]) for a in rows],
                     )
                 ],
-                refs=[ref(1.0, "independent dealing", axis_name="x")],
+                refs=[ref(1.0, "no gain", axis_name="x")],
             ),
             share,
             notes=note,
@@ -1582,6 +1583,82 @@ def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+def duplicate_posthoc(ph: dict[str, Any]) -> dict[str, Any]:
+    normal, by_kind = ph["coverage_normal"], ph["coverage_lineups"]
+    colors = dict(zip((k for k, _ in DUP_KINDS), ("c1", "c2", "c3", "c4", "c5"), strict=True))
+    coverage = line_chart(
+        "How often a nominal 95% interval covers, against the number of lineups",
+        axis("Lineups resampled", scale="log", fmt="int"),
+        axis("Coverage", fmt="pct"),
+        [
+            *[
+                series(label, colors[kind], [(int(g), c) for g, c in by_kind[kind].items()])
+                for kind, label in DUP_KINDS
+            ],
+            series(
+                "Normal theory, mean of the values",
+                "muted",
+                [(int(g), c) for g, c in normal.items()],
+                dash=True,
+            ),
+        ],
+        subtitle="One kind's lineups taken as the truth, drawn with replacement, the step's "
+        "interval computed from them. They are both the data and the truth, so this shows the "
+        "size of the effect.",
+        refs=[ref(0.95, "nominal 95%")],
+    )
+    hu = ph["heads_up"]
+    pairs = sorted(hu["pairs"].items(), key=lambda kv: kv[1]["median"])
+
+    def pair_label(key: str) -> str:
+        a, b = key.split("|")
+        return f"{ARCHETYPE_LABELS[a]} and {ARCHETYPE_LABELS[b]} ({hu['pairs'][key]['lineups']})"
+
+    heads_up = dots_chart(
+        "Heads-up lineups by the pair of archetypes (number of lineups in brackets)",
+        [pair_label(k) for k, _ in pairs],
+        DUP_RATIO,
+        [dot_series("Median ratio", "c1", [[v["median"]] for _, v in pairs])],
+        subtitle="The two players' ratios are equal, so a lineup is one value.",
+        refs=[ref(1.0, "no gain", axis_name="x")],
+    )
+    copies, mix = ph["copies"], ph["resampling"]["mixed_6"]
+    ten = by_kind["mixed_6"]["10"]
+    takeaways = [
+        f"A percentile bootstrap over few lineups is too narrow: at 10 lineups a nominal 95% "
+        f"interval covered about {ten:.0%} of the time in the random mix "
+        f"({normal['10']:.1%} in normal theory), at 50 about {by_kind['mixed_6']['50']:.0%}. The "
+        "per-archetype CIs of the copies and one-archetype lineups rest on 10 lineups each.",
+        f"Resampling players instead of lineups would give narrower intervals: "
+        f"[{mix['players']['lower']:.3f}, {mix['players']['upper']:.3f}] against "
+        f"[{mix['lineups']['lower']:.3f}, {mix['lineups']['upper']:.3f}] in the random mix of six, "
+        f"which is {mix['width_ratio']:.2f} times as wide. Players at a table share cards and "
+        "opponents, so they are not independent draws.",
+        f"Heads-up, who plays alike cancels more: lineups of one archetype have a median of "
+        f"{hu['same_archetype']['median']:.2f}×, mixed pairs "
+        f"{hu['different_archetypes']['median']:.2f}×. These groups were chosen after seeing the "
+        "results.",
+        f"A single player's ratio is noisy: six copies of one bot differ only by sampling noise, "
+        f"and within a lineup their ratios have a median relative SD of "
+        f"{copies['within_lineup_relative_sd_median']:.1%}. Between bots the spread is wider: "
+        f"lineup medians among copies run from {copies['lineup_median_lowest']['ratio']:.2f}× to "
+        f"{copies['lineup_median_highest']['ratio']:.2f}×.",
+    ]
+    return section(
+        "duplicate-posthoc",
+        "Post hoc: how far to trust the duplicate step's intervals",
+        "Computed after the run from its committed results, playing no hands. Nothing here is "
+        "pre-registered.",
+        sources=[DUPLICATE_POSTHOC],
+        views={"": view(coverage, heads_up)},
+        takeaways=takeaways,
+        method=f"{ph['meta']['config']['trials']:,} draws of G lineups, "
+        f"{ph['meta']['config']['resamples']} resamples each. Source: "
+        f"{ph['meta']['source']} at {ph['meta']['source_commit'][:7]}.",
+        post_hoc=True,
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
@@ -1589,6 +1666,7 @@ def build(load) -> dict[str, Any]:
     av = load(AIVAT)
     ph = load(AIVAT_POSTHOC)
     dup = load(DUPLICATE)
+    dup_ph = load(DUPLICATE_POSTHOC)
     head = overview(cfr, deep, ex, av, dup)
     return {
         "id": "phase2",
@@ -1606,6 +1684,7 @@ def build(load) -> dict[str, Any]:
                 (AIVAT, av),
                 (AIVAT_POSTHOC, ph),
                 (DUPLICATE, dup),
+                (DUPLICATE_POSTHOC, dup_ph),
             )
         ],
         "sections": [
@@ -1622,5 +1701,6 @@ def build(load) -> dict[str, Any]:
             aivat_pushfold(av),
             aivat_f1(ph),
             duplicate_dealing(dup),
+            duplicate_posthoc(dup_ph),
         ],
     }
