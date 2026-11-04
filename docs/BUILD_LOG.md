@@ -74,6 +74,8 @@ $B(a,b)$ the beta function.
   * Performance
   * [Step 39: Faster code, identical results](#step-39-faster-code-identical-results)
   * [Step 40: A hot start, parallel replicates and a split test suite](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite)
+  * Phase 2, completed after Phase 3 (continued)
+  * [Step 41: Duplicate dealing at more than two seats](#step-41-duplicate-dealing-at-more-than-two-seats-p211b)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -1940,7 +1942,7 @@ pair, *stratified*: every compatible combo pair gets the same number of boards.
 * Stratification removes the variance from which combos were dealt. The standard error is
   $\sqrt{\sum_p \hat\sigma_p^2/m}\,/\,k$ for $k$ strata of $m$ boards each, at most 0.0022 here.
 * Every class pair gets its own child of one `SeedSequence`, so the table does not depend on
-  how many worker processes ran (5 minutes on 16 cores).
+  how many worker processes ran (5 minutes on 16 threads).
 * Symmetry gives the rest for free: $e_{ji} = 1 - e_{ij}$, and the diagonal is exactly 0.5.
 * Cross-check: each class's equity against a random hand, $\sum_j n_{ij}e_{ij}/\sum_j n_{ij}$,
   agrees with Phase 1's independently computed table (different code, different seed) to
@@ -3342,7 +3344,7 @@ out to keep the comparison with the stats fair.
 * Each replicate re-simulated identical to Phase 1 (checked in the run); the refit logistic
   model reproduces Phase 1's published numbers exactly.
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only sequence` (about 1.4 hours
-  on 16 cores, most of it simulating and training on the extra bots of part C).
+  on 16 threads, most of it simulating and training on the extra bots of part C).
 
 ## Step 35: Schema v2: big-blind antes, straddles and minimum bets (P3.10)
 
@@ -3479,7 +3481,7 @@ straddler. Dead blinds (a player returning to the table posts a missed blind) ar
 * `tests/test_schema_experiment.py`: each structure's tables have it; a round-trip task runs
   every check; the loader check tells an odd chip from a real difference.
 * Experiment: `python -m experiments.run_phase3 --seed 2026 --only schema` (about a minute on
-  16 cores).
+  16 threads).
 
 ## Step 36: Opponents that adapt to the hero (P3.9)
 
@@ -5201,6 +5203,625 @@ test, and slower still unless that test starts first.
 * Suite: `python -m pytest` (471 passed, 53.5-53.9 s) and `python -m pytest -n 0
   tests/test_leduc_exploit.py` (19 passed in 5.0 s).
 
+## Step 41: Duplicate dealing at more than two seats (P2.11b)
+
+**The question.** Step 23 plays each deal twice with the seats swapped, and Step 28's push/fold
+hands show what that saves heads-up: a median over the matchups of 2.06× fewer hands than
+independent dealing. The next item after AIVAT was to generalize this to n players by cyclic seat
+rotation and to measure the variance reduction in a 6-max simulation with Phase 1's archetype bots,
+under its own plan and pre-registration. So: how much variance per hand played does rotating the
+seats remove at 6-max no-limit hold'em, and how does that depend on the opponents (copies of one
+bot, bots of one archetype, a random mix) and on the number of players (2, 3, 6)? A live table
+cannot deal the same cards twice, so this is a tool for simulated evaluations only. No committed
+result had to move: with two players the new code plays exactly the old hands (section 2), so
+nothing needed the owner's sign-off.
+
+**1. The variance of a mean of correlated results.**
+
+*The formula.* Fix a player and a deal. Let $X_1, \dots, X_n$ be the player's results at the $n$
+tables, each with variance $\sigma^2$, and let $U = \frac{1}{n} \sum_r X_r$ be their mean. The
+variance of a sum is the sum of all the covariances, so
+
+$$\operatorname{Var}(U) = \frac{1}{n^2} \sum_{r=1}^{n} \sum_{r'=1}^{n}
+  \operatorname{Cov}(X_r, X_{r'})
+  = \frac{1}{n^2} \big( n\sigma^2 + n(n-1)\,\rho\,\sigma^2 \big)
+  = \frac{\sigma^2 \big(1 + (n-1)\rho\big)}{n}.$$
+
+The $n$ diagonal terms are the variances. The other $n(n-1)$ are covariances, and $\rho$ is by
+definition the mean correlation over those ordered pairs of tables. With $n = 2$ this is Step 28's
+$\sigma^2 (1 + \rho) / 2$. Survey sampling knows the factor $1 + (m-1)\rho$ as the *design effect*
+of a cluster of $m$ units with *intraclass correlation* $\rho$ (Kish 1965): there $\rho$ is usually
+positive, and a cluster is worth less than $m$ separate units. Monte Carlo calls runs built to be
+negatively correlated *antithetic variates* (Hammersley and Morton 1956). Duplicate dealing is that
+idea applied to seats.
+
+*What a deal costs.* A deal at $n$ tables is $n$ hands. So $N$ hands make $N/n$ deals, whose mean
+has variance $n \operatorname{Var}(U) / N$. Independent dealing gives $\sigma^2 / N$ for the same
+$N$. The quotient is this step's metric,
+
+$$\text{ratio} = \frac{\sigma^2}{n \operatorname{Var}(U)} = \frac{1}{1 + (n-1)\rho},$$
+
+how many times fewer hands duplicate dealing needs for an interval of the same width. With
+$\rho = 0$ the ratio is 1: the $n$ plays are just $n$ hands. With $\rho = 1$, the same result at
+every table, it is $1/n$: $n$ hands for the information of one. So duplicate dealing pays only when
+$\rho < 0$. An interval's width goes as $1/\sqrt{N}$, so on a fixed number of hands it narrows by
+only the square root of the ratio: 1.30× fewer hands is a 1.14× narrower interval.
+
+*The bound.* A variance cannot be negative, so $1 + (n-1)\rho \ge 0$, that is
+
+$$\rho \ge -\frac{1}{n-1}.$$
+
+That is $-1$ at two tables, $-1/2$ at three and $-1/5$ at six. Two results can be exact opposites;
+six results cannot all be opposite to one another. At the bound $U$ never varies, and as $\rho$
+nears it the ratio grows without limit. So $\rho$ alone cannot compare table sizes: $-0.05$ is a
+quarter of the way to the bound at six seats and a twentieth of the way at two. The comparable
+quantity, chosen post hoc, is $s = -(n-1)\rho$, the share of perfect cancellation reached: 0 for
+none, 1 at the bound. A share $s$ gives the ratio $1/(1-s)$ at any $n$.
+
+*Skill plus or minus luck.* Step 23 said a player's two results share the card luck with opposite
+signs: $X_1 = a + \ell$ and $X_2 = a - \ell$, with mean $a$. For $n$ tables write $X_r = a + \ell_r$
+with $\sum_r \ell_r = 0$: the mean is $a$ whatever the luck. If the $\ell_r$ are exchangeable with
+variance $v$ and covariance $c$, then $0 = \operatorname{Var}(\sum_r \ell_r) = nv + n(n-1)c$, so
+their correlation is $-1/(n-1)$. Luck that sums to zero sits exactly at the bound. Step 23's
+"removes most of it" describes that ideal; Results show how far these bots fall short.
+
+**2. Cyclic rotation as a design.**
+
+*The seating.* At table $r$ player $j$ sits in seat $(j + r) \bmod n$. All tables of a deal use the
+same deck order and the same button seat, and cards are dealt by position, so a seat holds the same
+cards and position at every table. For three players:
+
+| | Table 0 | Table 1 | Table 2 |
+|---|---|---|---|
+| Player 0 | seat 0 | seat 1 | seat 2 |
+| Player 1 | seat 1 | seat 2 | seat 0 |
+| Player 2 | seat 2 | seat 0 | seat 1 |
+
+Every row holds every seat once, so each player holds each seat's cards and position once per deal.
+Every column does too, so each table is a full table. An $n \times n$ array of $n$ symbols with that
+property is a *Latin square*, the classic design for balancing two factors at once (Fisher 1935).
+This one is cyclic: for fixed $j$ the map $r \mapsto (j + r) \bmod n$ is one-to-one, and so is the
+map $j \mapsto (j + r) \bmod n$ for fixed $r$, which is the whole proof. With $n = 2$ it is Step
+23's seat swap.
+
+*The sum-zero argument.* Let $w^{(r)}_s$ be seat $s$'s result at table $r$. The simulator takes no
+rake, so $\sum_s w^{(r)}_s = 0$ at every table. Player $j$'s mean over a deal is
+
+$$u_j = \frac{1}{n} \sum_{r=0}^{n-1} w^{(r)}_{(j+r) \bmod n}.$$
+
+If a seat's result were the same at every table, $w^{(r)}_s = w_s$, then as $r$ runs over the tables
+the seat runs over all the seats, and $u_j = \frac{1}{n} \sum_s w_s = 0$, for every player on every
+deal: the bound of section 1. With different agents the plays differ from table to table, a seat's
+result depends on $r$, and only part of the luck cancels.
+
+*When it is exact.* For copies of one deterministic agent that ignores player ids. Each word
+matters. Copies: the same agent must play each seat at every table. Deterministic: each table has
+its own decision RNG (Step 23), so an agent's coin flips are not mirrored. Ignores ids: agents can
+see them, and one that treats `p3` differently plays differently after the rotation. The odd chip of
+a split pot does not break it, because it goes by position, not by player: three always-call agents
+with an ante of 1 have 9-chip pots whose two-way splits leave an odd chip, and each seat's result is
+still the same at every table (a test). `CallingAgent` is the exact case the experiment checks.
+
+*What it does not balance.* Since $(j + 1 + r) - (j + r) = 1$, player $j + 1$ sits in the next seat
+after player $j$ at every table. The rotation never changes who sits to whose left. Different
+players have $(n-1)!$ cyclic orders: 1 at two seats, 2 at three, 120 at six. A match plays one of
+them, so it measures that seating order. The experiment seats each lineup in the order drawn,
+records it as `seating`, and its aggregates average over the orders drawn. No lineup was replayed in
+another order, so how much the order matters was not measured.
+
+*Heads-up stays byte-identical.* The committed bridge results (Step 28) were built on the old
+two-player code, so $n = 2$ must give the same hands. The new code draws its seeds with
+`SeedSequence(seed).generate_state(n + 1)`, which at $n = 2$ is the old code's `generate_state(3)`,
+and it calls the factories table by table in seat order, which for two players is hero, villain,
+villain, hero, as before (the bridge's hero factory draws a seed per call). A test rebuilds the old
+algorithm of commit `2131bb4` inline and compares every hand's serialized form. The bridge step, the
+only other experiment that calls `duplicate_match`, was rerun on seed 2026 with the new code:
+"bridge: 0 differences".
+
+**3. Estimating the ratio and $\rho$.** One player of a lineup gives $x_{r,i}$, the result of deal
+$i$ at table $r$ in big blinds, for $D$ deals. With $\bar x$ the mean of all $nD$ results and
+$u_i = \frac{1}{n} \sum_r x_{r,i}$,
+
+$$\hat\sigma^2 = \frac{\sum_{r,i} (x_{r,i} - \bar x)^2}{nD - 1}, \qquad
+  s_u^2 = \frac{\sum_i (u_i - \bar x)^2}{D - 1}, \qquad
+  \widehat{\text{ratio}} = \frac{\hat\sigma^2}{n\, s_u^2}.$$
+
+*Same estimate, another interval.* The mean of the $u_i$ is the mean of all the hands, so the point
+estimate of the win rate does not change. Only the interval does. `DuplicateDealEvaluator` with
+`group_size=n` puts a Student-t interval over the $D$ per-deal means, which are independent. A
+t-interval over the $nD$ hands would be wrong here, because a deal's hands are not independent: it
+takes the mean's variance to be $\hat\sigma^2 / (nD)$ when it is $\sigma^2 (1 + (n-1)\rho) / (nD)$.
+With $\rho < 0$ it is too wide, by the square root of the ratio. The results store it for display
+only. Post hoc, in the real run's random mix over 12,000 hands, the median half-widths are 44.3
+bb/100 for that interval and 38.6 for the per-deal one.
+
+*Correlation by offset.* With $z_{r,i} = x_{r,i} - \bar x$ and $S = \sum_{r,i} z_{r,i}^2$,
+
+$$c_k = \frac{1}{S} \sum_{r,i} z_{r,i}\, z_{(r+k) \bmod n,\, i}, \qquad
+  \hat\rho = \frac{1}{n-1} \sum_{k=1}^{n-1} c_k.$$
+
+Offset $k$ compares a player's result at one table with its result $k$ seats further round. $c_k$ is
+the ordinary Pearson correlation of the $nD$ pairs: both coordinates are the same numbers in another
+order, so they have the same mean and variance, and the denominator reduces to $S$. Offsets $k$ and
+$n - k$ are the same pairs (put $r' = r + k$ and the two factors swap), so $c_{n-k} = c_k$. At six
+seats $\hat\rho = (2c_1 + 2c_2 + c_3)/5$, and only $k = 1, 2, 3$ are reported; at three and at two
+seats $\hat\rho = c_1$.
+
+*The exact identity.* Since $u_i - \bar x = \frac{1}{n} \sum_r z_{r,i}$,
+
+$$(D-1)\, s_u^2 = \frac{1}{n^2} \sum_i \Big( \sum_r z_{r,i} \Big)^2
+  = \frac{1}{n^2} \sum_{k=0}^{n-1} \sum_{r,i} z_{r,i}\, z_{(r+k) \bmod n,\, i}
+  = \frac{S}{n^2} \Big( 1 + \sum_{k=1}^{n-1} c_k \Big)
+  = \frac{S \big(1 + (n-1)\hat\rho\big)}{n^2}.$$
+
+The second step groups the $n^2$ pairs of tables by their offset, and $k = 0$ gives $S$. With
+$\hat\sigma^2 = S / (nD - 1)$,
+
+$$\widehat{\text{ratio}} = \frac{n (D-1)}{(nD - 1)\big(1 + (n-1)\hat\rho\big)}.$$
+
+The first factor counts degrees of freedom: 0.99958 at $n = 6$, $D = 2{,}000$. This is an identity,
+not an approximation: over the real run's 1,900 players (post hoc) the largest relative gap is
+$1.1 \times 10^{-15}$. It also gives the bound in the sample: $1 + (n-1)\hat\rho \ge 0$ always.
+
+*Hands needed.* For a 95% interval of $\pm h$ bb per hand: $(1.96\,\hat\sigma / h)^2$ independent
+and $n (1.96\, s_u / h)^2$ duplicate. Their quotient is the ratio, up to rounding up. A player with
+$s_u = 0$ would get `RATIO_CAP` and the flag `no_variance_left`; no player in the real run did.
+
+**4. A cluster bootstrap over lineups.** An aggregate here is a median over players. Its interval is
+a percentile bootstrap (Efron and Tibshirani 1993): draw lineups with replacement, pool the drawn
+lineups' players, take the median, repeat 2,000 times and read the 2.5% and 97.5% quantiles.
+
+*Why lineups, not players.* Players at a table share cards and opponents, and their results sum to
+zero hand by hand, so they are not independent draws. Heads-up is the extreme: the two players'
+results are opposite, so their ratios are equal (in all 200 heads-up lineups, checked post hoc).
+Resampling players would count one number as two independent ones. Resampling whole groups is a
+*cluster bootstrap*. A test requires that pairs of equal values give exactly the interval of single
+values. Post hoc, resampling players instead would have given intervals 1.2 to 1.5 times narrower:
+[1.284, 1.311] against [1.278, 1.319] for the six-bot random mix. For the same reason a heads-up
+lineup counts twice among the players and once in the bootstrap, and a heads-up ratio by archetype
+describes the pair.
+
+*Few clusters.* A percentile interval is too narrow when clusters are few. For the mean of $G$
+normal values, the bootstrap distribution has variance $\frac{G-1}{G} s^2 / G$, so, reading it as
+normal, its 95% interval has half-width about $1.96 \sqrt{(G-1)/G}\; s / \sqrt{G}$, where the exact
+interval has the 97.5% quantile of $t_{G-1}$ in place of $1.96 \sqrt{(G-1)/G}$. Its coverage is then
+$P\big(|t_{G-1}| < 1.96 \sqrt{(G-1)/G}\big)$:
+
+| Clusters $G$ | 5 | 8 | 10 | 20 | 50 | 100 |
+|---|---|---|---|---|---|---|
+| Coverage of a nominal 95% interval, mean of normal data | 84.6% | 89.1% | 90.4% | 92.9% | 94.2% | 94.6% |
+
+Development had met this: 2 lineups per archetype gave a CI of [1.84×, 1.85×] inside an IQR of
+[1.80×, 1.88×]. So the experiment leaves a CI blank below `MIN_CI_LINEUPS = 8`, and no prediction
+uses a CI. Is ten still crude? A post hoc check on the real run's lineups says yes. Take one kind's
+lineups as the truth, draw $G$ of them with replacement, compute the interval (500 resamples),
+repeat 2,000 times (Monte Carlo error about 0.7 points) and count how often it covers the kind's
+median:
+
+| Lineup kind | $G$ = 8 | $G$ = 10 | $G$ = 20 | $G$ = 50 |
+|---|---|---|---|---|
+| Six copies of one bot | 88.2% | 89.4% | 93.0% | 94.2% |
+| Six bots of one archetype | 89.2% | 90.5% | 93.1% | 93.6% |
+| Six bots, random mix | 89.6% | 90.5% | 93.0% | 94.0% |
+| Three bots, random mix | 90.0% | 91.8% | 94.0% | 93.8% |
+| Two bots, random mix | 91.5% | 93.5% | 94.4% | 94.0% |
+
+The same lineups are both the data and the truth, so this shows the size of the effect, not the
+exact coverage on new lineups. Read the per-archetype CIs of the copies and one-archetype lineups,
+which rest on 10 lineups each, as about 90% intervals. The other CIs rest on 42 to 200 lineups.
+Cameron, Gelbach and Miller (2008) study a related problem for regressions with few clusters, where
+standard tests reject too often; their remedy, a cluster bootstrap-t, is not used here.
+
+*A percentile interval need not contain the median.* Its ends are quantiles of the resampled
+medians, not the sample median plus or minus anything, and nothing forces the sample median between
+them. Figures that draw `median - lower` as an error bar must allow for that. In the real run and in
+every development output each reported CI does contain its median (checked post hoc).
+
+*Conditional on the populations.* A bot can sit in several mixed lineups of a replicate: the ten
+`mixed_6` lineups of a replicate seat 35 to 43 distinct bots in 60 seats (post hoc). Resampling
+lineups treats them as independent, so these CIs are conditional on the populations and a little
+narrow.
+
+**5. Seeds and stream tags.** Every random stream comes from a `SeedSequence` over a short list of
+integers:
+
+| Stream | Entropy |
+|---|---|
+| A replicate's population | `[replicate seed, 1]` |
+| A kind's lineup draws | `[replicate seed, 2, kind]` |
+| A chunk of a lineup's deals | `[replicate seed, 3, kind, lineup, chunk]` |
+| The calling check | `[master seed, 4, chunk]` |
+| The bootstrap | `[master seed, 5, kind]` and `[master seed, 5, kind, archetype]` |
+
+A `SeedSequence` mixes a pool of four 32-bit words, and shorter entropy is padded with zeros. So
+`[5]`, `[5, 0]`, `[5, 0, 0]` and `[5, 0, 0, 0]` give the same numbers, while `[5, 0, 0, 0, 0]` does
+not (checked for this step on NumPy 2.4.6). With `[seed]` for one stream and `[seed, kind]` for
+another, kind 0 would silently reuse the first. Hence the second word, a tag from 1 to 5 that
+differs per stream and is never 0. Archetypes in the bootstrap's entropy count from 1, so the first
+archetype's stream is not the kind's own. The full plan has 4,001 worker tasks with 4,001 distinct
+seeds (checked post hoc). The state words also form a prefix: `generate_state(3)` is the start of
+any longer request. $n = 2$ does not need that, since it asks for exactly the old three words; it
+means a larger table shares its deck seed and first two table seeds with a heads-up match of the
+same seed. Results are aggregated in task order, so they do not depend on the number of workers (a
+test runs one and two).
+
+**The plan and predictions** (`experiments/phase2_duplicate.py`, pre-registered at commit
+`0fb6e53`).
+
+*The simulation.* Per replicate, a population of 12 bots per archetype (60 bots: Phase 1's
+`make_population`, `ParametricBot` with 150 Monte Carlo equity samples). Blinds 1/2, 100 bb stacks
+reset every hand, table size $n$. Each lineup plays 2,000 deals in chunks of 250, each chunk one
+`duplicate_match` run as one worker task. A chunk restarts the button at seat 0, which does not
+matter, since every player holds every position once per deal.
+
+| Lineup kind | Who sits | Lineups per replicate | Lineups in all | Hands per replicate |
+|---|---|---|---|---|
+| Six copies of one bot (`clones_6`) | one bot drawn per archetype, six copies | 5 | 50 | 60,000 |
+| Six bots of one archetype (`mirror_6`) | six different bots, one lineup per archetype | 5 | 50 | 60,000 |
+| Six bots, random mix (`mixed_6`) | drawn from the population, without replacement within a lineup | 10 | 100 | 120,000 |
+| Three bots, random mix (`mixed_3`) | the same, at a table of three | 10 | 100 | 60,000 |
+| Two bots, random mix (`mixed_2`) | the same, at a table of two | 20 | 200 | 80,000 |
+| Six always-call agents (`calling_6`) | a check, once per run, 200 deals | | 1 | 1,200 in the run |
+
+Ten replicates make 500 lineups and 3.8 million hands, plus the check's 1,200.
+
+*From pilot to thresholds.* Pre-registration here had four stages:
+
+1. *Pilot* on seed 97: 1 replicate, 250 deals per lineup, 26,300 hands, 15 s. It sized the next
+   runs.
+2. *Development* on seeds 98 and 99: 2 replicates, 1,500 deals per lineup, 5, 5, 6, 6 and 6 lineups:
+   378,000 hands plus the check, 137-139 s each on 12 workers. The outputs are not committed; what
+   they showed is in the docstring as "Seen in development".
+3. *Sizing and thresholds*, on development data only. A subagent's precision analysis found that the
+   median ratio did not drift with the deals between 250 and 1,500 and that the spread between
+   lineups dominates the CI. So the full configuration adds lineups, not deals. Against the draft
+   configuration it has 10 replicates, not 5, and 20 heads-up lineups per replicate, not 10, since a
+   heads-up lineup is one value and had the widest CI (±9% projected). It keeps the draft's 10
+   lineups of each other mixed kind (development had 6) and 2,000 deals per lineup (development had
+   1,500). All of these are pre-registered in `experiments/configs/phase2.yaml` at `0fb6e53`; the
+   docstring states only the 10 and the 20. Each threshold was set from what the two seeds showed.
+4. *Commit, then run.* A reviewer read the plan, its findings were fixed (Mistakes), and `0fb6e53`
+   was committed at 21:13:38 on 2026-11-03. The real run started from it, on a clean tree, at
+   21:13:52.
+
+*The predictions.* Twelve, in five families: A, the calling check is exact; B, the size of the gain,
+that it falls from copies to one archetype to a random mix, and that almost no player loses; C, nits
+gain least; D, the correlation barely depends on the offset; E, the gain stays flat with $n$. The
+table under Results has them all.
+
+*What a threshold can and cannot show.* A1 can fail only through a bug, and the run stops there if
+it does. B1, B2 and E1 are bands, wide on purpose: B1's runs from 1.15 to 1.5, 8.5 times the width
+of the final CI (post hoc). They fail only if the two development seeds misled badly, and holding
+says nothing about where inside the band the value lies; the CI does that. The narrowest are B3, C1
+and C2, orderings that could have come out otherwise. Development also shows what not to predict:
+nits came lowest among one-archetype lineups only on seed 98 (1.17× | 1.35×, with TAG at 1.34× on
+seed 99), so that was left out. And all twelve hold on both development seeds by construction, since
+the thresholds came from them. A threshold also belongs to a run size. Evaluated post hoc on their
+saved outputs, the pilot's 250 deals fail C2, D1, D2 and D3, and the quick configuration's 100 deals
+(seed 98) fail B4, D1, D2 and D3, so `--quick` is only a smoke test.
+
+**How it was done.** The work ran in a git worktree outside OneDrive (`poker-lab-dup`). `8a5f983`
+generalizes the library: `duplicate_match` takes $n \ge 2$ players, `DuplicateMatch` keeps its
+tables (`first` and `second` remain) and adds `grouped_results` and `evaluate`, and
+`DuplicateDealEvaluator` takes `group_size`; the bridge rerun checked it. `0fb6e53` adds the
+experiment, its plan and predictions and a new last step of `run_phase2`. `00f8f7e` holds the real
+run's results and a new explorer section (`duplicate-n`, "Duplicate dealing at more than two seats")
+with a tile on the Phase 2 page. `c7f0029` adds `experiments/phase2_duplicate_posthoc.py`, which
+reads the committed JSON and plays no hands, and redraws one figure; `8cdd759` holds its results,
+from a clean tree, and a post hoc explorer section (`duplicate-posthoc`); `4150aac` corrects two
+explorer sentences. A reviewer subagent read the library diff and the experiment before their
+commits, and its findings were fixed first (Mistakes). The suite went from 471 tests to 479
+(library), 511 (experiment) and 517 (post hoc). The real run was
+`python -m experiments.phase2_duplicate --seed 2026`; `run_phase2 --only duplicate` calls the same
+function, and a test covers that wiring.
+
+**Results** (seed 2026, commit `0fb6e53`, clean tree;
+[`duplicate_summary.md`](../experiments/results/phase2/duplicate/duplicate_summary.md); the figures
+`duplicate_ratio`, `duplicate_offsets` and `duplicate_players` are in the same folder).
+
+*By lineup kind.* The ratio is a median over players, pooled over lineups and replicates:
+
+| Lineup kind | Lineups | Players | Ratio: median [IQR] | 95% CI of the median | Players with a ratio below 1 | Median $\rho$ | Median $c_k$, $k$ = 1, 2, 3 | Median SD per hand (bb) | Median hands for ±5 bb/100: independent | duplicate |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Six copies of one bot | 50 | 300 | 1.53× [1.42, 1.64] | [1.49, 1.57] | 0 | -0.069 | -0.067, -0.071, -0.067 | 19.27 | 570,490 | 388,778 |
+| Six bots of one archetype | 50 | 300 | 1.44× [1.37, 1.52] | [1.43, 1.47] | 1 | -0.061 | -0.059, -0.064, -0.062 | 19.92 | 610,030 | 421,662 |
+| Six bots, random mix | 100 | 600 | 1.30× [1.21, 1.40] | [1.28, 1.32] | 1 | -0.046 | -0.040, -0.040, -0.041 | 24.74 | 940,565 | 713,764 |
+| Three bots, random mix | 100 | 300 | 1.25× [1.16, 1.35] | [1.22, 1.28] | 2 | -0.100 | -0.100 | 14.42 | 319,506 | 276,703 |
+| Two bots, random mix | 200 | 400 | 1.29× [1.17, 1.44] | [1.24, 1.32] | 4 | -0.224 | -0.224 | 8.29 | 105,680 | 86,536 |
+
+The hands are separate medians over the players, so their quotient is not the median ratio (940,565
+/ 713,764 = 1.32, against 1.30). Six always-call agents cancel exactly: over 200 deals every
+per-deal mean is 0 chips, while a single hand has an SD of 2.19 bb. (Post hoc check of that number:
+six callers put in 1 bb each, the winner nets 5 bb, so without ties the variance is
+$\frac16 \cdot 25 + \frac56 = 5$, an SD of 2.24 bb; split pots lower it.)
+
+*By the player's archetype.* Median ratio [95% CI], then median SD per hand in bb. Each cell of the
+first two columns rests on 10 lineups, so its CI is about a 90% interval (section 4):
+
+| Archetype | Six copies of one bot | Six bots of one archetype | Six bots, random mix |
+|---|---|---|---|
+| Nit | 1.34× [1.27, 1.42], 3.50 | 1.31× [1.26, 1.40], 4.78 | 1.18× [1.16, 1.20], 13.54 |
+| TAG | 1.65× [1.55, 1.72], 13.64 | 1.43× [1.37, 1.49], 10.87 | 1.27× [1.24, 1.29], 17.91 |
+| LAG | 1.53× [1.50, 1.59], 20.49 | 1.45× [1.42, 1.49], 20.25 | 1.34× [1.32, 1.36], 25.13 |
+| Calling station | 1.57× [1.47, 1.67], 24.47 | 1.52× [1.49, 1.58], 27.67 | 1.43× [1.40, 1.46], 38.11 |
+| Maniac | 1.51× [1.48, 1.56], 49.83 | 1.46× [1.43, 1.49], 47.58 | 1.30× [1.28, 1.34], 41.19 |
+
+*By the number of players* (random mixes):
+
+| Players $n$ | Median ratio | 95% CI | Median $\rho$ | Bound $-1/(n-1)$ | Median SD per hand (bb) | Median hands for ±5 bb/100: independent | duplicate |
+|---|---|---|---|---|---|---|---|
+| 2 | 1.29× | [1.24, 1.32] | -0.224 | -1 | 8.29 | 105,680 | 86,536 |
+| 3 | 1.25× | [1.22, 1.28] | -0.100 | -0.5 | 14.42 | 319,506 | 276,703 |
+| 6 | 1.30× | [1.28, 1.32] | -0.046 | -0.2 | 24.74 | 940,565 | 713,764 |
+
+The heads-up push/fold reference (Step 28's matchups against the bots, 30 of them, the median of
+each matchup's naive / duplicate hands) is 2.06×: 2.07× at 5 bb, 2.30× at 10 bb and 2.01× at 20 bb.
+
+*Predictions against results.* Seeds 98 and 99 are the development runs the thresholds came from:
+
+| | Prediction | Seed 98 | Seed 99 | Seed 2026 | Verdict |
+|---|---|---|---|---|---|
+| A1 | Calling check: every per-deal mean is exactly 0 chips | 0 | 0 | 0 | holds |
+| B1 | Six bots, random mix: median ratio in [1.15, 1.5] | 1.33 | 1.26 | 1.30 | holds |
+| B2 | Six copies of one bot: median ratio in [1.35, 1.9] | 1.60 | 1.54 | 1.53 | holds |
+| B3 | The median ratio falls: copies, one archetype, random mix | 1.60, 1.46, 1.33 | 1.54, 1.45, 1.26 | 1.53, 1.44, 1.30 | holds |
+| B4 | At most 5% of the players have a ratio below 1, in each six-player kind | 0, 1.7%, 0 | 0, 0, 1.4% | 0, 0.33%, 0.17% | holds |
+| C1 | Random mix: nits have the lowest median ratio of the five archetypes | 1.20, next 1.32 | 1.13, next 1.28 | 1.18, next 1.27 | holds |
+| C2 | Copies of one bot: nits have the lowest median ratio of the five archetypes | 1.35, next 1.56 | 1.34, next 1.49 | 1.34, next 1.51 | holds |
+| D1 | Copies of one bot: medians at offsets 1-3 within 0.03 | range 0.009 | range 0.010 | range 0.005 | holds |
+| D2 | One archetype: medians at offsets 1-3 within 0.03 | range 0.004 | range 0.013 | range 0.005 | holds |
+| D3 | Random mix: medians at offsets 1-3 within 0.03 | range 0.012 | range 0.010 | range 0.001 | holds |
+| E1 | Random mixes: median ratio in [1.1, 1.6] at $n$ = 2, 3 and 6 | 1.35, 1.23, 1.33 | 1.40, 1.35, 1.26 | 1.29, 1.25, 1.30 | holds |
+| E2 | Random mixes: median $\rho$ at most -0.02 at $n$ = 2, 3 and 6 | -0.260, -0.094, -0.050 | -0.286, -0.130, -0.041 | -0.224, -0.100, -0.046 | holds |
+
+All twelve hold. That is a replication with the same simulation and bots, on more lineups and deals,
+not a strong test: the thresholds came from two seeds, and several are wide on purpose. The
+orderings B3, C1 and C2 are the parts that could have gone otherwise. Post hoc, the CIs in them do
+not overlap: [1.49, 1.57], [1.43, 1.47], [1.28, 1.32] for B3; nits [1.16, 1.20] against TAG [1.24,
+1.29] for C1; nits [1.27, 1.42] against maniacs [1.48, 1.56] for C2 (at 10 lineups, so about 90%
+intervals).
+
+What differed from development, none of it predicted:
+
+* Among copies TAG has the highest ratio on seed 2026 (1.65×). Calling stations were highest on
+  seeds 98 (1.84×) and 99 (1.58×).
+* In the random mix calling stations are highest on seeds 98 and 2026, LAG on seed 99.
+* Among one-archetype lineups nits are lowest on seed 2026 (1.31×, next TAG at 1.43×), as on seed 98
+  and not on seed 99.
+* Two bots gain less than in either development run: 1.29× against 1.35× and 1.40×, with $\rho$ at
+  -0.224 against -0.260 and -0.286. The share of players below 1 is 1% against 8% (2 of 24 players
+  on each development seed, so one lineup).
+
+*Post hoc: the share of perfect cancellation.* Computed after the run, from `duplicate.json`, by
+`experiments/phase2_duplicate_posthoc.py` ([`duplicate_posthoc_summary.md`](../experiments/results/phase2/duplicate/duplicate_posthoc_summary.md)),
+which also gives the coverage tables of section 4 and most of the readings below:
+
+| Lineup kind | $n$ | Median $\rho$ | Bound | Share $s = -(n-1)\rho$: median [IQR] | $1/(1-s)$ | Measured median ratio |
+|---|---|---|---|---|---|---|
+| Six copies of one bot | 6 | -0.069 | -0.2 | 34.5% [29.7, 39.1] | 1.526 | 1.525 |
+| Six bots of one archetype | 6 | -0.061 | -0.2 | 30.7% [27.0, 34.3] | 1.444 | 1.443 |
+| Six bots, random mix | 6 | -0.046 | -0.2 | 23.0% [17.3, 28.4] | 1.299 | 1.298 |
+| Three bots, random mix | 3 | -0.100 | -0.5 | 20.0% [13.6, 26.1] | 1.251 | 1.250 |
+| Two bots, random mix | 2 | -0.224 | -1 | 22.4% [14.6, 30.4] | 1.289 | 1.288 |
+
+* *The share is flat, and the ratio with it.* $\rho$ is smaller at six seats, and so is its bound;
+  measured against the bound the three random mixes reach about the same share, 20% to 23%. Since
+  the ratio is $1/(1-s)$, this restates the flat ratio in comparable units; why the share stays flat
+  was not examined. The algebra does not require it: $\rho$ could have stayed near -0.05 at every
+  $n$, which would give about 1.05× at two seats. It is a measurement. (The last two columns differ
+  by the degrees-of-freedom factor and by how a median interpolates.) Development had already shown
+  $(n-1)\rho$ about -0.2 to -0.3 at every $n$; the share's values are post hoc.
+* *Copies stay well below perfect cancellation.* Six copies reach about 35%. By section 2 the bots'
+  own randomness must be the cause: `ParametricBot` reads no player ids, all its randomness comes
+  from the table's RNG, and each table draws its own numbers. What was NOT tested is how the
+  shortfall divides between mixed actions, bet-size noise and Monte Carlo equity, or that the plays
+  of a deal part early in the hand. A test would switch those sources off one at a time; with all of
+  them off, section 2 makes the cancellation exact, as for `CallingAgent`.
+* *Depth, not seats?* Heads-up at 100 bb these bots gain 1.29×. Heads-up push/fold (5-20 bb, every
+  hand all-in or fold, Step 28) gains 2.06×. Same $n$, a different game. This is not an experiment:
+  the bots and the heroes differ too, so it is only a suggestion.
+* *Who plays alike tends to cancel more, with exceptions.* Heads-up lineups of one archetype have a
+  median of 1.46× (33 lineups), mixed pairs 1.26× (167); maniac against nit is lowest, at 1.07× (19
+  lineups). But the two highest pairs are mixed, calling station with maniac and with LAG, at 1.49×
+  and 1.48× (18 and 8 lineups), and nit against nit is only 1.25× (8). Grouped after seeing the
+  results. It fits B3 and Step 28's note that duplicate dealing helps most against opponents who
+  play like the hero.
+* *The ratio does not simply follow the SD.* Per-hand SD runs from 3.50 bb (nit copies) to 49.83 bb
+  (maniac copies). Among copies TAGs (13.64 bb) gain most (1.65×), while maniacs gain 1.51×. Over
+  players within a kind the rank correlation of ratio and SD is only 0.15 to 0.52. A nit's own SD
+  depends on its company: 3.50 bb among copies, 13.54 bb in the random mix. Why nits gain least was
+  not examined.
+* *Medians do not average.* In the random mix the median $\rho$, -0.046, lies below all three offset
+  medians (-0.040, -0.040, -0.041). Each offset's distribution over players is skewed to the low
+  side (skewness -0.84, -0.31, -0.97), so its mean lies below its median (-0.045, -0.043, -0.051),
+  and $\rho$, their weighted mean, has mean -0.045 and little skew. Offset 3 is also wider (IQR
+  [-0.080, -0.014] against [-0.063, -0.021] at offset 1); it has half as many distinct pairs, $3D$
+  rather than $6D$.
+* *How noisy one player's ratio is.* Six copies of one bot in a rotated match differ only by
+  sampling noise, and within a lineup their ratios have a median relative SD of 6.6% (7.0% and 7.4%
+  on the development seeds). That is about the size Step 38's kurtosis formula gives: the relative
+  standard error of the variance $s_u^2$ is about $\sqrt{(\kappa - 1)/D}$, and on the development
+  seeds' per-hand arrays the median kurtosis of per-deal means in the six-player kinds is 9 to 17
+  (14 to 16 among copies), which at $D = 1{,}500$ gives 7% to 10% (9% to 10% among copies). A
+  lineup's six per-deal means sum to zero, so their variances share noise, which may be why the
+  spread within a lineup comes in lower (not tested). The ratio inherits that noise, so the
+  quartiles and the share below 1 include it. Between bots the spread is wider: among copies, lineup
+  medians run from 1.15× (a nit) to 2.47× (a calling station). One heads-up lineup, TAG against nit,
+  reached 6.08× ($\rho = -0.836$, SD 3.25 bb); the next highest is 2.33×.
+* *It does not make win rates cheap.* For ±5 bb/100 in a random mix of six, the median player needs
+  940,565 independent hands and 713,764 duplicate ones.
+
+**Run times, awake only** (C.3).
+
+* The real run took 1,455 s (`elapsed_seconds` 1,454.7, about 24 minutes) on 12 workers: 21:13:52 to
+  21:38:17 on 2026-11-03 by the shell's clock. That is 3,801,200 hands, about 2,600 hands/s.
+* The machine stayed awake. The System log shows Modern Standby entered at 21:07:31 with the reason
+  Idle Timeout, before the start and with a keep-awake request held, and no later Kernel-Power 506
+  or 507 event until after the end. A memory sampler wrote 140 samples through the whole run, 10-13
+  s apart. As in Steps 37, 39 and 40, that standby counts as awake.
+* Memory was tight, with the owner's applications open: free physical memory was 0.11 to 1.59 GB,
+  mean 0.76 GB, and the commit charge (virtual memory in use) 50.1 to 53.9 GB, up from 40.0 GB at
+  the first sample and back to 38.7 GB at the last. Just before the run, nearly idle, the machine
+  paged about 2,100 pages/s; paging was not measured during it. All this can change only the run
+  time, and the single real run has nothing to compare with. The development runs did 2,730-2,760
+  hands/s on another day, with fewer lineups of each mixed kind.
+* The bridge rerun's wall time spans a closed lid, so it is not quoted.
+* Phase 2 as a whole: the step times recorded in the committed results add up to 2,326 s, 39 minutes
+  (cfr 46.3, deep_cfr 620.6, exploit 185.5, aivat 19.3, duplicate 1,454.7). They come from different
+  days and code versions (Step 40's verification ran Phase 2's exploit in 95 s), and `run_phase2`
+  was not run whole with the new step.
+* Test suite. 517 tests took 127.2 s on 2026-11-03 with the laptop plugged in, 1-2 GB of memory
+  available and heavy paging, and 123.1 and 103.8 s on 2026-11-04 on battery with 5.6-5.8 GB
+  available and no paging. A third run that day took 300.1 s, while the laptop went from battery to
+  plugged in, and a fourth, plugged in with about 3.4 GB available, 117.7 s. Before this step the
+  suite took 53.5-53.9 s (471 tests) and 61.6 s (479). The two-replicates test (Step 40's
+  `test_two_replicate_jobs_write_what_one_writes`) took 86 s in the battery runs and 118 s in a
+  511-test run of 158.7 s on the paging evening, against 44 s under the suite's load in Step 40, and
+  it sets a floor under the suite's time. The new tests add little (the new end-to-end test takes
+  about 15 s alone), so most of the rise since Step 40 is that one test, and why it now takes about
+  twice as long, plugged in too, was **not examined**. The end-to-end test is marked `slow`, not
+  `long`, since two long tests would queue on one worker.
+
+**What was left.**
+
+* How the copies' shortfall divides among the bots' sources of randomness: rerun `clones_6` with
+  each switched off.
+* Depth against seats: the same bots at several stack depths, instead of comparing with Step 28.
+* The seating order: replay some lineups in other cyclic orders.
+* Control variates on top: this step scores chips only. Step 28's all-in EV and Step 38's AIVAT were
+  not combined with the rotation, and hold'em still has no AIVAT value function.
+* Why the two-replicates test takes about twice as long as in Step 40, and a whole `run_phase2` with
+  the new step.
+
+**What it means.** Rotating the seats works, modestly. At 6-max with these bots it needs 1.30× fewer
+hands, about the same at three and two seats (1.25×, 1.29×), and even six copies of one bot reach
+only 1.53×. The useful lesson is in the algebra: a deal at $n$ tables costs $n$ hands, so everything
+rests on the correlation between tables, and that correlation has a floor of $-1/(n-1)$. A small
+$\rho$ at six seats does not by itself mean a weak effect, because six results cannot all oppose
+each other. Measured against the floor the random mixes cancel about a fifth of what could cancel,
+at every table size tried. For simulated evaluations this is a modest gain worth taking: the code
+exists, no extra hands are needed and the point estimate does not change. It does not make 6-max win
+rates cheap (713,764 hands for ±5 bb/100), and it does nothing at a live table. All twelve
+predictions hold, which says the two development seeds were not misleading; it does not explain
+anything. Why the share stays flat, how the bots' randomness divides the copies' shortfall and
+whether depth explains the gap to push/fold are untested.
+
+**Mistakes.**
+
+* The plan first cited Step 27 for the push/fold measurement; it is Step 28 (P3.3). It also quoted
+  "about 3x", a ratio of two medians (32,073 / 10,733 = 2.99), while the code compares the median
+  over matchups of each matchup's naive / duplicate (2.07× at 5 bb, 2.30× at 10 bb, 2.01× at 20 bb,
+  2.06× overall). The reviewer caught both.
+* `predictions()` ran before `save_json`, and a prediction's path stopping at a dict would have
+  raised `TypeError` after the whole simulation, before anything was saved. The reviewer caught it.
+  A non-number now counts as a failed prediction with the value None, and a test evaluates every
+  prediction on made-up results of the real shape.
+* Per-archetype CIs for copies and one-archetype lineups rest on one lineup per replicate, and in
+  development 2 lineups gave a CI of [1.84×, 1.85×] inside an IQR of [1.80×, 1.88×]. The reviewer
+  caught it. CIs are now blank below `MIN_CI_LINEUPS = 8`, no prediction uses them, and the full run
+  has 10 lineups per archetype there. Ten is still crude: about 90% coverage (section 4, post hoc).
+* A figure's error bars could have been negative, since a percentile CI need not contain the median,
+  and matplotlib 3.11 refuses a negative error. The reviewer caught it; the code clips them. A stale
+  heads-up fallback was removed, and two labels were fixed ("Median hands", "rho: median").
+* The library's docstring claimed exactness for "identical agents whose play depends only on their
+  cards", which is too narrow and incomplete: agents can see player ids. It now says copies of one
+  deterministic agent that ignores player ids, and a test with an ante covers odd chips. The
+  reviewer caught it.
+* `DuplicateDealEvaluator()` on a 6-table match would have averaged tables two at a time with no
+  error. The reviewer caught it. `paired_results` now refuses any number of tables but two, and
+  `DuplicateMatch.evaluate` groups by the number of tables.
+* Also from the library's review: the rotation's fixed neighbors are now documented,
+  `sd_bb_per_hand` is documented as the raw per-hand SD and not the spread behind the interval, and
+  a stale TODO (a Phase 5 engine hook to replay decks) was removed, since this is simulation only.
+* The plan's docstring says copies of one bot "spread about 2% in development". Over all copies
+  lineups the median within-lineup relative SD is 7.0% and 7.4% on those seeds (post hoc). No
+  prediction used the figure, and the committed plan stays as it was.
+* The reviewer of this step, tracing every number and claim, caught these in the draft. The bots'
+  randomness was offered as a likely reason copies stop short, though section 2 makes it the only
+  possible one (what is untested is how it divides), and the proposed test, deterministic bots,
+  could only have confirmed the proof. A flat share was said to explain a flat ratio, though the
+  ratio is $1/(1-s)$: one fact, stated twice. "Who plays alike cancels more" was too strong, since
+  the two highest heads-up pairs are mixed. A spread was rounded twice (7.0% and 7.4%), a test's 118
+  s was attached to the wrong run, and heads-up's seeds were credited to a property it does not use.
+  The first two claims were also in the explorer (`4150aac`) and the README.
+* The `duplicate_ratio` figure's legend sat on the two dots of the 6.08× heads-up lineup, found
+  while drafting this step. The legend moved and the figure was redrawn from the committed JSON (no
+  number changed; the other figures are pixel-identical). The explorer's "independent dealing"
+  label, which sat on the first dot, became "no gain".
+
+**Limitations.**
+
+* One real seed, and Phase 1's parametric bots at 100 bb stacks. The bots come from one family, and
+  nothing here says what people would do.
+* Each lineup measures one seating order, of 120 cyclic orders at six seats. The aggregates average
+  over the orders drawn, not over all of them.
+* Mixed lineups reuse bots within a replicate, so their CIs are conditional on the populations and a
+  little narrow. Per-archetype CIs at 10 lineups are about 90% intervals.
+* $\hat\sigma^2$ is pooled over positions. An independent table with a moving button also balances
+  positions, so the variance that matters there leaves out the variance between the positions' mean
+  results, which $\hat\sigma^2$ includes. The real run did not record it. On the development seeds'
+  per-hand arrays (post hoc) that part is a median of 0.03% to 0.12% of $\hat\sigma^2$ within a
+  kind, and removing it moves a kind's median ratio by at most 0.0024.
+* The comparison with push/fold is across games, bots and heroes, and the reason offered for the gap
+  is untested; so is how the bots' randomness divides the copies' shortfall.
+* Nothing here scores all-in EV or control variates, so the hands needed are for chips alone.
+* The run time is a single run on a machine short of memory.
+
+**Verification.**
+
+* `tests/test_duplicate.py` (3 → 10 tests):
+  * With two players the code gives the hands of the old algorithm, rebuilt inline from commit
+    `2131bb4`: every hand's serialized form is equal, and the factories are called in the same
+    order.
+  * With six players, and three at a six-seat table: same cards per seat and same button at all
+    tables, player $j$ in seat $(j + r) \bmod n$, each player in each seat once per deal, one shared
+    run-out.
+  * Six always-call agents: each seat's result is the same at all six tables, every player's results
+    over a deal sum to zero, and the duplicate interval has zero width while the naive one is over
+    10 bb/100.
+  * Three always-call agents with an ante of 1: odd-chip two-way splits occur, and they still
+    cancel.
+  * `grouped_results` runs deal by deal, refuses a player who missed hands, and `paired_results`
+    refuses anything but two tables. Bad player lists are rejected before any agent is built.
+* `tests/test_evaluator.py` (5 → 6 tests): `group_size=3` with luck that sums to zero gives an
+  interval under 0.2 times the naive one and the right method name; results that do not fill a group
+  and a `group_size` of 1, 0 or 2.0 are refused.
+* `tests/test_duplicate_experiment.py` (32 tests, counting parameter cases):
+  * The metric on constructed arrays. At $n$ = 2, 3 and 6: identical tables give $\rho = 1$ and
+    ratio $(D-1)/(nD-1)$; perfectly cancelling tables give $\rho = -1/(n-1)$, `RATIO_CAP` with the
+    flag and valid JSON. At $n = 6$: independent tables give about 1. Neighbors sharing a term give
+    offsets (0.5, 0, 0), $\rho = 0.2$ and ratio 0.5, each offset equal to `np.corrcoef`; the ratio
+    equals the identity from $\rho$; an alternating pattern at $n = 4$ gives offsets (-1, 1). Hands
+    needed follow the formulas.
+  * The bootstrap resamples lineups, drops empty ones and is seeded; pairs of equal values give the
+    interval of single values; bounds are NaN below `MIN_CI_LINEUPS`.
+  * Predictions: the table's tests (including ten cases of `decreasing`, `first_lowest`,
+    `range_at_most` and an empty list), a path that stops at a dict fails instead of raising, an
+    unknown test is refused, and every prediction reads numbers from made-up results of the real
+    shape.
+  * Lineups are drawn as specified, replicates have different populations, chunk seeds are distinct,
+    the plan is reproducible, a kind's lineups do not depend on the other kinds' counts, and bad
+    configs are refused.
+  * A worker task's array matches a `duplicate_match` hand by hand and sums to zero per hand, its
+    win rates match the library's evaluators, and the same seed gives the same bytes. The calling
+    check is exact, and it detects a broken array.
+  * `run_phase2` runs `duplicate` last and passes its config; both configs are valid.
+  * (`slow`) A tiny run writes the JSON, summary and figures at $n$ = 2, 3 and 6, with one worker
+    and with two: `compare_step` finds no difference.
+* `tests/test_duplicate_posthoc.py` (6 tests): the normal-theory coverage against a simulation and
+  its rise to 95%; lineup coverage below nominal with few lineups; heads-up pairs count a lineup
+  once; the share gives the ratio at any table size; a run on the committed results, with few
+  trials, is JSON-safe, with the identity from $\rho$ exact and the implied ratios within 1%.
+* `tests/test_explorer.py` covers the new sections.
+* Post hoc: `python -m experiments.phase2_duplicate_posthoc` (73 s, from the committed JSON).
+* Experiment: `python -m experiments.phase2_duplicate --seed 2026` (1,455 s), or
+  `python -m experiments.run_phase2 --seed 2026 --only duplicate`; smoke test with `--quick` (this
+  step: 6.1 s on 2026-11-02, 14 to 17 s when the machine was on battery or short of memory).
+* Heads-up unchanged: `python -m experiments.run_phase3 --seed 2026 --only bridge --out DIR`, then
+  `python -m experiments.compare_runs experiments/results/phase3 DIR bridge` ("bridge: 0
+  differences").
+* Suite: `python -m pytest` (517 tests). Explorer: `python -m experiments.explorer`.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -5225,6 +5846,9 @@ test, and slower still unless that test starts first.
 | Shared randomness | two heroes facing copies of one adaptive bot from the same seed get identical deals and differ only in their actions (`tests/test_push_fold_adaptive.py`, 6 tests); each session block's value equals the exact head-to-head value; the experiment's heroes refit on schedule and on their window (`tests/test_adaptive_experiment.py`, 4 tests) (Step 36) | a paired comparison is only as good as its pairing |
 | Exact moments against sampled play | every estimator's mean and variance are sums over the game tree; 20,000 duplicate deals per sampled matchup, each hand recorded as labels and replayed with `GameTree.follow`, must agree with them (z-scores, SD ratios), and per-deal moments must match brute-force duplicate pairs in Kuhn (Step 38) | the exact formulas check the sampler, and the sampler checks the formulas |
 | Properties for any input | AIVAT's estimate is unbiased for a value function of random numbers and does not depend on the opponent's strategy (property tests in `tests/test_aivat.py`, Step 38) | a guarantee that holds for every value function is tested with one that is useless |
+| Closed-form reference cases | the metric on constructed arrays: identical tables give $\rho = 1$ and ratio about $1/n$, perfectly cancelling tables $\rho = -1/(n - 1)$ with no variance left, neighbors sharing a term offsets (0.5, 0, 0), and every ratio equals the identity from $\rho$ (Step 41) | a statistic is checked where algebra gives the answer, before any poker runs through it |
+| Report code on made-up results | every pre-registered prediction is evaluated on made-up results of the real shape, and a quantity that is not a number fails its prediction instead of raising (Step 41) | a crash in the analysis after a 24-minute simulation would lose the run |
+| A design's exact case | six always-call agents: every per-deal mean is exactly 0 chips, in the tests and at the start of the real run, which stops if not (Step 41) | a variance-reduction design is checked where it must be perfect |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
@@ -5236,17 +5860,22 @@ test, and slower still unless that test starts first.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 471 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
-runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`) in
-about a minute (53.5-53.9 s on a quiet machine). `tests/conftest.py` starts the tests marked `long`
-first, so the longest test does not start late and finish last (Step 40). `-m "not slow"` skips the
-slowest tests, and `-n 0` runs everything in one process, for a single file or for `--pdb`. The
-explorer's browser behavior has its own check (`python -m experiments.explorer.browser_check`, Step
-25), since it needs Chrome or Edge.
+suite has 517 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
+Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
+in varying machine states (Step 41). `tests/conftest.py` starts the tests marked `long` first, so
+the longest test does not start late and finish last (Step 40). `-m "not slow"` skips the slowest
+tests, and `-n 0` runs everything in one process, for a single file or for `--pdb`. The explorer's
+browser behavior has its own check (`python -m experiments.explorer.browser_check`, Step 25), since
+it needs Chrome or Edge.
 
 ## C.2 Reproducibility and provenance
 
 * One master seed; every other seed is derived with `numpy.random.SeedSequence`.
+* `SeedSequence` pads entropy shorter than its four-word pool with zeros, so `[s]`, `[s, 0]` and
+  `[s, 0, 0]` are one seed. Give each stream a nonzero tag word of its own, and count sub-streams
+  from 1 where the shorter list is also a stream (Step 41). The words of `generate_state(k)` are the
+  start of any longer request, so asking for more words keeps the earlier ones.
 * Each table owns a seeded `random.Random` that deals the cards and drives every agent's
   randomness, so a table replays exactly whatever the agents do internally.
 * Results record seed, config, git commit, dirty flag (captured at the start of the run),
@@ -5327,6 +5956,11 @@ explorer's browser behavior has its own check (`python -m experiments.explorer.b
   every Modern Standby interval had the reason Idle Timeout, and a memory sampler that logged every
   10-11 s never skipped. So that time counts as awake, as in Steps 37 and 39. A sampler writing on a
   fixed interval is a simple check that a machine kept running.
+* *A full machine slows runs, not results:* with the owner's applications open, free physical memory
+  stayed between 0.11 and 1.59 GB through Step 41's real run and the commit charge reached 53.9 GB.
+  A test that took 44 s under the suite's load (Step 40) took 118 s on such an evening, and 86 s the
+  next day on battery with memory free, so a time says little without the machine's state. Log free
+  memory with a sampler next to any time quoted, and say whether the laptop was plugged in.
 
 ## C.4 Figures
 
@@ -5421,6 +6055,15 @@ Invert once, and look at every figure before committing it.
 | Parallel replicates defaulted to two jobs without a full-size measurement, and memory was not considered | the reviewer subagent | default 1 before the full-size measurement, kept after it; warnings for threads above logical processors and free memory below about 5 GB per job | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
 | One and two jobs compared by whole-step time (2,782 s against 2,023 s), though the two-job run had filled the empty simulation cache (1,008 s) that the one-job run reused | the two-job log's "hands ready" times, 199-204 s per replicate | compare training times (2,003 s against about 1,746 s); add the simulation to both for whole-step estimates | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
 | A new 33 s test doubled the suite's time (65-67 s against 33-36 s): a whole-file scheduler started its file late | timing the suite before the commit | tests marked `long` start first, under `--dist worksteal` (post hoc): 53.5-53.9 s | [40](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite) |
+| The plan cited Step 27 for the push/fold measurement (it is Step 28) and quoted "about 3x", a ratio of two medians, while the code compares the median of each matchup's naive / duplicate (2.06×) | the reviewer subagent's reading of the plan | corrected before the pre-registration commit; the docstring says which statistic it uses | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| `predictions()` ran before `save_json`, so a path stopping at a dict would have raised `TypeError` after the whole simulation, with nothing saved | the reviewer subagent | a non-number fails its prediction with the value None; a test evaluates every prediction on made-up results of the real shape | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| Per-archetype bootstrap CIs rested on 2 lineups in development (a CI of [1.84×, 1.85×] inside an IQR of [1.80×, 1.88×]) | the reviewer subagent | CIs blank below `MIN_CI_LINEUPS = 8`, and no prediction uses them; post hoc, 10 lineups still give about 90% coverage | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| A figure's error bars could be negative, since a percentile CI need not contain the median, and matplotlib 3.11 refuses a negative error | the reviewer subagent | clip them at 0 | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| The exactness claim said "identical agents whose play depends only on their cards", though agents can see player ids | the reviewer subagent | copies of one deterministic agent that ignores player ids; a test with an ante covers odd chips | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| `DuplicateDealEvaluator()` on a 6-table match would have averaged tables two at a time with no error | the reviewer subagent | `paired_results` refuses other than two tables; `DuplicateMatch.evaluate` groups by the number of tables | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| The plan's docstring says copies of one bot "spread about 2% in development"; over all copies lineups the median within-lineup relative SD is 7.0% and 7.4% on those seeds | checking the sentence against the development outputs while writing the step | reported in Step 41; no prediction used it, and the committed plan stays as it was | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| The `duplicate_ratio` figure's legend sat on the 6.08× heads-up lineup | reading the figure while drafting the step | the legend moved, the figure redrawn from the committed JSON; no number changed | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| Step 41's draft said the bots' randomness was a likely reason copies stop short (the library's own argument makes it the only possible one) and that a flat share explains a flat ratio (the ratio is $1/(1-s)$) | the reviewer subagent, tracing every claim before the commit | both restated, in the log, the explorer and the README; what stays untested is how the randomness divides and why the share is flat | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
 
 ---
 
@@ -5434,6 +6077,7 @@ Invert once, and look at every figure before committing it.
 | All-in EV | a called all-in scored by its equity instead of the board that came; unbiased, removes board luck |
 | Alternative optima | several optimal solutions of one LP: when the objective is parallel to a face of the feasible set, every point of that face is optimal, and the simplex method stops at whichever optimal vertex it reaches first (Step 40) |
 | Amdahl's law | if a fraction $f$ of the time is made $s$ times faster, the whole is $1/((1 - f) + f/s)$ times faster, never more than $1/(1 - f)$ (Amdahl 1967; Step 39) |
+| Antithetic variates | Monte Carlo runs built to be negatively correlated, so their mean has less variance than the mean of independent runs (Hammersley and Morton 1956); duplicate dealing is an instance (Step 41) |
 | Basis (of an LP) | as many columns as the LP has rows, with an invertible matrix; setting every other variable to its bound leaves one solution, a vertex of the feasible set if it also satisfies the bounds. Feasibility depends on the constraints only, not on the costs (Step 40) |
 | Bayes action | the decision with the highest posterior expected payoff |
 | bb, bb/100 | big blind; win rate in big blinds per 100 hands |
@@ -5445,7 +6089,7 @@ Invert once, and look at every figure before committing it.
 | Calibration | predicted probabilities match observed frequencies |
 | Capability | an unforgeable reference whose possession grants a permission |
 | CFR | counterfactual regret minimization: one regret matcher per information set |
-| Cluster bootstrap | resampling whole clusters (players), not rows |
+| Cluster bootstrap | resampling whole clusters (players, or a table's lineup), not rows |
 | Common random numbers | giving the alternatives being compared the same random inputs, so their difference reflects only how they differ (here: the same deals and draws for every hero) |
 | Concentration (of a Beta prior) | $\kappa = \alpha + \beta$, the prior's weight in pseudo-opportunities; large when the players are alike |
 | Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
@@ -5456,15 +6100,17 @@ Invert once, and look at every figure before committing it.
 | Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | CUSUM | cumulative sum of residuals; its largest excursion detects a change in level (Page 1954) |
+| Cyclic rotation (of seats) | at table $r$ player $j$ sits in seat $(j + r) \bmod n$, so each player holds each seat once per deal and keeps the same neighbors (Step 41) |
 | Data-biased response | robust response that trusts the model per information set by data count |
 | Dead money | chips in the pot that no player has to match, such as antes; they are won, never returned as an uncalled bet |
 | Deep CFR | CFR with neural networks in place of the regret and average-strategy tables |
 | Deep set | a model of a set that applies the same network to each item, sums, and reads the sum; any function that ignores order can be written this way (Zaheer et al. 2017) |
 | Degenerate LP | primal degenerate: one vertex described by several bases (a basic variable at zero), so the simplex method can pivot without moving; dual degenerate: a zero reduced cost of a nonbasic variable at an optimum; then there are alternative optima unless the vertex is also primal degenerate (Step 40) |
 | Delta method | the variance of a smooth function of an estimate, from its slope: $\operatorname{Var}(g(\hat\theta)) \approx g'(\theta)^2 \operatorname{Var}(\hat\theta)$ |
+| Design effect | the variance of a cluster's mean over that of the same number of independent units, $1 + (m-1)\rho$ for clusters of $m$ with intraclass correlation $\rho$ (Kish 1965); duplicate dealing's ratio is its inverse (Step 41) |
 | Digest (hash) | a short fixed-size fingerprint of a byte string (here SHA-1, 160 bits); equal inputs give equal digests, and different inputs share one with negligible probability unless built to by an attacker (Step 39) |
 | Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
-| Duplicate dealing | playing each deal twice with seats swapped so card luck cancels |
+| Duplicate dealing | playing each deal at n tables with the n players' seats rotated (heads-up: twice with seats swapped), so card luck cancels in part; simulation only (Steps 23 and 41) |
 | ECE | expected calibration error |
 | Effective sample size (ESS) | for weighted draws, $1 / \sum_k w_k^2$: how many equally weighted draws the sample is worth |
 | Effective stack | the smaller of two players' stacks: the most either can win or lose against the other |
@@ -5489,8 +6135,10 @@ Invert once, and look at every figure before committing it.
 | Importance sampling | estimating averages under a target distribution from draws of an easier proposal, each weighted by target / proposal |
 | Information class (of an evaluator) | the histories an evaluator cannot tell apart at a point of a hand; AIVAT's terms and averages run over them |
 | Information set | the histories a player cannot tell apart when acting |
+| Intraclass correlation | the mean correlation between units of one group, here a player's results at two tables of one deal; at least $-1/(m-1)$ for groups of $m$, since a variance cannot be negative (Step 41) |
 | Kurtosis | $\kappa = \mathbb E[(X - \mu)^4] / \sigma^4$, 3 for a normal distribution; large when rare extreme values carry most of the variance, which makes a sample SD noisy: its relative standard error is about $\sqrt{(\kappa - 1)/(4n)}$ |
 | Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
+| Latin square | an $n \times n$ array of $n$ symbols in which each symbol occurs once in every row and every column; here the rows are players, the columns tables and the symbols seats (Fisher 1935; Step 41) |
 | Law of total variance | $\operatorname{Var}(Y) = \mathbb E[\operatorname{Var}(Y \mid D)] + \operatorname{Var}(\mathbb E[Y \mid D])$: the spread within groups plus the spread between them |
 | Lazy evaluation | computing a value only when it is needed; skipping unneeded work is exact when that work is pure (changes no state that later work reads, a shared random generator included) (Step 39) |
 | Leave one player out | fit on every player but one, score the one; repeated for each, so no player is in its own training data |
@@ -5522,9 +6170,11 @@ Invert once, and look at every figure before committing it.
 | Oversubscription | more runnable threads than logical processors: the operating system time-slices them, and parallel numeric code whose threads wait for each other slows down sharply (Step 40) |
 | Perfect recall | players never forget their own actions or observations |
 | Paired comparison | two methods scored on the same units, so variation between units cancels in the difference |
+| Percentile bootstrap | an interval from the quantiles of a statistic's resampled values; too narrow with few clusters (about 90% coverage for a nominal 95% at 10 clusters), and it need not contain the sample's statistic (Step 41) |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
 | Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
+| Pre-registration | committing the plan, the metric and the predictions with their thresholds before the run that tests them; a threshold set from development seeds can show that a result replicates, not why (Steps 14 and 41) |
 | Presolve | an LP solver's first pass: simplify the LP (redundant rows, fixed columns, tighter bounds), solve the smaller LP, map the answer back (postsolve); HiGHS skips it when it starts from a basis (Step 40) |
 | Process pool | a fixed set of worker processes that run submitted tasks (`ProcessPoolExecutor`); each process has its own memory, so tasks share only what is sent to them (Steps 8 and 40) |
 | Profiler | a tool that measures where a program spends its time; Python's is `cProfile` (Steps 1, 39) |
@@ -5536,7 +6186,9 @@ Invert once, and look at every figure before committing it.
 | Regret matching | play actions in proportion to their positive cumulative regret |
 | Reservoir sampling | keeping a uniform random sample of a stream in fixed memory |
 | Restricted Nash response | best response to a model, hedged against an adversary with probability 1-p |
+| SeedSequence | NumPy's seed mixer: a pool of four 32-bit words, with shorter entropy padded with zeros, so `[s]` and `[s, 0, 0]` are one seed; hence a nonzero tag word per stream (Step 41) |
 | Sequence | an (information set, action) pair |
+| Share of perfect cancellation | $-(n-1)\rho$ for a player's results at $n$ tables of one deal: 0 for none, 1 at the bound $\rho = -1/(n-1)$; a share $s$ gives duplicate dealing the ratio $1/(1-s)$ at any $n$ (Step 41) |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Simplex method | the classic LP algorithm: move from vertex to adjacent vertex of the feasible set, one basis change (pivot) at a time, while the objective improves; stop when no reduced cost is negative (Dantzig 1963; Step 40) |
 | Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
@@ -5653,7 +6305,13 @@ Statistics and machine learning
 * Gelman, A., Carlin, J., Stern, H., Dunson, D., Vehtari, A., Rubin, D. (2013). *Bayesian Data
   Analysis*, 3rd ed. CRC Press. Chapters 4 (normal approximation at the mode) and 10
   (importance sampling). (Step 29)
-* Kish, L. (1965). *Survey Sampling.* Wiley. (The effective sample size of weighted samples)
+* Kish, L. (1965). *Survey Sampling.* Wiley. (The effective sample size of weighted samples; the
+  design effect of clusters, Step 41)
+* Fisher, R. A. (1935). *The Design of Experiments.* Oliver and Boyd. (Latin squares; Step 41)
+* Hammersley, J. M., Morton, K. W. (1956). *A new Monte Carlo technique: antithetic variates.*
+  Mathematical Proceedings of the Cambridge Philosophical Society 52(3). (Step 41)
+* Cameron, A. C., Gelbach, J. B., Miller, D. L. (2008). *Bootstrap-Based Improvements for Inference
+  with Clustered Errors.* Review of Economics and Statistics 90(3). (Few clusters; Step 41)
 * Rubin, D. (1984). *Bayesianly Justifiable and Relevant Frequency Calculations for the
   Applied Statistician.* Annals of Statistics 12. (Posterior predictive checks)
 * Gelman, A., Meng, X.-L., Stern, H. (1996). *Posterior Predictive Assessment of Model
@@ -5722,6 +6380,10 @@ Performance and numerics
   `worksteal`. (Step 40)
 * Python documentation, *multiprocessing*: "Contexts and start methods" and "Safe importing of
   main module", docs.python.org/3/library/multiprocessing.html. (Spawned workers; Step 40)
+* NumPy documentation, *numpy.random.SeedSequence*, numpy.org/doc/stable/reference/random/ (the pool
+  of four words), and pull request 16551, github.com/numpy/numpy/pull/16551, "Ensure SeedSequence
+  0-padding does not collide with spawn keys", which describes the implicit zero padding of short
+  entropy. (Step 41)
 
 ---
 
@@ -5831,3 +6493,20 @@ Performance and numerics
   updated; Step 39's first "What was left" item marked fixed, and its memo bound and sweep test
   annotated. The step was drafted by a subagent from the diffs, run logs and results files and
   checked against them before it was added.
+* 2026-11-03: Step 41 (duplicate dealing for n players, P2.11b; commits `8a5f983`, `0fb6e53`,
+  `00f8f7e`, `c7f0029`, `8cdd759` and `4150aac`). Results from the pre-registered run at `0fb6e53`
+  (results commit `00f8f7e`), cross-checked against
+  `experiments/results/phase2/duplicate/duplicate_summary.md`. The bridge step, rerun on seed 2026
+  with the new code, matches the committed results. Times come from the results file and the run's
+  logs, with standby from the Windows System log (Kernel-Power 506 and 507, reason Idle Timeout) and
+  a memory sampler's 10-second log. Computed for this step (post hoc): the share of perfect
+  cancellation by lineup kind, the coverage of the percentile bootstrap on the real run's lineups
+  and in normal theory, intervals from resampling players, heads-up lineups by archetype pair, the
+  rank correlation of ratio and SD, the skew of the offsets, the spread within lineups of copies,
+  the final predictions on the pilot's and the quick run's outputs, the development columns of the
+  predictions table (the saved development outputs hold placeholder predictions) and, from the
+  development seeds' per-hand arrays (not committed), the variance between positions and the
+  kurtosis of per-deal means. Most of those come from `experiments/phase2_duplicate_posthoc.py`,
+  whose results are committed. C.1 (517 tests), C.2, C.3 and Parts D, E and F updated. The step was
+  drafted by a subagent from the diffs, run logs and results files and checked against them before
+  it was added.
