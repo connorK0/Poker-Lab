@@ -196,14 +196,16 @@ enough that every strategy is evaluated **exactly**: exploitability comes from a
 response, never from sampled play. Exploitability is NashConv / 2 in chips per hand
 (OpenSpiel's convention), so 0 means an exact equilibrium and the uniform random policy scores
 0.46 in Kuhn and 2.37 in Leduc. Reproduce with `python -m experiments.run_phase2 --seed 2026`
-(~15 min on 16 cores). The CFR, Deep CFR and exploitation results come from commits `53eb199`,
-`d09ad62` and `963cee6`. A single `run_phase2` at commit `348c4d5` reproduced every number
-exactly; only wall-clock timings differ. AIVAT (P2.11, added after Phase 3) comes from its
-pre-registered run at `695cb26`. Full tables:
+(~40 min on 16 logical processors, the sum of the steps' recorded times, 24 min of it the duplicate step). The
+CFR, Deep CFR and exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A
+single `run_phase2` at commit `348c4d5` reproduced those numbers exactly; only wall-clock timings
+differ. AIVAT (P2.11, added after Phase 3) comes from its pre-registered run at `695cb26`, and
+duplicate dealing for n players (P2.11b) from its own at `0fb6e53`. Full tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
 [`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
-[`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md).
+[`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md),
+[`duplicate_summary.md`](experiments/results/phase2/duplicate/duplicate_summary.md).
 
 **Checked against independent references first.** The best response reproduces the published
 uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
@@ -364,6 +366,42 @@ What a live evaluation can claim therefore depends mostly on whether the opponen
 seen after every hand, folded ones included, and AIVAT also needs the hero to play a known
 strategy exactly, mixing included. Both are open questions for Phase 4's capture.
 
+### 5. Duplicate dealing at more than two seats (P2.11b)
+
+This section alone leaves the small games, for 6-max no-limit hold'em in simulation. Heads-up,
+duplicate dealing plays each deal twice with the seats swapped. With n players
+(`engine/duplicate.py`) it plays each deal at n tables with the seats rotated, so every player holds
+every seat's cards and position once per deal. A deal then costs n hands, so it pays only if a
+player's results at the tables of one deal are negatively correlated. The experiment uses Phase 1's
+archetype bots at 100 bb stacks: 500 lineups, 3.8 million hands. Ratios below are how many times
+fewer hands duplicate dealing needs than independent dealing for the same interval. All 12
+pre-registered predictions hold; their thresholds came from two development seeds and several are
+wide on purpose, so that is a replication, not a strong test.
+
+* **Six bots in a random mix need 1.30× fewer hands** (95% CI 1.28 to 1.32; the middle half of the
+  players 1.21 to 1.40). Almost no player loses: 1 of 600 has a ratio below 1.
+* **The gain stays flat with the number of players:** 1.25× with three bots, 1.29× with two. The
+  median correlation between tables is -0.046, -0.100 and -0.224 at six, three and two seats, against
+  bounds, -1/(n - 1), of -0.2, -0.5 and -1. *Post hoc*: those are 23%, 20% and 22% of perfect
+  cancellation. The ratio depends only on that share, so this restates the flat ratio; why the share
+  stays flat was not examined.
+* **Even identical players do not rescue it.** Six copies of one bot gain 1.53×, about 35% of perfect
+  cancellation (*post hoc*), and six bots of one archetype 1.44×. Only the bots' own randomness can stop
+  copies cancelling, since each table draws its own random numbers; how that shortfall divides was not
+  tested. Six always-call agents do cancel exactly: every per-deal mean over 200 deals is 0 chips.
+* **It does not make 6-max win rates cheap.** For ±5 bb/100 in a random mix the median player needs
+  940,565 independent hands and 713,764 duplicate ones.
+* **Depth may matter more than seats** (*post hoc*, not an experiment: the bots and heroes differ
+  too). Heads-up at 100 bb these bots gain 1.29×; heads-up push/fold at 5 to 20 bb, where every hand
+  is an all-in or a fold (P3.3), gains 2.06×.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/duplicate/duplicate_players-dark.png">
+  <img alt="How many times fewer hands duplicate dealing needs for random mixes of two, three and six bots: about 1.3 times at each size, against about 2.06 times for heads-up push/fold" src="experiments/results/phase2/duplicate/duplicate_players.png">
+</picture>
+
+A live table cannot deal the same cards twice, so this is a tool for simulated evaluations only.
+
 **What Phase 2 does not show.**
 
 * The bots follow the same five-parameter family the model fits, so apart from the card-blind
@@ -371,7 +409,7 @@ strategy exactly, mixing included. Both are open questions for Phase 4's capture
   not play by the model's rules.
 * The bots are very exploitable (1.0 chip per hand on average, against 2.37 for uniform random
   play) and they do not adapt when exploited.
-* Values are exact expectations. At a real table a strategy is judged from sampled results
+* Apart from section 5's sampled ratios, values are exact expectations. At a real table a strategy is judged from sampled results
   with large variance. Duplicate dealing (`engine/duplicate.py`) and AIVAT
   (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
   no AIVAT value function yet.
@@ -395,7 +433,7 @@ Results come from commit `3aa83c2`; see
 [`pushfold_summary.md`](experiments/results/phase3/pushfold/pushfold_summary.md).
 
 **Reproduced from one command.** A single `run_phase3 --seed 2026` at commit `98449f0` (about 4
-hours on 16 cores) reproduced 8 of the 11 steps exactly; only wall-clock timings differ. The
+hours on 16 logical processors) reproduced 8 of the 11 steps exactly; only wall-clock timings differ. The
 other three differ only through two later changes, both described below. Since schema v2
 (P3.10), the import step also accepts the 11 WSOP hands with a big-blind ante (10,012 hands
 instead of 10,001; both prediction verdicts unchanged). Since P3.5b made the stability check
@@ -742,13 +780,13 @@ python -m pytest                 # full test suite
 python -m ruff check .           # lint
 
 # Reproduce every Phase 1 experiment from one master seed
-python -m experiments.run_phase1 --seed 2026          # full run: 5 seeds x 150k hands, ~11 min on 16 cores
+python -m experiments.run_phase1 --seed 2026          # full run: 5 seeds x 150k hands, ~11 min on 16 logical processors
 python -m experiments.run_phase1 --seed 2026 --quick  # smoke test, ~1 min (not for reporting)
 
 # Reproduce every Phase 2 experiment (Deep CFR is skipped if PyTorch is missing)
-python -m experiments.run_phase2 --seed 2026          # ~15 min on 16 cores
-python -m experiments.run_phase2 --seed 2026 --quick  # smoke test, ~30 s
-python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr, exploit or aivat
+python -m experiments.run_phase2 --seed 2026          # ~40 min on 16 logical processors
+python -m experiments.run_phase2 --seed 2026 --quick  # smoke test (not for reporting)
+python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr, exploit, aivat or duplicate
 
 # Reproduce every Phase 3 experiment: push/fold solved and checked (1 min), opponents modeled
 # (4 min), the solved strategy played through the real engine (21 min), recommendations evaluated
@@ -758,7 +796,7 @@ python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, d
 # the sequence model against Phase 1's classifier (1.4 h; needs PyTorch),
 # schema v2 checked and the v1 code's output migrated (1 min; needs git history),
 # opponents that adapt (1.6 h). Keep the machine awake: a sleeping laptop pauses the run.
-python -m experiments.run_phase3 --seed 2026          # ~4 h on 16 cores
+python -m experiments.run_phase3 --seed 2026          # ~4 h on 16 logical processors
 python -m experiments.run_phase3 --seed 2026 --only priors   # one step: pushfold, exploit, bridge, recommend, fitcheck, confirm, import, priors, sequence, schema or adaptive
 python -m experiments.run_phase3 --seed 2026 --out ../rerun/phase3   # write elsewhere, to check a reproduction
 python -m experiments.run_phase3 --seed 2026 --only sequence --sequence-jobs 2   # two replicates at once: same results, needs about 10 GB free
@@ -824,8 +862,8 @@ flowchart LR
   model. For push/fold hold'em, `PushFoldRecommender` ranks responses by a posterior lower
   bound on their gain (P3.4). Per-decision hold'em engines are interfaces and heuristic stubs.
 * **`strategy/`, `evaluation/`, `advisor/`, `capture/`**: the Phase 3–5 interfaces with
-  docstrings, minimal implementations, and contract tests. `engine/duplicate.py` plays
-  duplicate matches (same cards, seats swapped) for low-variance evaluation.
+  docstrings, minimal implementations, and contract tests. `engine/duplicate.py` plays duplicate
+  matches for n players (same cards, seats rotated) for low-variance evaluation in simulation.
 
 ## Information firewall
 
@@ -911,15 +949,15 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 | Phase | Goal | What exists now |
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
-| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README, including AIVAT measured exactly (P2.11). Hold'em-scale exploitability (local best response) is a stretch task |
+| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README, including AIVAT measured exactly (P2.11) and duplicate dealing for n players measured at 6-max (P2.11b). Hold'em-scale exploitability (local best response) is a stretch task |
 | 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **Done** for heads-up push/fold and the general pipeline (import, profiles, recommendations, checks), not full hold'em solving. Every step reproduces from one command: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT control variates (exact for small games; hold'em needs a value function) |
 
 Next tasks:
 
-* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; duplicate dealing for
-  more than two players; Leduc opponents that adapt or play outside the bot family.
+* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; Leduc opponents that adapt
+  or play outside the bot family.
 * **Phase 4.** A card detector with calibrated confidence, an action-entry app that records
   through the sealed store, a review screen for capture conflicts, and a consent and
   data-handling policy for recording other players.
@@ -928,7 +966,7 @@ Next tasks:
 
 ## Development
 
-* Tests: `python -m pytest` (471 tests in four processes with pytest-xdist, about a minute: unit,
+* Tests: `python -m pytest` (517 tests in four processes with pytest-xdist: unit,
   contract, firewall, differential-vs-PokerKit, solver-vs-reference, explorer and end-to-end
   tests; the Deep CFR and sequence-model tests skip without PyTorch). Add `-n 0` to run one file
   in a single process or to debug with `--pdb`.

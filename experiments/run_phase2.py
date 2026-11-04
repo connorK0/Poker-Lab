@@ -1,7 +1,7 @@
 """Reproduce every Phase 2 experiment from one master seed.
 
-    python -m experiments.run_phase2 --seed 2026            # full run (~15 min, 16 cores)
-    python -m experiments.run_phase2 --seed 2026 --quick    # smoke test (~30 s)
+    python -m experiments.run_phase2 --seed 2026            # full run (~40 min, 16 threads)
+    python -m experiments.run_phase2 --seed 2026 --quick    # smoke test
 
 Steps (each writes JSON with seed, config, git commit and package versions, a markdown
 summary and light/dark figures under ``experiments/results/<name>/``):
