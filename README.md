@@ -191,16 +191,16 @@ WTSD is far above typical human values, a known realism gap (see Limitations).
 
 ## Phase 2 results: equilibrium baselines and exploitation in small games
 
-Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both are small
-enough that every strategy is evaluated **exactly**: exploitability comes from a full best
-response, never from sampled play. Exploitability is NashConv / 2 in chips per hand
-(OpenSpiel's convention), so 0 means an exact equilibrium and the uniform random policy scores
-0.46 in Kuhn and 2.37 in Leduc. Reproduce with `python -m experiments.run_phase2 --seed 2026`
-(~40 min on 16 logical processors, the sum of the steps' recorded times, 24 min of it the duplicate step). The
-CFR, Deep CFR and exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A
-single `run_phase2` at commit `348c4d5` reproduced those numbers exactly; only wall-clock timings
-differ. AIVAT (P2.11, added after Phase 3) comes from its pre-registered run at `695cb26`, and
-duplicate dealing for n players (P2.11b) from its own at `0fb6e53`. Full tables:
+Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both are small enough
+that every strategy is evaluated **exactly**: exploitability comes from a full best response, never
+from sampled play. Exploitability is NashConv / 2 in chips per hand (OpenSpiel's convention), so 0
+means an exact equilibrium and the uniform random policy scores 0.46 in Kuhn and 2.37 in Leduc.
+Reproduce with `python -m experiments.run_phase2 --seed 2026` (~40 min on 16 logical processors, the
+sum of the steps' recorded times, 24 min of it the duplicate step). The CFR, Deep CFR and
+exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A single `run_phase2` at
+commit `348c4d5` reproduced those numbers exactly; only wall-clock timings differ. AIVAT (P2.11,
+added after Phase 3) comes from its pre-registered run at `695cb26`, and duplicate dealing for n
+players (P2.11b) from its own at `0fb6e53`. Full tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
 [`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
@@ -381,14 +381,15 @@ wide on purpose, so that is a replication, not a strong test.
 * **Six bots in a random mix need 1.30× fewer hands** (95% CI 1.28 to 1.32; the middle half of the
   players 1.21 to 1.40). Almost no player loses: 1 of 600 has a ratio below 1.
 * **The gain stays flat with the number of players:** 1.25× with three bots, 1.29× with two. The
-  median correlation between tables is -0.046, -0.100 and -0.224 at six, three and two seats, against
-  bounds, -1/(n - 1), of -0.2, -0.5 and -1. *Post hoc*: those are 23%, 20% and 22% of perfect
-  cancellation. The ratio depends only on that share, so this restates the flat ratio; why the share
-  stays flat was not examined.
-* **Even identical players do not rescue it.** Six copies of one bot gain 1.53×, about 35% of perfect
-  cancellation (*post hoc*), and six bots of one archetype 1.44×. Only the bots' own randomness can stop
-  copies cancelling, since each table draws its own random numbers; how that shortfall divides was not
-  tested. Six always-call agents do cancel exactly: every per-deal mean over 200 deals is 0 chips.
+  median correlation between tables is -0.046, -0.100 and -0.224 at six, three and two seats,
+  against bounds, -1/(n - 1), of -0.2, -0.5 and -1. *Post hoc*: those are 23%, 20% and 22% of
+  perfect cancellation. The ratio depends only on that share, so this restates the flat ratio; why
+  the share stays flat was not examined.
+* **Even identical players do not rescue it.** Six copies of one bot gain 1.53×, about 35% of
+  perfect cancellation (*post hoc*), and six bots of one archetype 1.44×. Only the bots' own
+  randomness can stop copies cancelling, since each table draws its own random numbers; how that
+  shortfall divides was not tested. Six always-call agents do cancel exactly: every per-deal mean
+  over 200 deals is 0 chips.
 * **It does not make 6-max win rates cheap.** For ±5 bb/100 in a random mix the median player needs
   940,565 independent hands and 713,764 duplicate ones.
 * **Depth may matter more than seats** (*post hoc*, not an experiment: the bots and heroes differ
@@ -409,9 +410,9 @@ A live table cannot deal the same cards twice, so this is a tool for simulated e
   not play by the model's rules.
 * The bots are very exploitable (1.0 chip per hand on average, against 2.37 for uniform random
   play) and they do not adapt when exploited.
-* Apart from section 5's sampled ratios, values are exact expectations. At a real table a strategy is judged from sampled results
-  with large variance. Duplicate dealing (`engine/duplicate.py`) and AIVAT
-  (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
+* Apart from section 5's sampled ratios, values are exact expectations. At a real table a strategy
+  is judged from sampled results with large variance. Duplicate dealing (`engine/duplicate.py`) and
+  AIVAT (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
   no AIVAT value function yet.
 * Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
   (Phase 3).
@@ -433,24 +434,23 @@ Results come from commit `3aa83c2`; see
 [`pushfold_summary.md`](experiments/results/phase3/pushfold/pushfold_summary.md).
 
 **Reproduced from one command.** A single `run_phase3 --seed 2026` at commit `98449f0` (about 4
-hours on 16 logical processors) reproduced 8 of the 11 steps exactly; only wall-clock timings differ. The
-other three differ only through two later changes, both described below. Since schema v2
-(P3.10), the import step also accepts the 11 WSOP hands with a big-blind ante (10,012 hands
-instead of 10,001; both prediction verdicts unchanged). Since P3.5b made the stability check
-the only fallback, some example explanations in the fit-check and confirmation steps are worded
-as recommendations (every number identical). Rerun at the commits their results record, those
-three steps reproduce exactly too. The committed results are the original runs. Three later
-speed-ups (build log Step 39) change no result: every step that uses the changed code gives the
-same results as before them. Run back to back with the old code, the adaptive step's quick
-configuration takes 48% less time and the sequence step's about 12% less. A fourth (build log
-Step 40) solves each LP of a restricted Nash sweep after the first starting from the previous
-one's solution. A rerun with it changes digits in four steps' JSON files (adaptive,
-recommendation, fit check and confirmation; the largest gap is 7.3e-5, in one bot's
-exploitability); every summary line, figure, choice and prediction verdict stays the same. Back
-to back, it cuts the adaptive step's quick configuration from 27 to 16 s. Its other changes (two
-replicates at once, the transfer reuse) change no result.
-`python -m experiments.compare_runs` lists every difference between two runs
-([build log, Step 37](docs/BUILD_LOG.md#step-37-phase-3-wrap-up-one-command-reproduced)).
+hours on 16 logical processors) reproduced 8 of the 11 steps exactly; only wall-clock timings
+differ. The other three differ only through two later changes, both described below. Since schema v2
+(P3.10), the import step also accepts the 11 WSOP hands with a big-blind ante (10,012 hands instead
+of 10,001; both prediction verdicts unchanged). Since P3.5b made the stability check the only
+fallback, some example explanations in the fit-check and confirmation steps are worded as
+recommendations (every number identical). Rerun at the commits their results record, those three
+steps reproduce exactly too. The committed results are the original runs. Three later speed-ups
+(build log Step 39) change no result: every step that uses the changed code gives the same results
+as before them. Run back to back with the old code, the adaptive step's quick configuration takes
+48% less time and the sequence step's about 12% less. A fourth (build log Step 40) solves each LP of
+a restricted Nash sweep after the first starting from the previous one's solution. A rerun with it
+changes digits in four steps' JSON files (adaptive, recommendation, fit check and confirmation; the
+largest gap is 7.3e-5, in one bot's exploitability); every summary line, figure, choice and
+prediction verdict stays the same. Back to back, it cuts the adaptive step's quick configuration
+from 27 to 16 s. Its other changes (two replicates at once, the transfer reuse) change no result.
+`python -m experiments.compare_runs` lists every difference between two runs ([build log, Step
+37](docs/BUILD_LOG.md#step-37-phase-3-wrap-up-one-command-reproduced)).
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase3/pushfold/pushfold_chart-dark.png">
