@@ -5674,8 +5674,8 @@ which also gives the coverage tables of section 4 and most of the readings below
   (cfr 46.3, deep_cfr 620.6, exploit 185.5, aivat 19.3, duplicate 1,454.7). They come from different
   days and code versions (Step 40's verification ran Phase 2's exploit in 95 s), and `run_phase2`
   was not run whole with the new step.
-* Test suite. 517 tests took 127.2 s on 2026-11-03 with the laptop plugged in, 1-2 GB of memory
-  available and heavy paging, and 123.1 and 103.8 s on 2026-11-04 on battery with 5.6-5.8 GB
+* Test suite. 517 tests took 127.2 s on 2026-11-03 with the laptop plugged in (no memory reading
+  for that run), and 123.1 and 103.8 s on 2026-11-04 on battery with 5.6-5.8 GB
   available and no paging. A third run that day took 300.1 s, while the laptop went from battery to
   plugged in, and a fourth, plugged in with about 3.4 GB available, 117.7 s. Before this step the
   suite took 53.5-53.9 s (471 tests) and 61.6 s (479). The two-replicates test (Step 40's
@@ -5820,7 +5820,7 @@ whether depth explains the gap to push/fold are untested.
 * Post hoc: `python -m experiments.phase2_duplicate_posthoc` (73 s, from the committed JSON).
 * Experiment: `python -m experiments.phase2_duplicate --seed 2026` (1,455 s), or
   `python -m experiments.run_phase2 --seed 2026 --only duplicate`; smoke test with `--quick` (this
-  step: 6.1 s on 2026-11-02, 14 to 17 s when the machine was on battery or short of memory).
+  step: 6.1 s on 2026-11-02 on battery, 17.4 s on 2026-11-03 plugged in).
 * Heads-up unchanged: `python -m experiments.run_phase3 --seed 2026 --only bridge --out DIR`, then
   `python -m experiments.compare_runs experiments/results/phase3 DIR bridge` ("bridge: 0
   differences").
