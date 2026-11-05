@@ -5284,13 +5284,13 @@ This one is cyclic: for fixed $j$ the map $r \mapsto (j + r) \bmod n$ is one-to-
 map $j \mapsto (j + r) \bmod n$ for fixed $r$, which is the whole proof. With $n = 2$ it is Step
 23's seat swap.
 
-*The sum-zero argument.* Let $w^{(r)}_s$ be seat $s$'s result at table $r$. The simulator takes no
-rake, so $\sum_s w^{(r)}_s = 0$ at every table. Player $j$'s mean over a deal is
+*The sum-zero argument.* Let $w^{(r)}_q$ be seat $q$'s result at table $r$. The simulator takes no
+rake, so $\sum_q w^{(r)}_q = 0$ at every table. Player $j$'s mean over a deal is
 
 $$u_j = \frac{1}{n} \sum_{r=0}^{n-1} w^{(r)}_{(j+r) \bmod n}.$$
 
-If a seat's result were the same at every table, $w^{(r)}_s = w_s$, then as $r$ runs over the tables
-the seat runs over all the seats, and $u_j = \frac{1}{n} \sum_s w_s = 0$, for every player on every
+If a seat's result were the same at every table, $w^{(r)}_q = w_q$, then as $r$ runs over the tables
+the seat runs over all the seats, and $u_j = \frac{1}{n} \sum_q w_q = 0$, for every player on every
 deal: the bound of section 1. With different agents the plays differ from table to table, a seat's
 result depends on $r$, and only part of the luck cancels.
 
@@ -5381,10 +5381,11 @@ values. Post hoc, resampling players instead would have given intervals 1.2 to 1
 lineup counts twice among the players and once in the bootstrap, and a heads-up ratio by archetype
 describes the pair.
 
-*Few clusters.* A percentile interval is too narrow when clusters are few. For the mean of $G$
-normal values, the bootstrap distribution has variance $\frac{G-1}{G} s^2 / G$, so, reading it as
-normal, its 95% interval has half-width about $1.96 \sqrt{(G-1)/G}\; s / \sqrt{G}$, where the exact
-interval has the 97.5% quantile of $t_{G-1}$ in place of $1.96 \sqrt{(G-1)/G}$. Its coverage is then
+*Few clusters.* A percentile interval is too narrow when clusters are few. Worked out post hoc:
+for the mean of $G$ normal values with sample SD $\hat\tau$, the bootstrap distribution has
+variance $\frac{G-1}{G} \hat\tau^2 / G$, so, reading it as normal, its 95% interval has half-width
+about $1.96 \sqrt{(G-1)/G}\; \hat\tau / \sqrt{G}$, where the exact interval has the 97.5% quantile
+of $t_{G-1}$ in place of $1.96 \sqrt{(G-1)/G}$. Its coverage is then
 $P\big(|t_{G-1}| < 1.96 \sqrt{(G-1)/G}\big)$:
 
 | Clusters $G$ | 5 | 8 | 10 | 20 | 50 | 100 |
@@ -5408,7 +5409,9 @@ median:
 
 The same lineups are both the data and the truth, so this shows the size of the effect, not the
 exact coverage on new lineups. Read the per-archetype CIs of the copies and one-archetype lineups,
-which rest on 10 lineups each, as about 90% intervals. The other CIs rest on 42 to 200 lineups.
+which rest on 10 lineups each, as roughly 90% intervals: normal theory gives 90.4% at $G = 10$,
+and the table pools archetypes, so it does not test one archetype's own 10 lineups. The other CIs
+rest on 42 to 200 lineups.
 Cameron, Gelbach and Miller (2008) study a related problem for regressions with few clusters, where
 standard tests reject too often; their remedy, a cluster bootstrap-t, is not used here.
 
@@ -5653,18 +5656,19 @@ which also gives the coverage tables of section 4 and most of the readings below
 
 **Run times, awake only** (C.3).
 
-* The real run took 1,455 s (`elapsed_seconds` 1,454.7, about 24 minutes) on 12 workers: 21:13:52 to
-  21:38:17 on 2026-11-03 by the shell's clock. That is 3,801,200 hands, about 2,600 hands/s.
+* The real run took 1,455 s (`elapsed_seconds` 1,454.7, about 24 minutes) on 12 workers, plugged
+  in: 21:13:52 to 21:38:17 on 2026-11-03 by the shell's clock. That is 3,801,200 hands, about 2,600
+  hands/s.
 * The machine stayed awake. The System log shows Modern Standby entered at 21:07:31 with the reason
   Idle Timeout, before the start and with a keep-awake request held, and no later Kernel-Power 506
   or 507 event until after the end. A memory sampler wrote 140 samples through the whole run, 10-13
   s apart. As in Steps 37, 39 and 40, that standby counts as awake.
 * Memory was tight, with the owner's applications open: free physical memory was 0.11 to 1.59 GB,
-  mean 0.76 GB, and the commit charge (virtual memory in use) 50.1 to 53.9 GB, up from 40.0 GB at
+  mean 0.75 GB, and the commit charge (virtual memory in use) 50.1 to 53.9 GB, up from 40.0 GB at
   the first sample and back to 38.7 GB at the last. Just before the run, nearly idle, the machine
   paged about 2,100 pages/s; paging was not measured during it. All this can change only the run
   time, and the single real run has nothing to compare with. The development runs did 2,730-2,760
-  hands/s on another day, with fewer lineups of each mixed kind.
+  hands/s on another day, on battery, with fewer lineups of each mixed kind.
 * The bridge rerun's wall time spans a closed lid, so it is not quoted.
 * Phase 2 as a whole: the step times recorded in the committed results add up to 2,326 s, 39 minutes
   (cfr 46.3, deep_cfr 620.6, exploit 185.5, aivat 19.3, duplicate 1,454.7). They come from different
@@ -5675,12 +5679,12 @@ which also gives the coverage tables of section 4 and most of the readings below
   available and no paging. A third run that day took 300.1 s, while the laptop went from battery to
   plugged in, and a fourth, plugged in with about 3.4 GB available, 117.7 s. Before this step the
   suite took 53.5-53.9 s (471 tests) and 61.6 s (479). The two-replicates test (Step 40's
-  `test_two_replicate_jobs_write_what_one_writes`) took 86 s in the battery runs and 118 s in a
+  `test_two_replicate_jobs_write_what_one_writes`) took 86-87 s in the battery runs and 119 s in a
   511-test run of 158.7 s on the paging evening, against 44 s under the suite's load in Step 40, and
   it sets a floor under the suite's time. The new tests add little (the new end-to-end test takes
-  about 15 s alone), so most of the rise since Step 40 is that one test, and why it now takes about
-  twice as long, plugged in too, was **not examined**. The end-to-end test is marked `slow`, not
-  `long`, since two long tests would queue on one worker.
+  12-15 s inside a run), so most of the rise since Step 40 is that one test, and why it now takes
+  about twice as long, plugged in too, was **not examined**. The end-to-end test is marked `slow`,
+  not `long`, since two long tests would queue on one worker.
 
 **What was left.**
 
@@ -5958,9 +5962,9 @@ it needs Chrome or Edge.
   fixed interval is a simple check that a machine kept running.
 * *A full machine slows runs, not results:* with the owner's applications open, free physical memory
   stayed between 0.11 and 1.59 GB through Step 41's real run and the commit charge reached 53.9 GB.
-  A test that took 44 s under the suite's load (Step 40) took 118 s on such an evening, and 86 s the
-  next day on battery with memory free, so a time says little without the machine's state. Log free
-  memory with a sampler next to any time quoted, and say whether the laptop was plugged in.
+  A test that took 44 s under the suite's load (Step 40) took 119 s on such an evening, and 86-87 s
+  the next day on battery with memory free, so a time says little without the machine's state. Log
+  free memory with a sampler next to any time quoted, and say whether the laptop was plugged in.
 
 ## C.4 Figures
 
@@ -6493,7 +6497,7 @@ Performance and numerics
   updated; Step 39's first "What was left" item marked fixed, and its memo bound and sweep test
   annotated. The step was drafted by a subagent from the diffs, run logs and results files and
   checked against them before it was added.
-* 2026-11-03: Step 41 (duplicate dealing for n players, P2.11b; commits `8a5f983`, `0fb6e53`,
+* 2026-11-04: Step 41 (duplicate dealing for n players, P2.11b; commits `8a5f983`, `0fb6e53`,
   `00f8f7e`, `c7f0029`, `8cdd759` and `4150aac`). Results from the pre-registered run at `0fb6e53`
   (results commit `00f8f7e`), cross-checked against
   `experiments/results/phase2/duplicate/duplicate_summary.md`. The bridge step, rerun on seed 2026
