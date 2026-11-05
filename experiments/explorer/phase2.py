@@ -37,7 +37,8 @@ AIVAT = "experiments/results/phase2/aivat/aivat.json"
 AIVAT_POSTHOC = "experiments/results/phase2/aivat/aivat_posthoc.json"
 DUPLICATE = "experiments/results/phase2/duplicate/duplicate.json"
 DUPLICATE_POSTHOC = "experiments/results/phase2/duplicate/duplicate_posthoc.json"
-SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE, DUPLICATE_POSTHOC)
+RANDOMNESS = "experiments/results/phase2/randomness/randomness.json"
+SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE, DUPLICATE_POSTHOC, RANDOMNESS)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -86,6 +87,7 @@ def overview(
     ex: dict[str, Any],
     av: dict[str, Any],
     dup: dict[str, Any],
+    rnd: dict[str, Any],
 ) -> dict[str, Any]:
     leduc = cfr["full_width"]["leduc"]
     cfrp = leduc["cfr+"][-1]
@@ -130,6 +132,13 @@ def overview(
                 f"{dup['aggregates']['by_kind']['mixed_6']['ratio']['median']:.2f}× fewer",
                 "hands than independent dealing; heads-up push/fold: "
                 f"{dup['bridge']['all']['ratio_median']:.2f}×",
+            ),
+            tile(
+                "Six copies of one bot: the shortfall from mixed actions",
+                f"{rnd['aggregates']['decomposition']['shares']['shapley_mixed']['mean']:.0%}",
+                "tables paired by decision; "
+                f"{rnd['aggregates']['decomposition_history']['shares']['shapley_mixed']['mean']:.0%}"
+                " paired by exact history",
             ),
         ],
         "summary": (
@@ -1539,8 +1548,8 @@ def duplicate_dealing(r: dict[str, Any]) -> dict[str, Any]:
         f"{_times(clones['ratio']['median'])} ({held('B2')}), six bots of one archetype "
         f"{_times(mirror['ratio']['median'])}, the random mix {_times(mix['ratio']['median'])} "
         f"({held('B3')}). Copies can differ only through the bots' own randomness, since each "
-        "table draws its own random numbers; how that divides between mixed actions, bet sizes "
-        "and Monte Carlo equity was not tested.",
+        "table draws its own random numbers. The section on where the copies' shortfall comes "
+        "from divides it between mixed actions, bet sizes and Monte Carlo equity.",
         "The gain stays about flat with the number of players: "
         + ", ".join(
             f"{_times(mixed_n[n]['ratio_median'])} at n = {n} (rho {mixed_n[n]['rho_median']:+.3f})"
@@ -1661,6 +1670,208 @@ def duplicate_posthoc(ph: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+RAND_SOURCES = (
+    ("mixed", "Mixed actions", "c1"),
+    ("noise", "Bet-size noise", "c2"),
+    ("equity", "Monte Carlo equity", "c3"),
+)
+RAND_TERMS = (
+    ("mixed", "Mixed actions alone"),
+    ("noise", "Bet-size noise alone"),
+    ("equity", "Monte Carlo equity alone"),
+    ("mixed+noise", "Mixed x noise"),
+    ("mixed+equity", "Mixed x equity"),
+    ("noise+equity", "Noise x equity"),
+    ("mixed+noise+equity", "All three together"),
+)
+RAND_LEVELS = (
+    ("baseline", "Default: all three live"),
+    ("shared_mixed", "Mixed actions shared"),
+    ("shared_noise", "Bet-size noise shared"),
+    ("shared_equity", "Equity shared"),
+    ("only_mixed", "Only mixed actions live"),
+    ("only_noise", "Only bet-size noise live"),
+    ("only_equity", "Only equity live"),
+    ("shared_all", "All three shared"),
+)
+RAND_PAIRINGS = (
+    ("decision", "The seat's k-th decision on the street"),
+    ("history", "The exact public history"),
+)
+
+
+def randomness(r: dict[str, Any]) -> dict[str, Any]:
+    agg, pred, cfg = r["aggregates"], r["predictions"], r["meta"]["config"]
+    by, checks = agg["by_condition"], agg["checks"]
+    dec, hist = agg["decomposition"], agg["decomposition_history"]
+    arch = agg["by_archetype"]
+
+    def held(*keys: str) -> str:
+        return "; ".join(f"{k} {'holds' if pred[k]['passed'] else 'does not hold'}" for k in keys)
+
+    def triple(q: dict[str, float]) -> list[float]:
+        return [q["mean"], q["lower"], q["upper"]]
+
+    def with_ci(q: dict[str, float]) -> str:
+        return f"{q['mean']:.1%} [{q['lower']:.1%}, {q['upper']:.1%}]"
+
+    def ratio(name: str) -> str:
+        return _times(by[name]["ratio"]["median"])
+
+    def share(d: dict[str, Any], source: str) -> float:
+        return d["shares"][f"shapley_{source}"]["mean"]
+
+    labels = [ARCHETYPE_LABELS[a] for a in ARCHETYPES]
+    spread = dots_chart(
+        "What the spread per hand does when mixed actions are switched off",
+        labels,
+        axis("Median SD per hand (bb, log)", scale="log", fmt="num"),
+        [
+            dot_series(name, color, [[arch[a]["sigma_median"][cond]] for a in ARCHETYPES])
+            for name, color, cond in (
+                ("Default", "c1", "baseline"),
+                ("Mixed actions off (u = 0.5)", "c2", "off_mixed"),
+            )
+        ],
+        subtitle="This changes the bots, so it is not part of the split: six calling stations' "
+        "results barely vary any more, and nits' vary more.",
+    )
+    views = {}
+    for key, _ in RAND_PAIRINGS:
+        name = "decomposition" if key == "decision" else "decomposition_history"
+        d = agg[name]
+        division = dots_chart(
+            "Share of the shortfall by source, interactions split equally",
+            [f"All {d['lineups']} lineups", *labels],
+            axis("Share of the shortfall", fmt="pct"),
+            [
+                dot_series(
+                    label,
+                    color,
+                    [
+                        triple(d["shares"][f"shapley_{source}"]),
+                        *[triple(arch[a][name]["shares"][f"shapley_{source}"]) for a in ARCHETYPES],
+                    ],
+                )
+                for source, label, color in RAND_SOURCES
+            ],
+            subtitle="Shortfall: the part of a hand's variance the rotation leaves. Means over "
+            "lineups, 95% bootstrap CIs. An archetype's CIs rest on 10 lineups, too few to reach "
+            "nominal coverage (see the post hoc section above).",
+        )
+        terms = dots_chart(
+            "The seven terms before any are split",
+            [lab for _, lab in RAND_TERMS],
+            axis("Share of a hand's variance", fmt="pct"),
+            [
+                dot_series(
+                    "Mean over lineups, 95% CI",
+                    "c1",
+                    [triple(d["terms"][t]) for t, _ in RAND_TERMS],
+                )
+            ],
+            subtitle="A term is the variance that needs exactly those sources to differ between "
+            "tables. They sum to the shortfall.",
+        )
+        levels = dots_chart(
+            "What is left in each condition",
+            [lab for _, lab in RAND_LEVELS],
+            axis("Share of a hand's variance the rotation leaves", fmt="pct"),
+            [
+                dot_series(
+                    "Mean over lineups, 95% CI",
+                    "c4",
+                    [triple(d["remaining"][c]) for c, _ in RAND_LEVELS],
+                )
+            ],
+            subtitle="The default and all-shared rows do not depend on the pairing; the rows "
+            "between them do.",
+        )
+        views[key] = view(division, terms, levels, spread)
+    change = by["off_mixed"]["behaviour_change"]
+    noise_change = by["off_noise"]["behaviour_change"]
+    station = arch["calling_station"]["sigma_median"]
+    nit = arch["nit"]["sigma_median"]
+    equity = {a: arch[a]["decomposition"]["shares"]["shapley_equity"]["mean"] for a in ARCHETYPES}
+    others = [equity[a] for a in ARCHETYPES if a != "maniac"]
+    hands = len(by) * dec["lineups"] * cfg["deals"] * 6
+    takeaways = [
+        f"Six copies of one bot should cancel perfectly and don't: the rotation cancels "
+        f"{with_ci(dec['cancelled'])} of a hand's variance (median ratio {ratio('baseline')}, the "
+        f"same as the earlier step to the last digit; {held('A1')}). With all three sources "
+        "shared or off, every deal of every lineup sums to exactly 0 chips "
+        f"({held('A2')}), so the whole shortfall of {with_ci(dec['remaining']['baseline'])} comes "
+        "from the copies drawing different random numbers.",
+        f"Pairing the tables by each seat's k-th decision on a street, mixed actions account for "
+        f"{with_ci(dec['shares']['shapley_mixed'])} of the shortfall, Monte Carlo equity "
+        f"{with_ci(dec['shares']['shapley_equity'])} and bet-size noise "
+        f"{with_ci(dec['shares']['shapley_noise'])}, with interactions split equally "
+        f"({held('D2', 'D3', 'D4')}).",
+        f"That split depends on the pairing. Pairing by the exact public history, including bet "
+        f"sizes, gives {share(hist, 'mixed'):.1%}, {share(hist, 'equity'):.1%} and "
+        f"{share(hist, 'noise'):.1%} ({held('H3', 'H4', 'H5')}): two tables whose bets differ at "
+        f"all in size draw fresh mixed actions from then on, so the mixed x noise term goes from "
+        f"{dec['terms']['mixed+noise']['mean']:.1%} to {hist['terms']['mixed+noise']['mean']:.1%} "
+        f"of a hand's variance ({held('H6')}). Mixed actions stay above noise under both "
+        f"({held('H7a', 'H7b')}), but the {share(dec, 'mixed'):.0%} is not a property of the bots "
+        "alone.",
+        "What barely depends on the pairing: with only mixed actions live, "
+        f"{dec['remaining']['only_mixed']['mean'] / dec['remaining']['baseline']['mean']:.0%} and "
+        f"{hist['remaining']['only_mixed']['mean'] / hist['remaining']['baseline']['mean']:.0%} of "
+        f"the default's shortfall stays ({held('C1')}); sharing noise or equity alone leaves the "
+        f"ratio at {ratio('shared_noise')} and {ratio('shared_equity')} ({held('C3')}). So mixed "
+        "actions alone are enough to produce about all of it. With only equity live, "
+        f"{dec['remaining']['only_equity']['mean']:.1%} and "
+        f"{hist['remaining']['only_equity']['mean']:.1%} of a hand's variance is left "
+        f"({held('C2')}). Noise's level is what the pairing moves most: only noise live leaves "
+        f"{dec['remaining']['only_noise']['mean']:.1%} or "
+        f"{hist['remaining']['only_noise']['mean']:.1%} ({held('H1a', 'H1b')}).",
+        f"Under the decision pairing, equity works mostly through mixed actions: mixed x equity "
+        f"is {dec['terms']['mixed+equity']['mean']:.1%} of a hand's variance against "
+        f"{dec['terms']['equity']['mean']:.1%} for equity alone ({held('D5a', 'D5b')}). Maniacs "
+        f"have the lowest equity share, {equity['maniac']:.1%} against {min(others):.1%}-"
+        f"{max(others):.1%} for the others ({held('D6')}).",
+        f"Switching mixed actions off does not fix it for free. The ratio rises to "
+        f"{ratio('off_mixed')}, but these are different bots: the calling station's SD falls from "
+        f"{station['baseline']:.1f} to {station['off_mixed']:.2f} bb per hand, nits' rises from "
+        f"{nit['baseline']:.2f} to {nit['off_mixed']:.2f}, the c-bet rate moves "
+        f"{change['cbet']:+.3f} and fold to a bet {change['fold_to_bet']:+.3f} "
+        f"({held('E1a', 'E1b', 'E2a', 'E2b')}). Noise off changes almost nothing: the ratio stays "
+        f"{ratio('off_noise')}, and no stat moves more than "
+        f"{max(abs(v) for v in noise_change.values()):.4f} ({held('E3a', 'E3b', 'E3c')}).",
+        "This divides the shortfall of copies only. Different bots play differently for reasons "
+        "other than their draws, so nothing here says how much of the shortfall in a mix of bots "
+        "comes from randomness. And it stays a simulation result: a live table can neither deal "
+        "the same cards twice nor share a player's random numbers.",
+    ]
+    return section(
+        "duplicate-randomness",
+        "Where six copies' shortfall comes from",
+        "Six copies of one bot, with the same cards and rotated seats, would cancel perfectly if "
+        "they played alike. To see what stops them, every lineup is played again with each source "
+        "of the bots' randomness shared across a deal's tables: the same draws at each table, so "
+        "each table plays as it did and only the agreement between tables changes.",
+        sources=[RANDOMNESS],
+        controls=[control("pairing", "Tables share a draw when they match on", RAND_PAIRINGS)],
+        views=views,
+        takeaways=takeaways,
+        method=f"{dec['lineups']} lineups ({cfg['replicates']} replicates of "
+        f"{cfg['lineups_per_replicate']}), {cfg['deals']:,} deals each, "
+        f"{cfg['equity_samples']} equity samples, {len(by)} conditions on the same bots and cards: "
+        f"{hands:,} hands. Remaining share: 1 / ratio, each condition over its own per-hand "
+        "variance. Split: the Sobol-Hoeffding terms from the eight shared conditions, by Moebius "
+        "inversion; interactions split equally is the Shapley value. CIs resample lineups. "
+        f"Sharing keeps each table's play: median SD within "
+        f"{checks['shared_sigma_median_abs_change']:.1%} of the default, stats within "
+        f"{checks['shared_behaviour_max_abs_change']:.4f} ({held('B1', 'B2')}), and direct "
+        f"within-deal variance matches the formula to "
+        f"{checks['direct_over_n_su2_max_abs_log']:.1%} ({held('A3')}). All {len(pred)} "
+        "pre-registered predictions (seed 2026) hold, but their thresholds came from development "
+        "on seeds 98 and 99: that shows these numbers repeat on a third seed, not that they were "
+        "surprising.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
@@ -1669,7 +1880,8 @@ def build(load) -> dict[str, Any]:
     ph = load(AIVAT_POSTHOC)
     dup = load(DUPLICATE)
     dup_ph = load(DUPLICATE_POSTHOC)
-    head = overview(cfr, deep, ex, av, dup)
+    rnd = load(RANDOMNESS)
+    head = overview(cfr, deep, ex, av, dup, rnd)
     return {
         "id": "phase2",
         "label": "Phase 2",
@@ -1687,6 +1899,7 @@ def build(load) -> dict[str, Any]:
                 (AIVAT_POSTHOC, ph),
                 (DUPLICATE, dup),
                 (DUPLICATE_POSTHOC, dup_ph),
+                (RANDOMNESS, rnd),
             )
         ],
         "sections": [
@@ -1704,5 +1917,6 @@ def build(load) -> dict[str, Any]:
             aivat_f1(ph),
             duplicate_dealing(dup),
             duplicate_posthoc(dup_ph),
+            randomness(rnd),
         ],
     }
