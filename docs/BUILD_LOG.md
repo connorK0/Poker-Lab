@@ -76,6 +76,7 @@ $B(a,b)$ the beta function.
   * [Step 40: A hot start, parallel replicates and a split test suite](#step-40-a-hot-start-parallel-replicates-and-a-split-test-suite)
   * Phase 2, completed after Phase 3 (continued)
   * [Step 41: Duplicate dealing at more than two seats](#step-41-duplicate-dealing-at-more-than-two-seats-p211b)
+  * [Step 42: Where six copies' shortfall comes from](#step-42-where-six-copies-shortfall-comes-from-p211c)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -5689,7 +5690,7 @@ which also gives the coverage tables of section 4 and most of the readings below
 **What was left.**
 
 * How the copies' shortfall divides among the bots' sources of randomness: rerun `clones_6` with
-  each switched off.
+  each switched off. ([Step 42](#step-42-where-six-copies-shortfall-comes-from-p211c) does this.)
 * Depth against seats: the same bots at several stack depths, instead of comparing with Step 28.
 * The seating order: replay some lineups in other cyclic orders.
 * Control variates on top: this step scores chips only. Step 28's all-in EV and Step 38's AIVAT were
@@ -5826,6 +5827,355 @@ whether depth explains the gap to push/fold are untested.
   differences").
 * Suite: `python -m pytest` (517 tests). Explorer: `python -m experiments.explorer`.
 
+## Step 42: Where six copies' shortfall comes from (P2.11c)
+
+**The question.** Step 41 rotated the seats at six tables and found that even six copies of one bot
+reach only 1.53×, about 35% of the way to perfect cancellation. Its argument said the bots' own
+randomness is the only possible cause, and it left open how the shortfall divides between the three
+sources: mixed actions (a bot choosing between actions at random), bet-size noise (a random factor
+on a raise) and Monte Carlo equity (a sampled estimate of hand strength). This step plays Step 41's
+`clones_6` lineups again with those sources changed one at a time. The code is
+`experiments/phase2_randomness.py`. `poker_lab/bots` and `experiments/phase2_duplicate.py` are not
+edited, so the simulation fingerprint and every committed result stay where they were.
+
+**1. What the shortfall measures, for copies.**
+
+Take a deal with cards $C$. Let $Y_j$ be the result of whoever sits in seat $j$ of one table. The
+bots are copies, and `ParametricBot` reads no player ids (Step 41), so given $C$ the six tables are independent runs of the same
+experiment. A player's mean over the tables, $u = \frac{1}{n} \sum_r Y_{j(r),\,r}$, holds each seat
+exactly once. Two facts follow.
+
+*The mean given the cards is zero.* $\operatorname{E}[u \mid C] = \frac{1}{n} \sum_j
+\operatorname{E}[Y_j \mid C]$, and a hand without rake is zero-sum, so the seats' expected results
+add to 0. The cards alone leave nothing in $u$.
+
+*The variance given the cards is a sum.* The tables are independent given $C$, so the variances add:
+
+$$\operatorname{Var}(u) = \operatorname{E}\big[\operatorname{Var}(u \mid C)\big]
+  = \frac{1}{n^2} \sum_j \operatorname{E}\big[\operatorname{Var}(Y_j \mid C)\big]
+  = \frac{1}{n} \cdot \frac{1}{n} \sum_j \operatorname{E}\big[\operatorname{Var}(Y_j \mid C)\big].$$
+
+The first equality is the law of total variance with its other term, $\operatorname{Var}(
+\operatorname{E}[u \mid C])$, equal to zero. With $\sigma^2 = \operatorname{Var}(Y)$ per hand and
+Step 41's ratio $= \sigma^2 / (n \operatorname{Var}(u))$,
+
+$$\frac{1}{\text{ratio}} = R = \frac{\operatorname{E}[\operatorname{Var}(Y \mid C)]}{\operatorname{Var}(Y)},$$
+
+averaged over the seats. The law of total variance also says $\operatorname{Var}(Y) =
+\operatorname{E}[\operatorname{Var}(Y \mid C)] + \operatorname{Var}(\operatorname{E}[Y \mid C])$. So
+$R$ is the share of a hand's variance that comes from the bots' draws, and $1 - R$ the share the
+cards (with the seat) explain. The rotation cancels all of $1 - R$ and none of $R$. That changes how
+Step 41's number reads: 35% is not a limit of the rotation. It says how much of a hand's result the
+cards decide between these bots.
+
+The argument can be tested directly. $\operatorname{E}[\operatorname{Var}(Y \mid C)]$ has its own
+estimate, the sample variance of a seat's results across the tables of a deal, and it should equal
+$n s_u^2$. They differ by at most 0.8% in every condition but the two exact checks
+(`within_deal_variance`, prediction A3).
+
+*Two ways to count.* Step 41's "about 35%" is $-(n-1)\rho$ at the median $\rho$. This step's
+metric is the mean over lineups of $1/\text{ratio}$, because means of $1/\text{ratio}$ add and ratios
+do not. It gives 33.8% cancelled. The bots and cards are the same; only the summary differs.
+
+**2. Sharing a source instead of switching it off.**
+
+The obvious experiment replaces a draw with a constant, and that changes the bots. Decide every
+mixed action with $u = 0.5$ and a bot always takes the branch that holds 0.5, so a bot that bluffs
+30% of the time may never bluff. A smaller shortfall would then say nothing about the original bots.
+
+So the main design *shares* the draws: each table still draws at random, but all six use the same
+numbers. This is the idea of common random numbers (glossary), applied between the tables of a deal.
+A shared draw is a hash:
+
+```text
+draw = blake2b(chunk seed | deal | seat | street | pairing key | source)
+```
+
+The table number is not in it, so a seat's draw is the same at each table. A cryptographic hash's
+output behaves as independent uniforms that do not depend on the situation, so one table on its own
+plays hands from the same distribution as the default. Only the correlation between tables changes.
+This rests on the construction; predictions B1 to B4 are coarse checks of it (SD and seven playing
+stats). `SwitchedBot` subclasses `ParametricBot` and changes only where the draws come from: with
+every source live it plays exactly as its parent, draw for draw, which a test in
+`tests/test_duplicate_randomness.py` checks. Equity needs
+no special case, because the parent already caches its estimate per street, so a street's estimate
+is one draw in both.
+
+Why does sharing cancel? Take a made-up decision that bluffs with probability $p$ when $u < p$.
+Suppose equity differs a little between two tables, so $p_1 = 0.30$ and $p_2 = 0.35$. With separate
+draws the tables disagree with probability $p_1(1 - p_2) + (1 - p_1)p_2 = 0.195 + 0.245 = 0.44$.
+With one $u$ they disagree only when $0.30 \le u < 0.35$, probability 0.05. This *coupling* depends
+on the two thresholds sitting at the same end of $[0, 1]$. Had one table's bluff branch been laid out
+at the other end, one $u$ would give disagreement 0.65, worse than independent draws. Section 4
+returns to this.
+
+The identity of section 1 still holds with some sources shared. Given $C$ and the shared draws, the
+tables are independent again, the seats' expected results still add to 0, and each seat is held
+once. So the remaining share in a condition with live set $S$ is
+
+$$R(S) = \frac{\operatorname{E}[\operatorname{Var}(Y \mid C, \text{the shared sources})]}{\operatorname{Var}(Y)}.$$
+
+**3. Splitting the shortfall into terms.**
+
+*The decomposition.* Under one pairing rule $Y$ is a function of independent inputs: the cards $C$
+and the fields of draws $M$, $Z$ and $E$ (mixed, noise, equity). Any square-integrable function of
+independent inputs can be written as a sum of orthogonal pieces, one per subset of the inputs, so its
+variance splits into one non-negative term per subset (Hoeffding 1948, Sobol' 1993). Group the terms
+by which sources they involve, with or without $C$, and call the group for source set $B$ its $W_B$.
+Then $W_\varnothing$ is what the cards alone explain, $1 - R$, and
+
+$$R(S) = \sum_{B \,:\, B \cap S \ne \varnothing} W_B,$$
+
+because holding the shared sources fixed removes exactly the terms that involve only them. In
+sensitivity analysis $R(S)$ is the *total-effect index* of the group $S$ (Homma and Saltelli 1996).
+
+*Getting the terms: Moebius inversion.* Eight conditions, one per subset of three sources, give the
+seven $W_B$. Let $G(T) = R(\text{all}) - R(\text{all but } T)$, the drop from sharing the sources in
+$T$. By the sum above $G(T) = \sum_{B \subseteq T} W_B$, a sum over subsets, and such a sum inverts
+as $W_B = \sum_{T \subseteq B} (-1)^{|B| - |T|} G(T)$. With this step's decision-key numbers, as
+shares of a hand's variance (computed from unrounded values, so the displayed sums can be
+off by 0.1):
+
+* $W_{M} = R(\text{all}) - R(\text{mixed shared}) = 66.2\% - 15.9\% = 50.3\%$.
+* $W_{Z} = 66.2\% - 65.8\% = 0.3\%$, $W_{E} = 66.2\% - 64.8\% = 1.4\%$.
+* $G(\{M,Z\}) = R(\text{all}) - R(\text{only equity live}) = 66.2\% - 13.7\% = 52.5\%$, so
+  $W_{MZ} = 52.5\% - 50.3\% - 0.3\% = 1.9\%$.
+* The terms add back: $R(\text{only mixed live}) = W_M + W_{MZ} + W_{ME} + W_{MZE} = 50.3\% + 1.9\% +
+  10.9\% + 2.0\% = 65.1\%$. This checks the arithmetic only, since that condition is one of the eight
+  the terms come from.
+
+No order of removal is assumed, which is the point: "remove mixed first" and "remove mixed last"
+give 50.3% and 65.1%, and every term involving mixed is positive here, so those are the extremes. A true term cannot be negative;
+a sample term can, by sampling error, and noise x equity comes to -0.6% here.
+
+*One number per source.* Readers want a single share, so each source also gets its $W$ plus equal
+parts of the interactions it is in: mixed is $50.3\% + (1.9\% + 10.9\%)/2 + 2.0\%/3 = 57.3\%$ of a
+hand's variance, 86.7% of the shortfall. That is the Shapley value of the game $R$ (Shapley 1953;
+Owen 2014 for Sobol' indices). Equal parts is a convention, and the seven terms are the evidence.
+
+The three "only live" conditions overlap and do not add: 65.1%, 3.6% and 13.7% sum to 82.4% against
+a shortfall of 66.2%, because an interaction counts in every source it involves.
+
+**4. The pairing is a choice, and it moves the split.**
+
+Sharing needs a rule for which decisions at two tables use one draw once the tables have parted.
+Two natural rules:
+
+* `decision`: the seat's k-th decision on the street (for equity, the street). Tables keep the same
+  draws after they part.
+* `history`: the whole public history so far, amounts included. Tables use one draw only while
+  nothing public has differed, so any difference in a bet's size makes all later draws of a shared
+  source fresh, at every seat.
+
+Each table's own distribution is the default's under both, so both are legitimate. The ends are the
+same: nothing shared is the baseline and everything shared cancels exactly. Between them the terms
+differ, and by a lot:
+
+| Term | Decision key: share of a hand's variance | History key |
+|---|---|---|
+| Mixed actions alone | 50.3% [48.2%, 52.3%] | 10.3% [8.7%, 12.1%] |
+| Bet-size noise alone | 0.3% [-0.5%, 1.2%] | -0.1% [-0.9%, 0.8%] |
+| Monte Carlo equity alone | 1.4% [0.4%, 2.6%] | 0.4% [-0.5%, 1.3%] |
+| Mixed x noise | 1.9% [0.5%, 3.2%] | 40.2% [37.6%, 42.7%] |
+| Mixed x equity | 10.9% [9.5%, 12.4%] | -0.5% [-2.0%, 1.0%] |
+| Noise x equity | -0.6% [-2.0%, 0.5%] | 0.1% [-1.3%, 1.5%] |
+| All three together | 2.0% [0.4%, 3.8%] | 15.7% [13.4%, 18.2%] |
+| **Sum: the shortfall** | **66.2%** | **66.2%** |
+
+| Share of the shortfall, interactions split equally | Decision key | History key |
+|---|---|---|
+| Mixed actions | 86.7% [85.0%, 88.1%] | 53.5% [52.4%, 54.5%] |
+| Bet-size noise | 2.4% [1.8%, 3.0%] | 38.2% [37.1%, 39.3%] |
+| Monte Carlo equity | 10.9% [9.4%, 12.6%] | 8.3% [7.3%, 9.3%] |
+
+The mechanism is in section 2. Under the history key a tiny size difference at one table ends the
+coupling of every later mixed action, so sharing mixed actions alone achieves little (ratio 1.78×)
+unless noise is shared too, and the two sources look entwined (mixed x noise 40.2%). Under the
+decision key the later draws stay coupled, so a size difference does little (noise 2.4%). The
+question "how much is noise?" has no answer free of the pairing, because a draw has no identity
+across tables once they have parted. Other rules would give other splits, and these two are not shown
+to bound them. How the policy lays out its branches on $[0, 1]$ can matter too, as section 2's
+made-up example shows; no condition here varies the layout, so that was not tested on the bots.
+
+What can be read without this qualification are the levels that come out alike under both keys:
+
+| Condition | Decision key | History key |
+|---|---|---|
+| Only mixed actions live, share of the default's shortfall | 98.4% | 99.3% |
+| Only equity live, share of a hand's variance | 13.7% | 15.7% |
+| Noise shared alone, median ratio | 1.54× | 1.52× |
+| Equity shared alone, median ratio | 1.53× | 1.54× |
+
+So with the other two sources perfectly coupled, mixed actions alone still produce about the whole
+shortfall, and sharing noise or equity alone gains nothing visible. Only noise live is where the keys
+part: 3.6% against 55.9% of a hand's variance.
+
+**5. Each condition over its own variance.**
+
+All shared conditions estimate one $\operatorname{Var}(Y)$, so a review of the plan proposed one
+pooled denominator per lineup, which looks more efficient. Development rejected it. A rare big pot
+enters one condition's numerator and denominator together and mostly cancels there; with a pooled
+denominator it stays in the numerator alone. On development seed 99 pooling took nits' cancelled share
+from 26.8% to 0.8% and only-mixed over the baseline from 0.97 to 0.89. Here, on that seed, the
+"obvious" variance reduction made things worse. Each condition therefore uses its own $\sigma^2$, as the
+committed ratio does.
+
+**6. Switching off outright, reported beside the split.**
+
+The plain experiment is still run, because it shows what the plain reading would have said and why it
+misleads: `off_mixed` (every mixed action decided by $u = 0.5$), `off_noise` (size factor 1) and
+`off_all` (both, with equity shared, as a check). There is no `off_equity`: exact equity needs about a
+million evaluations per flop decision, and a frozen estimate is what `shared_equity` already is.
+
+| Archetype | Median SD, default | Mixed off | VPIP, default | Mixed off | Median ratio, default | Mixed off |
+|---|---|---|---|---|---|---|
+| Nit | 3.46 | 6.38 | 0.112 | 0.107 | 1.34× | 4.60× |
+| TAG | 13.62 | 20.00 | 0.229 | 0.217 | 1.65× | 5.30× |
+| LAG | 20.56 | 28.53 | 0.310 | 0.295 | 1.53× | 7.35× |
+| Calling station | 24.11 | 1.27 | 0.436 | 0.410 | 1.57× | no variance |
+| Maniac | 49.76 | 73.91 | 0.496 | 0.518 | 1.51× | 14× |
+
+Median ratio 7.81× looks like a big win, but these are other bots: the c-bet rate moves +0.219, fold
+to a bet -0.113, and the calling station's SD falls about 20-fold. The station's median ratio has no
+variance left. The two stat changes are means over the lineups with opportunities (40 for c-bet,
+41 for fold to a bet): under `off_mixed` nearly every station lineup has none. Noise off, by
+contrast, leaves the bots about where they were: no stat moves more than 0.0019 and the ratio stays 1.53×.
+
+**Results.** Seed 2026, commit `2b02bed`: 50 lineups, 2,000 deals, 17 conditions, 10,200,000 hands.
+
+| Condition | Median ratio [95% CI] | Remaining share (mean) | Median SD (bb) |
+|---|---|---|---|
+| Default: all three live | 1.53× [1.49, 1.57] | 66.2% | 19.30 |
+| Mixed actions shared | 6.26× [5.89, 7.40] | 15.9% | 18.89 |
+| Bet-size noise shared | 1.54× [1.49, 1.56] | 65.8% | 19.40 |
+| Equity shared | 1.53× [1.50, 1.58] | 64.8% | 19.40 |
+| Only mixed actions live | 1.54× [1.52, 1.59] | 65.1% | 19.53 |
+| Only bet-size noise live | 31× [27, 36] | 3.6% | 18.77 |
+| Only equity live | 7.72× [6.76, 9.11] | 13.7% | 18.92 |
+| All three shared (check) | no variance | 0.0% | 18.66 |
+| Mixed actions shared, history key | 1.78× [1.71, 1.86] | 55.9% | 18.91 |
+| Only bet-size noise live, history key | 1.77× [1.72, 1.84] | 55.9% | 18.80 |
+| Only equity live, history key | 6.61× [6.17, 7.29] | 15.7% | 19.43 |
+| Mixed actions off (changes the bots) | 7.81× [6.64, 9.56] | 12.3% | 20.25 |
+| Bet-size noise off | 1.53× [1.50, 1.57] | 65.9% | 19.09 |
+
+**Predictions: all 33 hold.** The thresholds came from seeds 98 and 99, and the shares moved by a few
+points between seeds (noise's small decision-key share most, in relative terms), so this shows the
+numbers repeat on a third seed. It is not a strong test.
+
+| Reading | Seed 98 | Seed 99 | Seed 2026 |
+|---|---|---|---|
+| Cancelled | 36.9% | 33.7% | 33.8% |
+| Decision key: mixed, equity, noise | 87.4, 10.7, 1.9 | 83.4, 12.2, 4.4 | 86.7, 10.9, 2.4 |
+| History key: mixed, noise, equity | 53.3, 38.6, 8.1 | 51.4, 40.5, 8.1 | 53.5, 38.2, 8.3 |
+
+* A1: the default repeats Step 41's `clones_6`: 300 players, largest ratio difference 0.
+* A2: with all three shared or off, every per-deal sum is exactly 0 chips.
+* A3: direct within-deal variance against $n s_u^2$: at most 0.8%.
+* B1 to B4: sharing a source moves the median SD at most 1.0% and any stat at most 0.0054; by
+  archetype, SD factors 0.85 to 1.08 and stats at most 0.028.
+* C1 to C3: the levels table of section 4.
+* D1 to D6: mixed shared alone 6.26×; split 86.7%, 10.9%, 2.4%; mixed x equity 10.9% above equity
+  alone 1.4%; maniacs lowest on equity at 4.9% (others 8.3% to 16.5%).
+* H1 to H7: only noise live 3.6% and 55.9%; history mixed shared 1.78×; split 53.5%, 38.2%, 8.3%;
+  mixed x noise 40.2%; mixed above noise under both.
+* E1 to E3: the table of section 6.
+
+The committed `randomness_division` figure draws sample terms below zero as zero, so a bar can pass
+100% slightly (LAG here).
+
+*By archetype* (10 lineups each, so CIs a little narrow, Step 41 section 4):
+
+| Archetype | Cancelled | Mixed (decision key) | Noise | Equity | Mixed, noise, equity (history key) |
+|---|---|---|---|---|---|
+| Nit | 25.5% [21.4%, 29.6%] | 81.8% | 1.7% | 16.5% | 54.3%, 36.5%, 9.2% |
+| TAG | 37.8% [34.8%, 40.5%] | 84.2% | 2.9% | 12.9% | 50.8%, 38.5%, 10.7% |
+| LAG | 35.0% [33.2%, 37.1%] | 86.7% | 2.2% | 11.1% | 50.7%, 40.6%, 8.7% |
+| Calling station | 36.8% [31.5%, 43.0%] | 88.1% | 3.5% | 8.3% | 58.3%, 33.2%, 8.5% |
+| Maniac | 34.1% [32.2%, 36.1%] | 93.1% | 2.0% | 4.9% | 53.2%, 42.4%, 4.3% |
+
+**How to read these numbers.**
+
+* *Cards explain about a third of a hand's result here.* Between copies of these bots, the deal fixes
+  33.8% of a hand's variance and the draws move the rest. That is a statement about these bots, whose
+  policy acts on equity buckets (`equity_bucket`). Other strategies would give another share, not
+  measured here.
+* *Equity works mostly through mixed actions, under the decision key.* Mixed x equity is 10.9%,
+  equity alone 1.4%. That fits section 2's picture, in which a different estimate moves a probability
+  and so a threshold, and the table then acts differently only if the draw falls between the two
+  thresholds. That mechanism was not tested separately.
+* *Why nits cancel least and why maniacs have the lowest equity share were not examined.* D6 was
+  predicted from development, not explained.
+* *What this does not divide.* The identity is for copies. Different bots differ for other reasons
+  than draws, so nothing here says how much of the 1.30× shortfall of a random mix is randomness.
+* *What this is not.* A hand's draws are the bots', not people's. Sharing draws is possible only in
+  simulation, and a live table offers neither repeated cards nor shared randomness.
+
+**Run times, awake only** (C.3).
+
+* The real run took 4,311 s, about 72 minutes, on 12 workers, plugged in: started 14:47:30 on
+  2026-11-05 by the shell's clock. That is about 2,370 hands/s (Step 41: about 2,600, another day, and
+  a single run has nothing to compare with). The conditions took 243-271 s each.
+* The System log shows no Kernel-Power 506 or 507 event during the run, and the memory sampler wrote
+  70 samples about a minute apart, so the machine stayed awake. A keep-awake request for the session
+  was declined by the desktop app's permission check, so nothing held the machine awake.
+* Free physical memory was 1.81 to 4.02 GB, mean 2.33 GB. Paging averaged 117 pages/s, with a peak of
+  3,003. This can change only the run time.
+* The development runs took 1,067 and 990 s on 8 workers, with 1.9 GB free at the start. They do less
+  work than the real run (10 lineups of 1,500 deals, against 50 of 2,000).
+* Test suite: 543 tests took 132.6 s, plugged in with about 2.7 GB free.
+
+**To reproduce.**
+
+* `python -m experiments.phase2_randomness --seed 2026` or
+  `python -m experiments.run_phase2 --seed 2026 --only randomness`; smoke test with `--quick`.
+* Results: `experiments/results/phase2/randomness/` (`randomness.json` with every lineup's record,
+  `randomness_summary.md`, two figures). Explorer: section `duplicate-randomness` in Phase 2.
+* Suite: `python -m pytest` (543 tests).
+
+**What was left.**
+
+* Other pairing rules, and whether any pair of them bounds the split.
+* Whether sharing draws helps a real evaluation: seat-keyed draws in a mix of different bots might
+  raise the 1.30× of a random mix. This step does not test that, and exact cancellation is not
+  expected there.
+* From Step 41, still open: depth against seats, the seating order, control variates on top of the
+  rotation, and a whole `run_phase2` (which now includes this step).
+
+**What it means.** The copies' shortfall is the bots' draws, all of it: Step 41's argument says so, and
+it vanishes to the chip when the draws are shared, as that argument requires. Mixed actions are the largest source under both rules tried, and on their
+own they keep about the whole shortfall. Monte Carlo equity alone leaves about a seventh of a hand's
+variance. But the tidy "87% mixed actions" holds only under one pairing rule: the other gives 53%,
+with noise at 38%. Noise matters to the extent that a size difference unhooks later draws, and that
+depends on how one defines two tables' draws as "the same". The lesson is a general one about
+attribution: when a system's parts interact through a shared path, "how much is each part?" may not
+have an answer until the coupling is specified, and the terms and the invariant levels are worth more
+than a single percentage. It also shows why a source cannot simply be switched off to measure it:
+that gives 7.81×, for other bots.
+
+**Mistakes.**
+
+* The plan first had two predictions that could not fail once A1 held, since A1 ties the cancelled
+  shares to committed numbers (C1, D1 of that draft). The reviewer caught it; they were dropped and
+  those numbers are stated as known.
+* The plan's first account of what $u = 0.5$ does to the bots was wrong. The reviewer caught it, and
+  the text was corrected before the commit.
+* The first version of the plan gave one split, without saying it depends on the pairing. The reviewer
+  caught it, and that is why the history key exists: 6 more conditions, and section 4.
+* The stats checks were first too coarse to see an archetype's change; B3 and B4 were added, and the
+  plan now says the claim rests on the construction. An average of a stat over lineups with no
+  opportunities was unclear; `behaviour_change_lineups` now counts them. The reviewer caught both.
+* A pooled denominator, proposed by the review, was tried and rejected on development evidence
+  (section 5).
+* A tiny-run test compared results with `==` and failed: `NaN != NaN`, and a stat with no
+  opportunities is NaN. It compares `repr`, and means skip NaN.
+* The first commit message for the results said 34 predictions; a script counted 33, and the unpushed
+  message was corrected. That results commit also went in after ruff only; the suite ran before the
+  next commit.
+* The explorer's first subtitle said the calling station "barely plays a pot any more" under
+  `off_mixed`. Its VPIP is still 0.410; what falls is the spread of its results. Caught reading the
+  built page, before it was committed.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -5853,6 +6203,8 @@ whether depth explains the gap to push/fold are untested.
 | Closed-form reference cases | the metric on constructed arrays: identical tables give $\rho = 1$ and ratio about $1/n$, perfectly cancelling tables $\rho = -1/(n - 1)$ with no variance left, neighbors sharing a term offsets (0.5, 0, 0), and every ratio equals the identity from $\rho$ (Step 41) | a statistic is checked where algebra gives the answer, before any poker runs through it |
 | Report code on made-up results | every pre-registered prediction is evaluated on made-up results of the real shape, and a quantity that is not a number fails its prediction instead of raising (Step 41) | a crash in the analysis after a 24-minute simulation would lose the run |
 | A design's exact case | six always-call agents: every per-deal mean is exactly 0 chips, in the tests and at the start of the real run, which stops if not (Step 41) | a variance-reduction design is checked where it must be perfect |
+| A switch that must do nothing | `SwitchedBot` with every source live plays draw for draw as its parent, and the real run's baseline repeats the committed ratios with difference 0 (Step 42) | an experiment's wrapper cannot quietly change the bots |
+| A decomposition on known terms | `decompose` recovers terms built by hand, and they sum to the whole (Step 42) | the algebra is checked before any poker runs through it |
 | Round trips and fixed points | export then import 20,000 simulated hands; import, export, import 10,001 real ones | an encoder and decoder that agree on everything lose nothing |
 | Reproducibility | same seed gives identical JSON; 1 vs 2 workers give identical arrays | catches hidden global state |
 | Whole-repository reproduction | one command reruns every step from a clean commit, and `compare_runs` lists every difference outside provenance and timing; each difference is traced to a commit by rerunning at the commit the results record (Steps 24, 37) | results committed days apart can drift from the code that is supposed to produce them |
@@ -5864,7 +6216,7 @@ whether depth explains the gap to push/fold are untested.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 517 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+suite has 543 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
 runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
 Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
 in varying machine states (Step 41). `tests/conftest.py` starts the tests marked `long` first, so
@@ -6068,6 +6420,11 @@ Invert once, and look at every figure before committing it.
 | The plan's docstring says copies of one bot "spread about 2% in development"; over all copies lineups the median within-lineup relative SD is 7.0% and 7.4% on those seeds | checking the sentence against the development outputs while writing the step | reported in Step 41; no prediction used it, and the committed plan stays as it was | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
 | The `duplicate_ratio` figure's legend sat on the 6.08× heads-up lineup | reading the figure while drafting the step | the legend moved, the figure redrawn from the committed JSON; no number changed | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
 | Step 41's draft said the bots' randomness was a likely reason copies stop short (the library's own argument makes it the only possible one) and that a flat share explains a flat ratio (the ratio is $1/(1-s)$) | the reviewer subagent, tracing every claim before the commit | both restated, in the log, the explorer and the README; what stays untested is how the randomness divides and why the share is flat | [41](#step-41-duplicate-dealing-at-more-than-two-seats-p211b) |
+| The plan had two predictions that could not fail once A1 held, since A1 ties the cancelled shares to committed numbers | the reviewer subagent | dropped; the numbers are stated as known | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
+| The plan reported one split of the shortfall, without saying it depends on which decisions at two tables share a draw | the reviewer subagent | a second pairing rule, 6 more conditions; the split moves from 87% to 53% for mixed actions | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
+| One pooled variance per lineup, proposed by a review as more efficient, took nits' cancelled share on a development seed from 26.8% to 0.8% | trying it on the development seeds | each condition keeps its own variance: a rare big pot then cancels | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
+| A test compared results with `==`, and `NaN != NaN` for a stat with no opportunities | the test failing | it compares `repr`, and means skip NaN | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
+| A commit message said 34 predictions (33), and an explorer subtitle said the calling station barely plays a pot under `off_mixed` (its VPIP is 0.410; the spread of its results is what falls) | a script's count; reading the built page | corrected before anything was pushed | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
 
 ---
 
@@ -6101,6 +6458,7 @@ Invert once, and look at every figure before committing it.
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
 | Control variate | a term with known zero mean subtracted from an estimator to cut its variance (all-in EV, Step 28; AIVAT, Step 38) |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
+| Coupling | running two random experiments on shared random numbers, so they disagree less often than independent runs would; two thresholds $p_1$, $p_2$ on one uniform disagree with probability $|p_1 - p_2|$ |
 | Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
 | Credible interval | interval containing the parameter with a given posterior probability |
 | CUSUM | cumulative sum of residuals; its largest excursion detects a change in level (Page 1954) |
@@ -6164,6 +6522,7 @@ Invert once, and look at every figure before committing it.
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
 | MIVAT | control-variate terms at chance steps only, valued at full histories: the chance-only method Burch et al. compare AIVAT with, as implemented here; it may differ from the paper's, whose Leduc self-play SD it does not reproduce (Step 38) |
 | Modern Standby | the sleep mode of many recent Windows laptops (S0 low-power idle): the system stays nominally on, and programs run slowly or not at all; logged as Kernel-Power events 506 and 507 |
+| Moebius inversion | recovering the terms of a sum over subsets, $G(T) = \sum_{B \subseteq T} W_B$, as $W_B = \sum_{T \subseteq B} (-1)^{|B| - |T|} G(T)$ |
 | Muck | discard a hand without showing it |
 | Nash equilibrium | a profile where each strategy is a best response to the other |
 | NashConv | sum of both players' best-response gains; 0 at equilibrium |
@@ -6192,12 +6551,14 @@ Invert once, and look at every figure before committing it.
 | Restricted Nash response | best response to a model, hedged against an adversary with probability 1-p |
 | SeedSequence | NumPy's seed mixer: a pool of four 32-bit words, with shorter entropy padded with zeros, so `[s]` and `[s, 0, 0]` are one seed; hence a nonzero tag word per stream (Step 41) |
 | Sequence | an (information set, action) pair |
+| Shapley value | a fair division of a game's total: each player's contribution averaged over the orders of joining; for variance terms, a source's own term plus equal parts of its interactions (Shapley 1953) |
 | Share of perfect cancellation | $-(n-1)\rho$ for a player's results at $n$ tables of one deal: 0 for none, 1 at the bound $\rho = -1/(n-1)$; a share $s$ gives duplicate dealing the ratio $1/(1-s)$ at any $n$ (Step 41) |
 | Shrinkage | pulling noisy estimates toward a population mean |
 | Simplex method | the classic LP algorithm: move from vertex to adjacent vertex of the feasible set, one basis change (pivot) at a time, while the objective improves; stop when no reduced cost is negative (Dantzig 1963; Step 40) |
 | Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
 | Simultaneous multithreading (SMT) | one physical core runs two hardware threads that share its execution units and caches, so the second thread adds much less than a second core; Intel calls it hyper-threading. This laptop's AMD Ryzen 9 8945HS has 8 cores, 16 logical processors (Step 40) |
 | Side pot | pot that an all-in player for less is not eligible for |
+| Sobol-Hoeffding decomposition | writing a function of independent inputs as orthogonal pieces, one per subset of inputs, so its variance splits into one non-negative term per subset (Hoeffding 1948, Sobol' 1993) |
 | Spawn (start method) | starting a worker process as a fresh interpreter that imports the main module and receives its task by pickling; the only start method on Windows, hence the `if __name__ == "__main__":` guard (Steps 8 and 40) |
 | Stable sort | a sort that keeps equal elements in their original order; Python's is stable (Step 40) |
 | Stationarity | the data-generating process does not change over time |
@@ -6209,6 +6570,7 @@ Invert once, and look at every figure before committing it.
 | Throughput and latency | how many jobs finish per unit of time, and how long one job takes; two jobs side by side that each run $s$ times slower raise throughput by $2/s$ while each takes longer (Step 40) |
 | Token (of a hand) | one of a player's decisions in a hand (situation, action, size), or the hand's closing outcome, as a vector a sequence model reads |
 | Tolerance (LP solver) | how far a solver lets constraints (primal) and reduced costs (dual) miss and still calls a solution feasible and optimal; $10^{-7}$ by default in HiGHS, so a vertex whose reduced costs miss by less than that can be returned as optimal, though another is slightly better (Step 40) |
+| Total-effect index | the share of the variance left when everything except a group of inputs is held fixed: all the terms that involve the group (Homma and Saltelli 1996) |
 | Tower property | $\mathbb E\big[\mathbb E[X \mid S]\big] = \mathbb E[X]$: averaging a conditional expectation over what it conditions on gives the plain expectation |
 | ulp | unit in the last place: the gap between a floating-point number and the next; just above 1 it is $2^{-52}$ for 64-bit floats and $2^{-23}$ for 32-bit floats (Step 39) |
 | Uncalled bet | the part of a bet nobody matched, returned to the bettor |
@@ -6316,6 +6678,16 @@ Statistics and machine learning
   Mathematical Proceedings of the Cambridge Philosophical Society 52(3). (Step 41)
 * Cameron, A. C., Gelbach, J. B., Miller, D. L. (2008). *Bootstrap-Based Improvements for Inference
   with Clustered Errors.* Review of Economics and Statistics 90(3). (Few clusters; Step 41)
+* Hoeffding, W. (1948). *A class of statistics with asymptotically normal distribution.* Annals of
+  Mathematical Statistics 19(3). (The orthogonal decomposition; Step 42)
+* Sobol', I. M. (1993). *Sensitivity estimates for nonlinear mathematical models.* Mathematical
+  Modeling and Computational Experiment 1(4). (Step 42)
+* Homma, T., Saltelli, A. (1996). *Importance measures in global sensitivity analysis of nonlinear
+  models.* Reliability Engineering and System Safety 52(1). (Total-effect indices; Step 42)
+* Shapley, L. S. (1953). *A value for n-person games.* In Contributions to the Theory of Games II,
+  Princeton University Press. (Step 42)
+* Owen, A. B. (2014). *Sobol' indices and Shapley value.* SIAM/ASA Journal on Uncertainty
+  Quantification 2(1). (Step 42)
 * Rubin, D. (1984). *Bayesianly Justifiable and Relevant Frequency Calculations for the
   Applied Statistician.* Annals of Statistics 12. (Posterior predictive checks)
 * Gelman, A., Meng, X.-L., Stern, H. (1996). *Posterior Predictive Assessment of Model
@@ -6514,3 +6886,7 @@ Performance and numerics
   whose results are committed. C.1 (517 tests), C.2, C.3 and Parts D, E and F updated. The step was
   drafted by a subagent from the diffs, run logs and results files and checked against them before
   it was added.
+* 2026-11-05: Step 42 (P2.11c: how six copies' shortfall divides between the bots' randomness),
+  from the pre-registered plan in `experiments/phase2_randomness.py` and its run on seed 2026. C.1
+  (543 tests), Parts D, E and F updated; Step 41's open item points here. Numbers checked by script
+  against `randomness.json`.

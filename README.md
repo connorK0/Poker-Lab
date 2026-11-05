@@ -195,17 +195,20 @@ Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both 
 that every strategy is evaluated **exactly**: exploitability comes from a full best response, never
 from sampled play. Exploitability is NashConv / 2 in chips per hand (OpenSpiel's convention), so 0
 means an exact equilibrium and the uniform random policy scores 0.46 in Kuhn and 2.37 in Leduc.
-Reproduce with `python -m experiments.run_phase2 --seed 2026` (~40 min on 16 logical processors, the
-sum of the steps' recorded times, 24 min of it the duplicate step). The CFR, Deep CFR and
+Reproduce with `python -m experiments.run_phase2 --seed 2026` (~1 h 50 min on 16 logical
+processors, the sum of the steps' recorded times, 72 min of it the randomness step and 24 min the
+duplicate step). The CFR, Deep CFR and
 exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A single `run_phase2` at
 commit `348c4d5` reproduced those numbers exactly; only wall-clock timings differ. AIVAT (P2.11,
 added after Phase 3) comes from its pre-registered run at `695cb26`, and duplicate dealing for n
-players (P2.11b) from its own at `0fb6e53`. Full tables:
+players (P2.11b) from its own at `0fb6e53`, and the split of the copies' shortfall (P2.11c) from its
+own at `2b02bed`. Full tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
 [`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
 [`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md),
-[`duplicate_summary.md`](experiments/results/phase2/duplicate/duplicate_summary.md).
+[`duplicate_summary.md`](experiments/results/phase2/duplicate/duplicate_summary.md),
+[`randomness_summary.md`](experiments/results/phase2/randomness/randomness_summary.md).
 
 **Checked against independent references first.** The best response reproduces the published
 uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
@@ -387,9 +390,19 @@ wide on purpose, so that is a replication, not a strong test.
   the share stays flat was not examined.
 * **Even identical players do not rescue it.** Six copies of one bot gain 1.53×, about 35% of
   perfect cancellation (*post hoc*), and six bots of one archetype 1.44×. Only the bots' own
-  randomness can stop copies cancelling, since each table draws its own random numbers; how that
-  shortfall divides was not tested. Six always-call agents do cancel exactly: every per-deal mean
-  over 200 deals is 0 chips.
+  randomness can stop copies cancelling, since each table draws its own random numbers. Six
+  always-call agents do cancel exactly: every per-deal mean over 200 deals is 0 chips.
+* **Mixed actions are most of what stops the copies, by an amount that depends on a definition**
+  (P2.11c: the copies replayed in 17 conditions, 10.2 million hands; all 33 pre-registered
+  predictions hold, thresholds again from two development seeds). When the tables share all the
+  bots' random draws, every deal cancels to the chip, so the whole shortfall is draws: 66% of a
+  hand's variance, with the cards explaining the other 34%. If tables share a draw at each seat's
+  k-th decision on a street, mixed actions take 87% of the shortfall, Monte Carlo equity 11% and
+  bet-size noise 2%. If they share one only while the public history matches, it is 53%, 8% and
+  38%, since any difference in a bet's size then makes all later draws fresh. Under both rules
+  about the whole shortfall stays with only mixed actions live. Switching mixed actions off instead
+  gives 7.81×, but those are other bots: a calling station's SD falls about 20-fold. This divides
+  the shortfall of copies only, not that of a mix of different bots.
 * **It does not make 6-max win rates cheap.** For ±5 bb/100 in a random mix the median player needs
   940,565 independent hands and 713,764 duplicate ones.
 * **Depth may matter more than seats** (*post hoc*, not an experiment: the bots and heroes differ
@@ -966,7 +979,7 @@ Next tasks:
 
 ## Development
 
-* Tests: `python -m pytest` (517 tests in four processes with pytest-xdist: unit,
+* Tests: `python -m pytest` (543 tests in four processes with pytest-xdist: unit,
   contract, firewall, differential-vs-PokerKit, solver-vs-reference, explorer and end-to-end
   tests; the Deep CFR and sequence-model tests skip without PyTorch). Add `-n 0` to run one file
   in a single process or to debug with `--pdb`.
