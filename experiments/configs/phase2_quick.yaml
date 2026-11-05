@@ -47,3 +47,14 @@ duplicate:
   half_width: 5
   bootstrap: 200
   workers: 4
+
+randomness:
+  replicates: 1
+  population_per_archetype: 6
+  lineups_per_replicate: 5
+  deals: 100
+  chunk_deals: 50
+  equity_samples: 150
+  half_width: 5
+  bootstrap: 200
+  workers: 4

@@ -47,3 +47,14 @@ duplicate:
   half_width: 5               # bb/100: hands needed for a 95% interval this wide
   bootstrap: 2000             # resamples of lineups for the CI of a median ratio
   workers: 12
+
+randomness:         # P2.11c: clones_6 of ``duplicate``, the same seeds and sizes
+  replicates: 10
+  population_per_archetype: 12
+  lineups_per_replicate: 5    # one per archetype
+  deals: 2000
+  chunk_deals: 250
+  equity_samples: 150
+  half_width: 5
+  bootstrap: 2000
+  workers: 12

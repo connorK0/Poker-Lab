@@ -16,6 +16,8 @@ summary and light/dark figures under ``experiments/results/<name>/``):
    variances in Leduc and in P3.3's push/fold matchups, and the hero's own view (P2.11).
 5. ``duplicate``: duplicate dealing for n players with the seats rotated, at 6-max no-limit
    hold'em with Phase 1's archetype bots: how many times fewer hands it needs (P2.11b).
+6. ``randomness``: six copies of one bot from ``duplicate``, each of the bots' sources of
+   randomness shared between the tables in turn: how the shortfall divides (P2.11c).
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate")
+STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness")
 
 
 def run(
@@ -47,6 +49,7 @@ def run(
         phase2_deep_cfr,
         phase2_duplicate,
         phase2_exploit,
+        phase2_randomness,
     )
 
     out_dir = out_dir or RESULTS_ROOT / cfg["name"]
@@ -56,6 +59,7 @@ def run(
         "exploit": phase2_exploit,
         "aivat": phase2_aivat,
         "duplicate": phase2_duplicate,
+        "randomness": phase2_randomness,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):
