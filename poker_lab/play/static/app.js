@@ -177,6 +177,8 @@ function renderTable(s) {
   }
 }
 
+const NUMBER_KEY = { allin: "1", fold: "2" };  // and 3 for the next hand
+
 function renderControls(t, gameMode) {
   const big = t.big_blind, L = t.legal;
   const btns = t.buttons.map((b) => {
@@ -186,7 +188,9 @@ function renderControls(t, gameMode) {
     else if (b.action === "call") { label = `Call ${bbOf(b.amount, big)} bb`; key = "C"; }
     else if (b.action === "allin") { label = b.label === "Push" ? `Push ${bbOf(L.max_raise_to, big)} bb` : `All-in ${bbOf(L.max_raise_to, big)} bb`; key = gameMode === "pushfold" ? "P" : "A"; }
     else { label = b.label || "Raise"; key = "R"; act = () => { $("raise-box").hidden = false; $("raise-amount").focus(); $("raise-amount").select(); }; }
-    return h("button", { class: b.action === "allin" || b.action === "call" ? "primary" : "", "data-key": key, onclick: act }, label, h("kbd", { text: key }));
+    // Number keys first (1 push or all-in, 2 fold); the letter keys still work.
+    const shown = NUMBER_KEY[b.action] || key;
+    return h("button", { class: b.action === "allin" || b.action === "call" ? "primary" : "", "data-key": key, "data-action": b.action, onclick: act }, label, h("kbd", { text: shown }));
   });
   $("actions").replaceChildren(...btns);
   const box = $("raise-box");
@@ -321,7 +325,12 @@ document.addEventListener("keydown", (e) => {
   const s = state && state.session;
   if (k === "m" && s && s.status !== "ended") { e.preventDefault(); toggleRead(!s.read_on); return; }
   if (k === "e" && s) { e.preventDefault(); endSession(); return; }
-  if (k === "n") { e.preventDefault(); nextHand(); return; }
+  if (k === "n" || k === "3") { e.preventDefault(); nextHand(); return; }
+  if (state && state.turn && (k === "1" || k === "2")) {
+    const b = $("actions").querySelector(`button[data-action="${k === "1" ? "allin" : "fold"}"]`);
+    if (b) { e.preventDefault(); b.click(); }
+    return;
+  }
   if (state && state.turn) {
     const b = $("actions").querySelector(`button[data-key="${k.toUpperCase()}"]`);
     if (b) { e.preventDefault(); b.click(); }
