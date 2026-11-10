@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Poker-Lab Play</title>
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+<header class="top">
+  <h1>Poker-Lab <span>play against the model</span></h1>
+  <div class="top-controls">
+    <label class="switch" title="Show the model's read of you (M)">
+      <input type="checkbox" id="read-toggle" disabled>
+      <span>Model's read <kbd>M</kbd></span>
+    </label>
+    <button id="end-btn" class="ghost" disabled title="End the session and show the report (E, twice)">End session <kbd>E</kbd></button>
+  </div>
+</header>
+
+<main>
+  <p id="status" class="status" role="status" aria-live="polite"></p>
+
+  <section id="setup" class="panel" aria-labelledby="setup-h">
+    <h2 id="setup-h">New session</h2>
+    <form id="setup-form">
+      <fieldset class="modes">
+        <legend>Game</legend>
+        <label><input type="radio" name="mode" value="pushfold" checked> Push/fold, heads-up <small>The model learns your ranges and exploits them</small></label>
+        <label><input type="radio" name="mode" value="holdem"> No-limit hold'em <small>Archetype bots or advisors; the model profiles you</small></label>
+      </fieldset>
+      <div class="opts" data-for="pushfold">
+        <label>Effective stack (bb) <input type="number" id="stack" min="5" max="20" step="1" value="10" required></label>
+        <label class="check"><input type="checkbox" id="fresh"> Fresh model (ignore my earlier sessions at this stack)</label>
+      </div>
+      <div class="opts" data-for="holdem" hidden>
+        <label>Table <select id="players"><option value="6">6-max (you + 5)</option><option value="2">Heads-up</option></select></label>
+        <label>Opponents <select id="opponents"><option value="bots">Archetype bots</option><option value="advisor">Advisors (baseline + exploit slot)</option></select></label>
+        <label id="engine-row" hidden>Exploit slot <select id="engine"></select></label>
+        <p id="engine-desc" class="note" hidden></p>
+      </div>
+      <label>Seed <input type="number" id="seed" min="0" placeholder="random" inputmode="numeric"></label>
+      <button type="submit" class="primary">Start <kbd>Enter</kbd></button>
+    </form>
+    <p class="note">Local only: this page talks to 127.0.0.1 and nothing else. Your hands are saved in <code id="data-dir"></code>.</p>
+  </section>
+
+  <section id="game" class="panel" hidden aria-labelledby="table-h">
+    <h2 id="table-h" class="sr-only">Table</h2>
+    <div class="board-row">
+      <div><div class="label">Board</div><div id="board" class="cards"></div></div>
+      <div class="pot"><div class="label">Pot</div><div id="pot" class="big"></div></div>
+    </div>
+    <ul id="seats" class="seats"></ul>
+    <div class="you-row">
+      <div><div class="label">Your cards</div><div id="your-cards" class="cards big-cards"></div></div>
+      <div id="actions" class="actions" aria-label="Your options"></div>
+    </div>
+    <div id="raise-box" class="raise" hidden>
+      <label for="raise-amount">Raise to (bb)</label>
+      <input type="number" id="raise-amount" step="0.5">
+      <span id="raise-range" class="note"></span>
+      <div class="presets" id="presets"></div>
+      <button id="raise-go" class="primary">Raise <kbd>Enter</kbd></button>
+    </div>
+    <div id="hand-over" class="hand-over" hidden>
+      <div id="hand-result" class="result"></div>
+      <button id="next-btn" class="primary">Next hand <kbd>N</kbd></button>
+    </div>
+    <ol id="action-log" class="lines"></ol>
+    <p class="keys note">Keys: <kbd>F</kbd> fold, <kbd>C</kbd> check or call, <kbd>P</kbd> push / <kbd>A</kbd> all-in, <kbd>R</kbd> raise, <kbd>N</kbd> next hand, <kbd>M</kbd> model's read, <kbd>E</kbd> twice to end.</p>
+  </section>
+
+  <section id="results" class="panel" hidden aria-labelledby="results-h">
+    <h2 id="results-h">Session</h2>
+    <dl id="results-dl" class="stats"></dl>
+  </section>
+
+  <section id="read" class="panel" hidden aria-labelledby="read-h">
+    <h2 id="read-h">The model's read of you</h2>
+    <div id="read-body"></div>
+  </section>
+
+  <section id="history" class="panel" hidden aria-labelledby="history-h">
+    <h2 id="history-h">Hands</h2>
+    <table class="log"><thead><tr><th>#</th><th>Your cards</th><th>Result</th><th>All-in EV</th></tr></thead><tbody id="history-body"></tbody></table>
+  </section>
+
+  <section id="report" class="panel" hidden aria-labelledby="report-h">
+    <h2 id="report-h">Session report</h2>
+    <div id="report-body"></div>
+    <button id="again-btn" class="primary">New session</button>
+  </section>
+</main>
+<script src="/app.js"></script>
+</body>
+</html>
