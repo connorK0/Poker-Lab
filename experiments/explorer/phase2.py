@@ -38,7 +38,18 @@ AIVAT_POSTHOC = "experiments/results/phase2/aivat/aivat_posthoc.json"
 DUPLICATE = "experiments/results/phase2/duplicate/duplicate.json"
 DUPLICATE_POSTHOC = "experiments/results/phase2/duplicate/duplicate_posthoc.json"
 RANDOMNESS = "experiments/results/phase2/randomness/randomness.json"
-SOURCES = (CFR, DEEP, EXPLOIT, AIVAT, AIVAT_POSTHOC, DUPLICATE, DUPLICATE_POSTHOC, RANDOMNESS)
+MISSPEC = "experiments/results/phase2/misspec/misspec.json"
+SOURCES = (
+    CFR,
+    DEEP,
+    EXPLOIT,
+    AIVAT,
+    AIVAT_POSTHOC,
+    DUPLICATE,
+    DUPLICATE_POSTHOC,
+    RANDOMNESS,
+    MISSPEC,
+)
 
 GAMES = (("kuhn", "Kuhn poker"), ("leduc", "Leduc hold'em"))
 VARIANTS = (
@@ -88,6 +99,7 @@ def overview(
     av: dict[str, Any],
     dup: dict[str, Any],
     rnd: dict[str, Any],
+    mis: dict[str, Any],
 ) -> dict[str, Any]:
     leduc = cfr["full_width"]["leduc"]
     cfrp = leduc["cfr+"][-1]
@@ -139,6 +151,13 @@ def overview(
                 "tables paired by decision; "
                 f"{rnd['aggregates']['decomposition_history']['shares']['shapley_mixed']['mean']:.0%}"
                 " paired by exact history",
+            ),
+            tile(
+                "Best response against bots outside the model's family",
+                "{:.0%}-{:.0%}".format(*_off_family_capture(mis)),
+                "of the clairvoyant's gain after 3,000 hands; bots that adapt freely make it lose "
+                f"{-mis['sessions']['tabular_fast']['heroes']['refit_br']['gain']['mean']:.2f} "
+                "chips/hand to equilibrium play",
             ),
         ],
         "summary": (
@@ -1872,6 +1891,310 @@ def randomness(r: dict[str, Any]) -> dict[str, Any]:
     )
 
 
+MIS_KINDS = (
+    ("family", "Family bot (control)"),
+    ("slight_street", "A quarter of the street rule"),
+    ("board_blind", "Ignores the board"),
+    ("honest_raiser", "Raises only when strong"),
+    ("noisy", "Noise at every decision"),
+    ("near_eq", "75% equilibrium"),
+    ("positional", "Aggression depends on seat"),
+    ("street", "Passive, then aggressive"),
+    ("equilibrium", "The equilibrium"),
+)
+MIS_OFF = ("board_blind", "street", "positional", "honest_raiser", "noisy", "near_eq")
+MIS_SESSIONS = (
+    ("static", "Fixed family bot (control)"),
+    ("family_slow", "Adapts inside the family, slowly"),
+    ("family_fast", "Adapts inside the family, fast"),
+    ("tabular_slow", "Adapts freely, slowly"),
+    ("tabular_fast", "Adapts freely, fast"),
+)
+MIS_VIEWS = (("fixed", "Opponents that do not adapt"), *MIS_SESSIONS)
+MIS_HEROES = (
+    ("equilibrium", "Equilibrium", ""),
+    ("fit_once_br", "Fit once at 300 hands, best response", "c5"),
+    ("fit_once_rnr", "Fit once, restricted Nash p = 0.9", "c6"),
+    ("refit_br", "Refit every 100 hands, best response", "c1"),
+    ("refit_rnr", "Refit, restricted Nash p = 0.9", "c3"),
+    ("refit_rnr_low", "Refit, restricted Nash p = 0.5", "c2"),
+    ("refit_recent_br", "Refit on the last 300 hands, best response", "c4"),
+    ("clairvoyant", "Clairvoyant (reads the bot's strategy)", "c7"),
+)
+MIS_METHODS = (
+    ("br", "Best response to the fitted model", "c1"),
+    ("rnr_0.9", "Restricted Nash, p = 0.9", "c3"),
+    ("rnr_0.5", "Restricted Nash, p = 0.5", "c2"),
+    ("dbr", "Data-biased response", "c4"),
+    ("blind_br", "Best response, card-blind model", "c5"),
+)
+
+
+def _off_family_capture(mis: dict[str, Any]) -> tuple[float, float]:
+    top = str(max(mis["meta"]["config"]["sizes"]))
+    caps = [mis["static"][k]["sizes"][top]["br"]["capture"]["mean"] for k in MIS_OFF]
+    return min(caps), max(caps)
+
+
+def _triple(q: dict[str, float] | None) -> list[float] | None:
+    return None if q is None else [q["mean"], q["lower"], q["upper"]]
+
+
+def misspec(r: dict[str, Any]) -> dict[str, Any]:
+    st, ses, pred, cfg = r["static"], r["sessions"], r["predictions"], r["meta"]["config"]
+    top = str(max(cfg["sizes"]))
+    labels = [lab for _, lab in MIS_KINDS]
+    checks = sum(k.startswith("A") for k in pred)
+    checks_ok = sum(p["passed"] for k, p in pred.items() if k.startswith("A"))
+    passed = sum(p["passed"] for k, p in pred.items() if not k.startswith("A"))
+
+    def held(*keys: str) -> str:
+        return "; ".join(f"{k} {'holds' if pred[k]['passed'] else 'does not hold'}" for k in keys)
+
+    def cap(kind: str, m: str = "br", n: str = top) -> float:
+        return st[kind]["sizes"][n][m]["capture"]["mean"]
+
+    def gain(kind: str, hero: str, key: str = "gain") -> float:
+        return ses[kind]["heroes"][hero][key]["mean"]
+
+    distance = dots_chart(
+        "How far each opponent is from the family the hero fits",
+        labels,
+        axis("KL divergence to the closest family bot (nats per hand)", fmt="num"),
+        [dot_series("Mean over bots, 95% CI", "c1", [_triple(st[k]["kl"]) for k, _ in MIS_KINDS])],
+        subtitle="Measured from the hero's view (the bot's cards only at showdown) before any "
+        "hero plays. Hands to 20:1 evidence against the family at the mean KL: "
+        + ", ".join(
+            f"{lab.lower()} {st[k]['hands_to_evidence']:.0f}"
+            for k, lab in MIS_KINDS
+            if k != "family"
+        )
+        + ". That count is a lower bound: it assumes the alternative is known.",
+    )
+    capture = dots_chart(
+        f"Share of the clairvoyant's gain kept after {int(top):,} hands",
+        labels,
+        axis("Mean gain / mean oracle gain", fmt="pct"),
+        [
+            dot_series(
+                name,
+                color,
+                [None if k == "equilibrium" else [cap(k, m)] for k, _ in MIS_KINDS],
+            )
+            for m, name, color in MIS_METHODS[:3]
+        ]
+        + [
+            dot_series(
+                "Best response to the closest family bot (infinite data)",
+                "c7",
+                [
+                    None if k == "equilibrium" else [st[k]["limit"]["br"]["capture"]["mean"]]
+                    for k, _ in MIS_KINDS
+                ],
+            )
+        ],
+        subtitle="Against the equilibrium nothing can be gained, so there is no share.",
+    )
+    gains = dots_chart(
+        f"Gain over equilibrium play after {int(top):,} hands",
+        labels,
+        axis("Chips per hand, mean over 5 seeds, 95% CI", fmt="signed"),
+        [
+            dot_series(name, color, [_triple(st[k]["sizes"][top][m]["gain"]) for k, _ in MIS_KINDS])
+            for m, name, color in MIS_METHODS
+        ]
+        + [
+            dot_series(
+                "Clairvoyant", "c7", [_triple(st[k]["oracle"]["br"]["gain"]) for k, _ in MIS_KINDS]
+            )
+        ],
+        refs=[ref(0.0, "equilibrium", axis_name="x")],
+    )
+    sizes = [str(n) for n in cfg["sizes"]]
+    loses = dots_chart(
+        "How often best response does worse than equilibrium",
+        labels,
+        axis("Share of 150 bots (Wilson 95% CI)", fmt="pct"),
+        [
+            dot_series(
+                f"{int(n):,} hands",
+                color,
+                [
+                    [
+                        st[k]["sizes"][n]["br"]["loses"]["share"],
+                        st[k]["sizes"][n]["br"]["loses"]["lower"],
+                        st[k]["sizes"][n]["br"]["loses"]["upper"],
+                    ]
+                    for k, _ in MIS_KINDS
+                ],
+            )
+            for n, color in ((sizes[0], "c2"), (sizes[2], "c4"), (top, "c1"))
+        ],
+    )
+    expl = dots_chart(
+        f"Exploitability of the hero's strategy after {int(top):,} hands",
+        labels,
+        axis("Chips per hand a best response to the hero wins", fmt="num"),
+        [
+            dot_series(
+                name,
+                color,
+                [_triple(st[k]["sizes"][top][m]["exploitability"]) for k, _ in MIS_KINDS],
+            )
+            for m, name, color in MIS_METHODS[:3]
+        ],
+        subtitle="0 for equilibrium play.",
+    )
+    views = {"fixed": view(distance, capture, gains, loses, expl)}
+    hands = cfg["session"]["hands"]
+    period = cfg["session"]["period"]
+    for kind, title in MIS_SESSIONS:
+        e = ses[kind]
+        rows = [lab for _, lab, _ in MIS_HEROES]
+        overall = dots_chart(
+            f"{title}: gain over the equilibrium hero",
+            rows,
+            axis("Chips per hand, mean over 5 seeds, 95% CI", fmt="signed"),
+            [
+                dot_series(
+                    f"All {hands:,} hands",
+                    "c1",
+                    [_triple(e["heroes"][h]["gain"]) for h, _, _ in MIS_HEROES],
+                ),
+                dot_series(
+                    "Second half only",
+                    "c2",
+                    [_triple(e["heroes"][h]["gain_second_half"]) for h, _, _ in MIS_HEROES],
+                ),
+            ],
+            refs=[ref(0.0, "equilibrium", axis_name="x")],
+            subtitle=f"The bot moved {e['bot_moved']['mean']:.2f} in total variation per "
+            f"decision and ended {e['bot_kl_end']['mean']:.2f} nats per hand from the family. "
+            f"Equilibrium's own value fell to {e['eq_value_ratio']['mean']:.0%} of its value "
+            "against the fixed bots.",
+        )
+        curve = line_chart(
+            "Gain over the equilibrium hero, block by block",
+            axis(f"Hand (end of each {period}-hand block)", fmt="int"),
+            axis("Chips per hand, mean over bots and seeds", fmt="signed"),
+            [
+                series(
+                    lab,
+                    color,
+                    [[period * (i + 1), v] for i, v in enumerate(e["heroes"][h]["curve"])],
+                    marker=False,
+                )
+                for h, lab, color in MIS_HEROES
+                if h != "equilibrium"
+            ],
+            refs=[ref(0.0, "equilibrium")],
+        )
+        risk = dots_chart(
+            "How often each hero ends below equilibrium, and how exploitable it is",
+            rows[1:],
+            axis("Share of 150 bots (Wilson 95% CI)", fmt="pct"),
+            [
+                dot_series(
+                    "Does worse than equilibrium over the session",
+                    "c6",
+                    [
+                        [
+                            e["heroes"][h]["loses"]["share"],
+                            e["heroes"][h]["loses"]["lower"],
+                            e["heroes"][h]["loses"]["upper"],
+                        ]
+                        for h, _, _ in MIS_HEROES[1:]
+                    ],
+                )
+            ],
+            subtitle="Mean exploitability over the session: "
+            + ", ".join(
+                f"{lab.split(',')[0].lower()} {e['heroes'][h]['exploitability']['mean']:.2f}"
+                for h, lab, _ in MIS_HEROES[1:]
+            )
+            + " chips per hand.",
+        )
+        views[kind] = view(overall, curve, risk)
+    rule_caps = [cap(k) for k in MIS_OFF]
+    limit_gap = max(abs(st[k]["limit"]["br"]["capture"]["mean"] - cap(k)) for k in MIS_OFF)
+    vs = {k: st[k]["versus_br"] for k in st if k != "kl_shortfall_spearman"}
+    rnr_keep = [vs[k]["rnr_0.9"]["gain_ratio"]["mean"] for k in MIS_OFF]
+    rnr_expl = [vs[k]["rnr_0.9"]["exploitability_ratio"]["mean"] for k in MIS_OFF]
+    blind = min(st[k]["fit_minus_blind"][top]["mean"] for k in MIS_OFF)
+    fast = ses["tabular_fast"]
+    d5 = fast["differences"]["rnr_minus_br"]
+    lose_fast = [fast["heroes"][h]["loses"]["share"] for h in ("refit_br", "refit_rnr")]
+    takeaways = [
+        f"The control repeats P2.7's committed numbers exactly on all "
+        f"{r['committed_check']['bots']} bots ({held('A1', 'A2')}). Against it, best response "
+        f"after {int(top):,} hands keeps {cap('family'):.0%} of what a clairvoyant hero gains.",
+        f"Against the six opponents outside the family, best response keeps "
+        f"{min(rule_caps):.0%} to {max(rule_caps):.0%} ({held('C1')}). More data would not close "
+        "the gap: best response to the closest family bot, the limit of infinite data, keeps the "
+        f"same share to within {limit_gap * 100:.1f} points. The cost is the model's shape, not "
+        "the sample.",
+        f"It still beats equilibrium play against every one of them ({held('C3')}), and does "
+        f"worse than equilibrium on at most "
+        f"{max(st[k]['sizes'][top]['br']['loses']['share'] for k in MIS_OFF):.0%} of bots "
+        f"({held('C4')}). These bots are very exploitable, so a wrong model still finds most "
+        "of the gain.",
+        f"How far an opponent is from the family predicts the cost only loosely: the rank "
+        f"correlation of KL with the shortfall is {st['kl_shortfall_spearman']:.2f} "
+        f"({held('C6')}). A quarter of the street rule costs {1 - cap('slight_street'):.0%} "
+        f"({held('C2')}).",
+        f"The Phase 2 orderings survive: restricted Nash at p = 0.9 keeps "
+        f"{min(rnr_keep):.0%} to {max(rnr_keep):.0%} of best response's gain with "
+        f"{min(rnr_expl):.0%} to {max(rnr_expl):.0%} of its exploitability ({held('C7', 'C8')}); "
+        f"the data-biased response gains less ({held('C9')}); the hand-reading model beats the "
+        f"card-blind one against every kind, by {blind:+.3f} on average where it is closest "
+        f"({held('C11')}). With 10 hands, the population "
+        f"model beats the fit against the near-equilibrium and board-blind bots ({held('C10')}).",
+        f"Against the exact equilibrium, every fitted hero loses a little: best response "
+        f"{st['equilibrium']['sizes'][top]['br']['gain']['mean']:+.3f} chips per hand after "
+        f"{int(top):,} hands ({held('C5a', 'C5b')}).",
+        f"Bots that adapt inside the family barely hurt a hero that refits: refit best response "
+        f"keeps {ses['family_slow']['capture']['refit_br']['mean']:.0%} and "
+        f"{ses['family_fast']['capture']['refit_br']['mean']:.0%} of the clairvoyant's gain "
+        f"({held('D1', 'D2')}).",
+        f"Bots that adapt freely beat refit best response and restricted Nash p = 0.9 in the "
+        f"second half ({held('D3')}). Against the fast one they do worse than equilibrium on "
+        f"{min(lose_fast):.0%} or more of bots ({held('D4')}), ending "
+        f"{gain('tabular_fast', 'refit_br'):+.3f} and {gain('tabular_fast', 'refit_rnr'):+.3f}. "
+        f"Restricted Nash at p = 0.9 does not protect, but the prediction as written fails: its "
+        f"gain over best response is {d5['mean']:+.3f} [{d5['lower']:+.3f}, {d5['upper']:+.3f}], "
+        f"and the upper end passes the pre-registered +0.02 ({held('D5')}). At p = 0.5 it ends "
+        f"near zero, {gain('tabular_fast', 'refit_rnr_low'):+.3f} ({held('D6')}). The gain was "
+        f"there: the clairvoyant takes {gain('tabular_fast', 'clairvoyant'):+.2f} "
+        f"({held('D7')}).",
+        f"Adapting also costs the equilibrium hero: its value against the free adapters falls to "
+        f"{ses['tabular_slow']['eq_value_ratio']['mean']:.0%} and "
+        f"{fast['eq_value_ratio']['mean']:.0%} of its value against fixed bots ({held('D8')}). "
+        f"Against the slow one, refitting on the last 300 hands beats refitting on all "
+        f"({held('D9')}).",
+        "What this does not show: other games, other adaptation rules, a hero with a more "
+        "flexible model or a stop-loss, or anything about people.",
+    ]
+    return section(
+        "misspecification",
+        "Exploitation when the model is wrong",
+        "Every exploitation result above fits opponents from the five-parameter family the "
+        "model assumes. Here the opponents break that assumption: rule bots that use the board, "
+        "the street or the seat in ways the family can't express, and bots that model the hero "
+        "and adapt, inside the family or freely.",
+        sources=[MISSPEC],
+        controls=[control("opponents", "Opponents", MIS_VIEWS)],
+        views=views,
+        takeaways=takeaways,
+        method=f"{cfg['seeds']} seeds, {cfg['test_per_archetype'] * 5 * cfg['seeds']} bots per "
+        f"kind, the same bots as P2.7; every value exact. Sessions: {hands:,} hands scored by "
+        f"exact values per {period}-hand block; random streams shared across heroes per block. "
+        f"Misspecification: maximum expected log-likelihood projection onto the family. "
+        f"{checks_ok} of {checks} checks hold, and {passed} of {len(pred) - checks} "
+        "pre-registered predictions (seed 2026); thresholds came from development on seeds 98 "
+        "and 99.",
+    )
+
+
 def build(load) -> dict[str, Any]:
     cfr = load(CFR)
     deep = load(DEEP)
@@ -1881,7 +2204,8 @@ def build(load) -> dict[str, Any]:
     dup = load(DUPLICATE)
     dup_ph = load(DUPLICATE_POSTHOC)
     rnd = load(RANDOMNESS)
-    head = overview(cfr, deep, ex, av, dup, rnd)
+    mis = load(MISSPEC)
+    head = overview(cfr, deep, ex, av, dup, rnd, mis)
     return {
         "id": "phase2",
         "label": "Phase 2",
@@ -1900,6 +2224,7 @@ def build(load) -> dict[str, Any]:
                 (DUPLICATE, dup),
                 (DUPLICATE_POSTHOC, dup_ph),
                 (RANDOMNESS, rnd),
+                (MISSPEC, mis),
             )
         ],
         "sections": [
@@ -1918,5 +2243,6 @@ def build(load) -> dict[str, Any]:
             duplicate_dealing(dup),
             duplicate_posthoc(dup_ph),
             randomness(rnd),
+            misspec(mis),
         ],
     }
