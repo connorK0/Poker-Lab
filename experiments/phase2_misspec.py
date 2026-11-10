@@ -1051,14 +1051,17 @@ def make_figures(r: dict[str, Any], out_dir: Path) -> None:
             ax.set_ylabel("Share of the available gain")
             ax.yaxis.set_major_formatter(lambda v, _: f"{100 * v:.0f}%")
             ax.set_title(name, color=theme["ink"], fontsize=10)
-        legend(axes[0], theme, loc="upper center", bbox_to_anchor=(1.1, -0.17), ncol=4)
+        handles, labels = axes[0].get_legend_handles_labels()
+        fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False, fontsize=8.5,
+                   labelcolor=theme["ink2"])  # fmt: skip
         title(
             fig,
             theme,
             "How much of the available gain a wrong model captures",
             "Exact values; the available gain is the oracle's, which knows the opponent exactly",
-            top=0.84,
+            top=0.88,
         )
+        fig.subplots_adjust(bottom=0.27)
         return fig
 
     def sessions(theme):
