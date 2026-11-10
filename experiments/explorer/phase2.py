@@ -39,6 +39,7 @@ DUPLICATE = "experiments/results/phase2/duplicate/duplicate.json"
 DUPLICATE_POSTHOC = "experiments/results/phase2/duplicate/duplicate_posthoc.json"
 RANDOMNESS = "experiments/results/phase2/randomness/randomness.json"
 MISSPEC = "experiments/results/phase2/misspec/misspec.json"
+LBR = "experiments/results/phase2/lbr/lbr.json"
 SOURCES = (
     CFR,
     DEEP,
@@ -2205,6 +2206,7 @@ def build(load) -> dict[str, Any]:
     dup_ph = load(DUPLICATE_POSTHOC)
     rnd = load(RANDOMNESS)
     mis = load(MISSPEC)
+    lbr_r = load(LBR)
     head = overview(cfr, deep, ex, av, dup, rnd, mis)
     return {
         "id": "phase2",
@@ -2225,6 +2227,7 @@ def build(load) -> dict[str, Any]:
                 (DUPLICATE_POSTHOC, dup_ph),
                 (RANDOMNESS, rnd),
                 (MISSPEC, mis),
+                (LBR, lbr_r),
             )
         ],
         "sections": [
@@ -2244,5 +2247,121 @@ def build(load) -> dict[str, Any]:
             duplicate_posthoc(dup_ph),
             randomness(rnd),
             misspec(mis),
+            lbr(lbr_r),
         ],
     }
+
+
+LBR_DEEP = (
+    ("check_fold", "Check or fold"),
+    ("bot_nit", "Bot: nit"),
+    ("bot_tag", "Bot: tight-aggressive"),
+    ("bot_lag", "Bot: loose-aggressive"),
+    ("pot_odds", "Pot odds (play page baseline)"),
+    ("uniform_random", "Uniform random"),
+    ("bot_maniac", "Bot: maniac"),
+    ("bot_calling_station", "Bot: calling station"),
+    ("check_call", "Always check or call"),
+)
+LBR_SHALLOW = (
+    ("pf_nash", "Push/fold Nash"),
+    ("pf_push50_call20", "Push 50%, call 20%"),
+    ("pf_push15_call60", "Push 15%, call 60%"),
+    ("pf_any_two", "Push and call any two"),
+)
+
+
+def _lbr_triple(q: dict[str, float], scale: float = 1.0) -> list[float]:
+    return [q["mean"] / scale, q["lo"] / scale, q["hi"] / scale]
+
+
+def lbr(r: dict[str, Any]) -> dict[str, Any]:
+    rows, pred = r["rows"], r.get("predictions", {})
+
+    def held(*keys: str) -> str:
+        return "; ".join(f"{k} {'holds' if pred[k]['passed'] else 'does not hold'}" for k in keys)
+
+    deep = dots_chart(
+        "What local best response wins at 100 bb (a lower bound on exploitability)",
+        [lab for _, lab in LBR_DEEP],
+        axis("Big blinds per hand won by LBR (mean over duplicate deals, 95% CI)", fmt="num"),
+        [
+            dot_series(
+                "LBR, fold / call / pot / all-in",
+                "c1",
+                [_lbr_triple(rows[k]["lbr"], 1000.0) for k, _ in LBR_DEEP],
+            )
+        ],
+        subtitle="Heads-up, 100 bb stacks, each strategy against LBR over "
+        f"{rows['pot_odds']['deals']:,} duplicate deals. Larger is more exploitable; the true "
+        "exploitability is at least this large.",
+    )
+    shallow = dots_chart(
+        "At 10 bb push/fold, LBR against the exact exploitability",
+        [lab for _, lab in LBR_SHALLOW],
+        axis("mbb per hand", fmt="num"),
+        [
+            dot_series(
+                "LBR, fold / all-in", "c1", [_lbr_triple(rows[k]["lbr"]) for k, _ in LBR_SHALLOW]
+            ),
+            dot_series(
+                "Exact (P3.1, closed form)", "c2", [[rows[k]["exact"]] for k, _ in LBR_SHALLOW]
+            ),
+        ],
+        subtitle="In the push/fold game LBR's two actions are the whole game, so LBR is a best "
+        "response up to the matchup table's card removal: it should land on the exact value.",
+    )
+    abl = [k for k in rows if k.startswith(("norange_", "exactflop_"))]
+    ablation = dots_chart(
+        "Ablations, paired with the main rows' deals",
+        [
+            ("No range tracking: " if k.startswith("norange_") else "All flop runouts: ")
+            + dict(LBR_DEEP).get(rows[k]["opponent"], rows[k]["opponent"])
+            for k in abl
+        ],
+        axis("Change in LBR's win, big blinds per hand (95% CI)", fmt="signed"),
+        [
+            dot_series(
+                "Ablation minus main row",
+                "c3",
+                [_lbr_triple(rows[k]["paired_difference"], 1000.0) for k in abl],
+            )
+        ],
+        subtitle="Same deals as the first deals of the main row. Without range tracking LBR "
+        "treats every hand as equally likely all the way to the river.",
+    )
+    fb = rows["pf_nash_fallback_fcpa"]["lbr"]
+    nash = rows["pf_nash"]["lbr"]
+    check_fold = rows["check_fold"]["lbr"]["mean"]
+    takeaways = [
+        f"Checks with known answers: against check/fold LBR wins {check_fold:,.0f} mbb/hand, "
+        "exactly the blinds, which is all a best response can win from it. In the push/fold "
+        f"game LBR lands on P3.1's exact values, and against push/fold Nash it wins "
+        f"{nash['mean']:+.0f} mbb/hand [{nash['lo']:+.0f}, {nash['hi']:+.0f}]."
+        + (f" ({held('C1', 'C2', 'C3')})" if pred else ""),
+        "Every deep strategy here loses at least "
+        f"{min(rows[k]['lbr']['lo'] for k, _ in LBR_DEEP if k != 'check_fold') / 1000:.1f} "
+        "big blinds per hand to LBR at the low end of its interval: none of them is close to "
+        "unexploitable. The play page's advisor baseline (pot odds) loses "
+        f"{rows['pot_odds']['lbr']['mean'] / 1000:.1f} bb/hand.",
+        f"Push/fold Nash with a pot-odds fallback, when LBR may also limp or bet the pot: "
+        f"{fb['mean']:+,.0f} mbb/hand [{fb['lo']:+,.0f}, {fb['hi']:+,.0f}]. The equilibrium "
+        "covers only pushes and folds; what the fallback does off that tree decides the rest.",
+        "LBR is a lower bound. A small value says only that this one-step look-ahead with four "
+        "actions found little; a large one proves the strategy is at least that exploitable.",
+    ]
+    return section(
+        "lbr",
+        "Local best response: how exploitable are the hold'em strategies? (P2.8b)",
+        "A best response to a hold'em strategy is out of reach, so this measures a lower bound: "
+        "local best response tracks the opponent's range over all 1,326 hands by Bayes' rule, "
+        "then picks fold, call, a pot-size bet or all-in by a one-step look-ahead that assumes "
+        "the hand is checked down. It is the yardstick for the exploit engines that follow.",
+        sources=[LBR],
+        views={"": view(deep, shallow, ablation)},
+        takeaways=takeaways,
+        method="Heads-up no-limit, blinds 50/100, stacks reset every hand. Each deal is played "
+        "twice with the seats swapped; an all-in before the river is scored at its expectation. "
+        "Flop equities use 300 of the 1,176 runouts. Code: poker_lab/exploit/lbr, experiment: "
+        "experiments/phase2_lbr.py.",
+    )
