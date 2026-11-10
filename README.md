@@ -9,7 +9,8 @@ will do next?** And once you know, **how much can you win by exploiting it, and 
 * **Phase 2** builds the game-theoretic baseline and answers the second question exactly in
   small games. It solves Kuhn and Leduc poker with CFR variants, Deep CFR and an LP. It then
   models Leduc bots from what a player can see and exploits them with best, restricted Nash
-  and data-biased responses.
+  and data-biased responses, then tests that against bots the model cannot describe or that
+  adapt.
 * **Phase 3** carries both questions to hold'em, starting with heads-up push/fold. It solves
   that game exactly, models push/fold opponents and ranks exploits with posterior intervals and
   model-fit checks, and imports real hand histories in the PHH format. It then tests the
@@ -195,20 +196,22 @@ Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both 
 that every strategy is evaluated **exactly**: exploitability comes from a full best response, never
 from sampled play. Exploitability is NashConv / 2 in chips per hand (OpenSpiel's convention), so 0
 means an exact equilibrium and the uniform random policy scores 0.46 in Kuhn and 2.37 in Leduc.
-Reproduce with `python -m experiments.run_phase2 --seed 2026` (~1 h 50 min on 16 logical
-processors, the sum of the steps' recorded times, 72 min of it the randomness step and 24 min the
-duplicate step). The CFR, Deep CFR and
+Reproduce with `python -m experiments.run_phase2 --seed 2026` (~2 h 40 min on 16 logical
+processors, the sum of the steps' recorded times, 72 min of it the randomness step, 48 min the
+misspecification step and 24 min the duplicate step). The CFR, Deep CFR and
 exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A single `run_phase2` at
 commit `348c4d5` reproduced those numbers exactly; only wall-clock timings differ. AIVAT (P2.11,
 added after Phase 3) comes from its pre-registered run at `695cb26`, and duplicate dealing for n
-players (P2.11b) from its own at `0fb6e53`, and the split of the copies' shortfall (P2.11c) from its
-own at `2b02bed`. Full tables:
+players (P2.11b) from its own at `0fb6e53`, the split of the copies' shortfall (P2.11c) from its
+own at `2b02bed`, and opponents outside the model's family (P2.12) from its own at `8601332`. Full
+tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
 [`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
 [`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md),
 [`duplicate_summary.md`](experiments/results/phase2/duplicate/duplicate_summary.md),
-[`randomness_summary.md`](experiments/results/phase2/randomness/randomness_summary.md).
+[`randomness_summary.md`](experiments/results/phase2/randomness/randomness_summary.md),
+[`misspec_summary.md`](experiments/results/phase2/misspec/misspec_summary.md).
 
 **Checked against independent references first.** The best response reproduces the published
 uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
@@ -416,13 +419,45 @@ wide on purpose, so that is a replication, not a strong test.
 
 A live table cannot deal the same cards twice, so this is a tool for simulated evaluations only.
 
+### 6. When the model is wrong (P2.12)
+
+Section 3's bots all come from the family the model fits. This experiment uses the same 150 bots
+with rules the family cannot express: ignoring the board, playing by street or by seat, raising only
+when strong, noise at every decision, three quarters equilibrium, and the equilibrium itself. Others
+model the hero and adapt, either inside the family or freely over the whole strategy. How far each
+opponent lies from the family is measured before any hero plays: the KL divergence to its closest
+family member, from the hero's view. Even the closest one would be told apart in about 120 hands. A
+control repeats section 3's numbers exactly. Of 23 pre-registered predictions, 22 hold; their
+thresholds came from two development seeds.
+
+* **Against fixed bots outside the family, best response keeps 64–83% of the available gain**
+  (97% for a quarter dose of the street rule), and more data would not help. With unlimited hands,
+  best response to the closest family member keeps the same share to within about 0.7 points. It still
+  beats equilibrium play against every kind, and loses to it on at most 14% of bots (the
+  board-blind kind). Restricted Nash at p = 0.9 keeps 92–102% of best response's gain at 31–54% of
+  its exploitability, as inside the family. How far a bot is from the family predicts the cost only
+  loosely (rank correlation 0.37).
+* **Bots that adapt freely beat the heroes that refit.** A bot that adapts inside the family
+  leaves a refitting hero 92–95% of the gain. A bot that steps its whole strategy towards a best
+  response to the hero (fictitious play) puts refit best response and restricted Nash at p = 0.9
+  behind equilibrium play in the second half of a 2,000-hand session. Against the faster one, over
+  the whole session, they do worse than equilibrium play on 97–100% of bots. Restricted Nash at p = 0.5 breaks about even
+  (+0.002), and a hero that reads the bot's strategy would gain +0.98.
+* **One prediction failed.** Against the faster free adapter, restricted Nash at p = 0.9 was
+  predicted to beat best response by at most 0.02. Its gain over best response came out at +0.009
+  [−0.005, +0.024], so the interval's upper end is past the bound.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/misspec/misspec_sessions-dark.png">
+  <img alt="Gain over the equilibrium hero in 2,000-hand sessions for seven heroes against five kinds of bot: all positive against fixed and family-adapting bots, most negative against bots that adapt freely, while the clairvoyant reference gains 0.78 and 0.98" src="experiments/results/phase2/misspec/misspec_sessions.png">
+</picture>
+
 **What Phase 2 does not show.**
 
-* The bots follow the same five-parameter family the model fits, so apart from the card-blind
-  control the model is correctly specified. The gains are an upper bound for opponents who do
-  not play by the model's rules.
+* Section 6 tests a few rules outside the bot family and two ways of adapting, in Leduc only. Other
+  departures from the model, and a hero whose model can grow or that detects change, are untested.
 * The bots are very exploitable (1.0 chip per hand on average, against 2.37 for uniform random
-  play) and they do not adapt when exploited.
+  play), and only section 6's adaptive bots react to being exploited.
 * Apart from section 5's sampled ratios, values are exact expectations. At a real table a strategy
   is judged from sampled results with large variance. Duplicate dealing (`engine/duplicate.py`) and
   AIVAT (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
@@ -969,8 +1004,8 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 
 Next tasks:
 
-* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; Leduc opponents that adapt
-  or play outside the bot family.
+* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; a Leduc hero whose model can
+  grow, or that notices an opponent adapting (section 6's open questions).
 * **Phase 4.** A card detector with calibrated confidence, an action-entry app that records
   through the sealed store, a review screen for capture conflicts, and a consent and
   data-handling policy for recording other players.

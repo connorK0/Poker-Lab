@@ -2131,8 +2131,8 @@ def misspec(r: dict[str, Any]) -> dict[str, Any]:
         f"Against the six opponents outside the family, best response keeps "
         f"{min(rule_caps):.0%} to {max(rule_caps):.0%} ({held('C1')}). More data would not close "
         "the gap: best response to the closest family bot, the limit of infinite data, keeps the "
-        f"same share to within {limit_gap * 100:.1f} points. The cost is the model's shape, not "
-        "the sample.",
+        f"same share to within about {limit_gap * 100:.1f} points. The cost is the model's shape, "
+        "not the sample.",
         f"It still beats equilibrium play against every one of them ({held('C3')}), and does "
         f"worse than equilibrium on at most "
         f"{max(st[k]['sizes'][top]['br']['loses']['share'] for k in MIS_OFF):.0%} of bots "

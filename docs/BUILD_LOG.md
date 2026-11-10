@@ -77,6 +77,7 @@ $B(a,b)$ the beta function.
   * Phase 2, completed after Phase 3 (continued)
   * [Step 41: Duplicate dealing at more than two seats](#step-41-duplicate-dealing-at-more-than-two-seats-p211b)
   * [Step 42: Where six copies' shortfall comes from](#step-42-where-six-copies-shortfall-comes-from-p211c)
+  * [Step 43: Exploitation when the model is wrong](#step-43-exploitation-when-the-model-is-wrong-p212)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -6176,6 +6177,344 @@ that gives 7.81×, for other bots.
   `off_mixed`. Its VPIP is still 0.410; what falls is the spread of its results. Caught reading the
   built page, before it was committed.
 
+## Step 43: Exploitation when the model is wrong (P2.12)
+
+**The question.** Steps 21 and 22 built the Leduc exploitation results: fit five parameters to a bot
+from the hands it shows, then best-respond, play a restricted Nash response, or a data-biased
+response. Every bot there came from the same five-parameter family the model fits. That is the
+kindest case for a model, and the conclusions might be artefacts of it. This step builds opponents
+the family cannot express, and opponents that model the hero and change, then measures what each
+hero keeps. The code is `poker_lab/games/leduc_misspec.py` (opponents, the projection, adaptive
+bots, sessions) and `experiments/phase2_misspec.py` (the experiment). Nothing under `poker_lab/bots`,
+`poker_lab/engine` or the P2.7 code is edited, and a control repeats P2.7's numbers exactly.
+
+**1. How wrong is a model? Projecting onto the family.**
+
+A model family $\{p_\theta\}$ that does not contain the truth $q$ still has a best member. Maximum
+likelihood does not converge to "the truth"; it converges to the *pseudo-true* parameter
+
+$$\theta^* = \arg\max_\theta \operatorname{E}_q[\log p_\theta(X)] = \arg\min_\theta
+\operatorname{KL}(q \,\|\, p_\theta),$$
+
+because $\operatorname{KL}(q\|p_\theta) = \operatorname{E}_q[\log q(X)] - \operatorname{E}_q[\log
+p_\theta(X)]$ and the first term does not depend on $\theta$ (White, 1982). So the KL divergence at
+$\theta^*$ is the natural measure of misspecification: the expected log-likelihood per observation
+that the best family member loses to the truth.
+
+Here an observation $X$ is one hand *as the hero sees it*: the public actions, and the bot's card only
+if the hand reaches showdown. A folded hand's likelihood therefore averages over the cards the bot
+could hold:
+
+$$p_\theta(x) = \sum_c P(c \mid \text{hero's card, board}) \prod_{t} \pi_\theta(a_t \mid c, h_t).$$
+
+Leduc is small, so the expectation over $q$ is exact. `simulate_views` is not used for it: the
+projection enumerates every deal and every action sequence, weights each by its probability under
+the true bot and the equilibrium hero, and groups them into the hero's observation classes.
+`FamilyProjection.closest` then maximises the expected log-likelihood over the five rates from two
+starting points, and `measure` reports $\theta^*$, the KL in nats per hand, and a distance in
+actions (section 2).
+
+*Hands to evidence.* With $n$ independent hands the log-likelihood ratio of the truth against
+$\theta^*$ has mean $n \cdot \operatorname{KL}$. It reaches $\log 20$, 20:1 odds, on average at
+
+$$n_{20} = \frac{\log 20}{\operatorname{KL}}.$$
+
+This is an optimistic bound, for two reasons. It assumes the alternative is known exactly; a real
+test has to search over alternatives and pays for it. And it is a mean: the ratio's spread around
+$n \cdot \operatorname{KL}$ is large for small $n$. A kind needing 7 hands by this count is clearly
+outside the family. One needing 120 may in practice look like a family member for many hundreds.
+
+**2. A distance in actions: reach-weighted total variation.**
+
+KL counts surprise in nats, which is hard to picture. The second measure asks how differently the
+bot acts. At an information set $I$ the total variation between two action distributions is
+$\tfrac12 \sum_a |\pi(a\mid I) - \pi^*(a\mid I)|$, the probability mass that would have to move.
+Averaged with the weight $w(I)$, the probability that play reaches $I$:
+
+$$\operatorname{TV} = \frac{\sum_I w(I)\, \tfrac12 \sum_a |\pi(a\mid I) - \pi^*(a\mid I)|}{\sum_I w(I)}.$$
+
+An infoset nobody reaches cannot matter, and the weighting says so.
+
+**3. The opponents.**
+
+A family bot gives every information set in a hand-strength bucket the same aggression $a$ and fold
+rate $f$. It ignores its seat, the street and how many bets it faces. A rule bot starts from a family
+bot's five parameters and gives each information set its own $a$ and $f$:
+
+* `board_blind` buckets by its own rank on both streets, ignoring the board: a pair of jacks plays as
+  a weak hand, an unpaired king as a strong one.
+* `street` is passive and sticky on street 1 ($a/4$, $f/2$), aggressive and honest on street 2
+  ($1-(1-a)^2$, $1-(1-f)^2$). `slight_street` mixes a quarter of it with the family bot at every
+  information set: the same error at a lower dose.
+* `positional`, with no bet to face, opens tight in seat 0 ($a/2$) and stabs in seat 1 ($1-(1-a)^3$).
+* `honest_raiser` bets as usual, raises only with a strong hand, and folds more to a raise
+  ($1-(1-f)^3$).
+* `noisy` draws each information set's action probabilities from a Dirichlet distribution with
+  concentration 5 around the family bot's.
+* `near_eq` is three quarters equilibrium and a quarter family bot at every information set: an
+  opponent with little to give.
+* `equilibrium` is the equilibrium itself. Nothing can be won from it, so it shows only what a wrong
+  model costs.
+
+These were the distances before the real run (development seeds, means of two seeds; median bot in
+brackets). Seed 2026 reproduced them to within 0.006 nats:
+
+| Kind | KL (nats/hand) | Hands to 20:1 | TV per decision |
+|---|---|---|---|
+| Family (control) | 0 | never | 0 |
+| A quarter of `street` | 0.025 | 118 (125) | 0.057 |
+| Ignores the board | 0.075 | 40 (47) | 0.097 |
+| Noise at every decision | 0.112 | 27 (27) | 0.124 |
+| Raises only when strong | 0.115 | 26 (35) | 0.091 |
+| 75% equilibrium | 0.160 | 19 (19) | 0.163 |
+| Aggression depends on seat | 0.196 | 15 (15) | 0.150 |
+| The equilibrium | 0.295 | 10 (10) | 0.207 |
+| Passive, then aggressive | 0.403 | 7 (7) | 0.232 |
+
+No kind is barely distinguishable by this count. The closest, the quarter dose, needs about 120
+hands even under the optimistic bound. The sessions in section 6 last 2,000 hands, and the static
+fits use up to 3,000.
+
+Each kind starts from the same P2.7 bot (same seeds, same parameters), so the control and the rule
+kinds differ only in the rule. The control is the P2.7 bot itself and repeats P2.7's numbers to the
+last digit (check A1).
+
+**4. The limit of infinite data.**
+
+With unlimited hands, the fitted parameters converge to $\theta^*$. So best response to
+$\theta^*$, called *limit* here, is the best a hero with this model can ever do against that bot.
+That splits the shortfall from the clairvoyant oracle in two:
+
+$$\underbrace{G_{\text{oracle}} - G_{\text{fit}}(n)}_{\text{shortfall}} =
+\underbrace{G_{\text{oracle}} - G_{\text{limit}}}_{\text{bias of the model}} +
+\underbrace{G_{\text{limit}} - G_{\text{fit}}(n)}_{\text{too little data}}.$$
+
+Inside the family the bias term is zero and only data matters. Outside it, the first term stays
+whatever $n$ is.
+
+**5. Bots that adapt.**
+
+An adaptive bot plays sessions of 2,000 hands. Every 50 hands it fits the same five-parameter model
+to the hero from its last `window` hands, with a prior centred on the equilibrium's closest family
+member worth 10 hands, and moves.
+
+* *Inside the family* (`family_slow`, `family_fast`): it computes its best response to that model,
+  reads off that response's five family rates, and steps its own rates a fraction `speed` of the way
+  there. It never leaves the family.
+* *Freely* (`tabular_slow`, `tabular_fast`): it steps towards its full best response, a strategy with
+  a separate probability at each of the 936 infosets. Mixing two behaviour strategies infoset by
+  infoset is not the same as mixing the strategies, because a probability deep in the tree depends on
+  the path. The fix is the *realization plan*: $x(\sigma)$ is the product of a player's own action
+  probabilities along the sequence $\sigma$. Plans are linear in the mixture, so
+  $x' = (1 - s)\,x + s\,x_{\text{BR}}$ is exactly the strategy "play $x$ with probability $1-s$, else
+  $x_{\text{BR}}$", and by Kuhn's theorem the behaviour strategy $\pi'(a \mid I) = x'(\sigma a) /
+  x'(\sigma)$ plays the same. Stepping a fraction towards a best response to the opponent's empirical
+  play is fictitious play with a fixed step.
+
+**6. Sessions and how they are scored.**
+
+Eight heroes meet each adaptive bot, each in its own session against a fresh copy of the bot:
+
+* *equilibrium*, the reference every gain is measured from;
+* *fit once*: equilibrium for 300 hands, then a fit and a best response (or restricted Nash, $p =
+  0.9$) kept to the end, which is the static P2.7 hero dropped into a moving game;
+* *refit*: a new fit every 100 hands on all hands so far, from the first hand (the population
+  model's response before any hand), with best response, restricted Nash at $p = 0.9$, or at $p =
+  0.5$;
+* *refit on recent hands*: best response to a fit on the last 300 hands only;
+* the *clairvoyant*: best response to the bot's actual current strategy. It reads the bot, so it is a
+  reference, not a hero anyone could build.
+
+The hands are simulated only to produce what each side learns from: the actions, and a card only at
+showdown. A block of 50 hands is scored by the exact seat-averaged value of the two strategies in
+force during it (`head_to_head`), so the luck of the cards does not enter the score, and the path
+the adaptation took does. A session's value is the mean of its 40 block values.
+
+Each block's random numbers come from a stream keyed by (seed, bot, kind, block), and every hero
+uses the same streams. That is common random numbers at the start. Once two heroes play
+differently, the same numbers deal different hands, so the numbers are only partly common.
+
+*Gain*, *capture*, *loses*, *exploitability*: as in Step 22, with "loses" a Wilson interval on the
+share of 150 bots where the hero's value is below the equilibrium hero's against the same bot.
+
+**Results.** Seed 2026, commit `8601332`, clean tree: 5 seeds, 150 bots per kind, 9 static kinds and
+5 session kinds, every value exact. Gains are chips per hand above equilibrium play, means over the
+5 seeds.
+
+*Opponents that do not adapt, after 3,000 hands:*
+
+| Kind | Oracle gain | BR gain | BR capture | Limit capture | RNR .9 gain | DBR gain | BR loses | Expl. BR / RNR .9 |
+|---|---|---|---|---|---|---|---|---|
+| Family (control) | +0.738 | +0.736 | 100% | 100% | +0.705 | +0.483 | 0% | 1.60 / 0.69 |
+| A quarter of `street` | +0.740 | +0.715 | 97% | 97% | +0.682 | +0.467 | 0% | 1.49 / 0.66 |
+| Ignores the board | +0.926 | +0.750 | 81% | 81% | +0.750 | +0.522 | 14% | 1.23 / 0.56 |
+| Noise at every decision | +0.881 | +0.731 | 83% | 84% | +0.702 | +0.501 | 0% | 1.64 / 0.71 |
+| Raises only when strong | +0.897 | +0.641 | 72% | 72% | +0.589 | +0.371 | 0% | 1.88 / 0.78 |
+| 75% equilibrium | +0.239 | +0.156 | 65% | 66% | +0.159 | +0.100 | 0% | 1.47 / 0.47 |
+| Aggression depends on seat | +0.840 | +0.674 | 80% | 80% | +0.654 | +0.449 | 0% | 1.42 / 0.65 |
+| Passive, then aggressive | +0.825 | +0.526 | 64% | 64% | +0.523 | +0.417 | 0% | 1.38 / 0.74 |
+| The equilibrium | 0 | −0.026 | n/a | n/a | −0.033 | −0.031 | 100% | 1.51 / 0.47 |
+
+Capture is mean gain over mean oracle gain. *Limit* is best response to the closest family bot.
+*Loses* is the share of bots on which the hero does worse than equilibrium play. Best response's gain
+after 10, 100 and 3,000 hands: against the board-blind bot +0.664, +0.719, +0.750; against the street
+bot +0.431, +0.515, +0.526; against the near-equilibrium bot +0.094, +0.120, +0.156. Best response to
+the population model, with no hands, gains +0.734, +0.437 and +0.160 against those three. The rank
+correlation of KL with best response's shortfall, over all off-family bots, is 0.37.
+
+*Sessions of 2,000 hands*, gain over the equilibrium hero (whole session; share of bots below
+equilibrium play in brackets):
+
+| Hero | Fixed bot | Family, slow | Family, fast | Free, slow | Free, fast |
+|---|---|---|---|---|---|
+| Fit once, BR | +0.611 (0%) | +0.308 (17%) | +0.504 (1%) | −0.184 (98%) | −0.277 (99%) |
+| Fit once, RNR .9 | +0.588 (0%) | +0.285 (9%) | +0.448 (0%) | −0.194 (98%) | −0.257 (100%) |
+| Refit, BR | +0.721 (0%) | +0.583 (0%) | +0.625 (0%) | −0.011 (47%) | −0.131 (97%) |
+| Refit, RNR .9 | +0.691 (0%) | +0.519 (0%) | +0.523 (0%) | −0.027 (63%) | −0.122 (100%) |
+| Refit, RNR .5 | +0.486 (0%) | +0.285 (0%) | +0.253 (0%) | +0.078 (7%) | +0.002 (39%) |
+| Refit on last 300, BR | +0.714 (0%) | +0.608 (0%) | +0.624 (0%) | +0.079 (21%) | −0.105 (97%) |
+| Clairvoyant | +0.738 | +0.633 | +0.656 | +0.781 | +0.983 |
+| *Equilibrium's own value* | +0.277 | +0.220 | +0.214 | +0.111 | +0.080 |
+
+Against the free adapters the second half is worse than the whole: refit best response −0.170 and
+−0.151, restricted Nash $p = 0.9$ −0.165 and −0.118, restricted Nash $p = 0.5$ −0.006 and −0.009.
+The bots moved 0.26 to 0.36 in total variation per decision. Against the equilibrium hero, the free
+adapters ended 0.71 and 0.76 nats per hand from the family.
+
+**Predictions: all 5 checks and 22 of 23 predictions hold; D5 fails.**
+
+| Prediction | Threshold | Seed 2026 |
+|---|---|---|
+| A1, A2: the control repeats P2.7 | max difference ≤ 1e-9, on 150 bots | 0, on 150 |
+| A3: control KL | ≤ 1e-6 | 7.5e-14 |
+| A4: equilibrium hero never negative | ≥ −1e-6 | lowest 0 (the equilibrium kind) |
+| A5: control capture | ≥ 97% | 99.7% |
+| B1: KL-implied hands to 20:1 | ≤ 150 | 8 to 121 |
+| B2: quarter dose KL, upper | ≤ 0.04 | 0.025 |
+| C1: BR capture, off-family | 60% to 90% | 64% to 83% |
+| C2: quarter dose capture | 92% to 99% | 96.6% |
+| C3: BR gain lower bound, off-family | ≥ 0.1 | 0.154 to 0.708 |
+| C4: BR loses, off-family | ≤ 20% | 0% to 14% |
+| C5a, C5b: equilibrium opponent | BR upper ≤ −0.01; loses ≥ 95% | −0.024; 100% |
+| C6: Spearman, KL against shortfall | 0.2 to 0.55 | 0.37 |
+| C7: RNR .9's share of BR's gain | ≥ 87% | 92% to 102% |
+| C8: RNR .9's exploitability over BR's | ≤ 62% | 31% to 54% |
+| C9: DBR minus BR, upper | ≤ −0.03 | −0.055 to −0.249 |
+| C10: population minus 10-hand BR, lower | ≥ 0 | 0.042, 0.037 |
+| C11: hand-reading minus card-blind, lower | ≥ 0 | 0.033 to 0.578 |
+| D1: refit BR's share of the clairvoyant, family adapters | ≥ 85% | 92%, 95% |
+| D2: refit minus fit once, lower | ≥ 0 | 0.109 to 0.241 |
+| D3: free adapters, second half, upper | ≤ 0 | −0.107 to −0.152 |
+| D4: fast free adapter, share below equilibrium | ≥ 90% | 97% to 100% |
+| **D5: RNR .9 minus BR, free adapters, upper** | **≤ 0.02** | **−0.008, +0.024: fails** |
+| D6: RNR .5 against the fast free adapter, interval | within ±0.02 | [−0.002, +0.007] |
+| D7: clairvoyant, free adapters | ≥ 0.7 | 0.78, 0.98 |
+| D8: equilibrium's value ratio, upper | ≤ 0.5 | upper ends below 0.5 (means 0.40, 0.29) |
+| D9: recent minus refit, slow free adapter, lower | ≥ 0 | 0.080 |
+
+*D5.* The claim was that restricted Nash at $p = 0.9$ does not protect against a free adapter: it
+should do no better than best response by more than 0.02. Against the fast free adapter its gain
+over best response is +0.009 [−0.005, +0.024]. The upper end passes the bound. In development it was
++0.013 at most, so the margin was 0.007, too thin for a third seed. The substance rests on other
+numbers: restricted Nash $p = 0.9$ still does worse than equilibrium play on 100% of those bots,
+ending at −0.122. But the prediction as written failed, and a gain of up to 0.024 over best response
+is not excluded.
+
+The checks were known in advance: P2.7's committed numbers fix A1, A2 and A5, and A3 and A4 follow
+from the construction and a theorem. The other 23 thresholds came from seeds 98 and 99, and most
+numbers moved by about 0.01 between seeds. So passing them shows that the development picture repeats
+on a third seed, not that it was hard to predict.
+
+**How to read these numbers.**
+
+* *A wrong model's cost is bias, not data.* Against every off-family kind, best response after 3,000
+  hands keeps the same share as best response to the closest family bot, to within about 0.7 points.
+  More hands would not help; a richer model might.
+* *A wrong model still wins here.* Apart from the near-equilibrium bot, these bots are exploitable by
+  1.03 to 1.32 chips per hand. So even a model that misreads them finds nearly two thirds or more of the gain,
+  and beats equilibrium play on at least 86% of bots. Against the near-equilibrium bot, with little to
+  give (0.31), the share drops to 65%. There, as against the board-blind bot, a 10-hand fit gains less
+  than best response to the population prior (C10); against the positional, honest-raiser and
+  noisy bots it gains more.
+* *KL is a weak guide to the cost.* The street rule is the easiest to detect (8 hands on seed 2026) and the most
+  costly (64% kept), but the near-equilibrium bot costs almost as much at 40% of its KL, and the
+  board-blind bot needs 40 hands to detect and keeps 81%, about as much as the positional bot that
+  needs 15. The rank correlation is 0.37.
+* *Phase 2's orderings hold off the family.* Restricted Nash $p = 0.9$ keeps 92% to 102% of best
+  response's gain at a third to a half of its exploitability. The data-biased response gains less.
+  Reading the cards shown at showdown beats ignoring them.
+* *Adapting is what breaks it.* A bot that adapts inside the family is a moving target the model can
+  still describe, and a hero that refits keeps 92% to 95% of what is available. A bot that adapts
+  freely puts every best-response hero behind equilibrium play, on average, in the second half of
+  a session, at both speeds, and restricted Nash at $p = 0.9$ is not enough protection. At $p = 0.5$ the hero
+  breaks about even: what the restriction buys here is not losing, not winning.
+* *What this is not.* Leduc only, four rule kinds plus three others, two adaptation schemes, one
+  hero model. Nothing here is about people.
+
+**Run times, awake only** (C.3).
+
+* The real run took 2,883 s, about 48 minutes, on 10 workers (`--workers 10`; the
+  config's default, recorded in the results, is 12): 648 s for the static part and 2,234 s
+  for the sessions, started 20:19:19 on 2026-11-09 by the shell's clock. The memory sampler wrote 96
+  samples, never more than 31 s apart, so the machine did not pause. The System log shows a
+  Kernel-Power 506 at 20:51:40 and no 507 before the run ended, while sampling went on.
+* It started on battery at 43% with 1.2 GB free, and was plugged in at 20:35 (Kernel-Power 105).
+  Free memory fell to 0.02 GB at 20:22 and averaged 1.39 GB. This can change only the run time.
+* The development runs took 3,033 and 3,000 s on 10 workers.
+* Test suite: 604 tests took 229 s before the edits that followed the review. The run after them took
+  5,001 s, including a sleep from 19:08:53 to 20:00:14 (Kernel-Power 506 and 507). That leaves about
+  1,920 s awake, and the slowdown was not explained.
+
+**To reproduce.**
+
+* `python -m experiments.phase2_misspec --seed 2026` or
+  `python -m experiments.run_phase2 --seed 2026 --only misspec`; smoke test with `--quick`.
+* Results: `experiments/results/phase2/misspec/` (`misspec.json`, `misspec_summary.md`, two figures).
+  Explorer: section `misspecification` in Phase 2.
+* Suite: `python -m pytest` (604 tests).
+
+**What was left.**
+
+* A hero whose model can grow: a tabular or per-street model, used once the five-parameter fit is
+  rejected (Step 30's fit check, applied here).
+* A stop-loss or change detector for a hero facing a free adapter. Restricted Nash $p = 0.5$ stops the
+  loss, but by giving up the gain from the first hand.
+* Other adaptation rules: a bot that best-responds outright, or one that adapts to other features
+  of the hero.
+
+**What it means.** The Phase 2 exploitation results hold up better than feared against fixed opponents
+the model cannot describe. Best response loses a share of the gain, between about a sixth and a third here (3% for
+the quarter dose),
+and that share does not shrink with more data. But it still wins clearly, and its ordering against
+restricted Nash and the data-biased response stays the same. The real weakness is opponents who move.
+When the opponent adapts in ways the model cannot follow, a hero that keeps best-responding to its
+model is exploited in turn: in the second half of a session it does worse than equilibrium play
+on average, and against the faster adapter it ends the session below equilibrium play on 97% to
+100% of bots. The general lesson: a model's error matters most when it is about how the
+opponent reacts to you, not about how the opponent plays.
+
+**Mistakes.**
+
+* The first development design was changed after seeing seed 98: the restricted Nash $p = 0.5$ hero
+  and the quarter-dose kind were added. Both came before the plan was written, and seed 98 was run
+  again on the final code.
+* The review of the plan found 16 problems, fixed before the commit. Among them: the
+  equilibrium-opponent prediction could not fail (no strategy gains against an equilibrium); the KL
+  correlation prediction was one-sided; D5 tested the mean only; two claims went beyond their numbers;
+  checks were counted as predictions; and restricted Nash, the data-biased response, the population
+  prior and exploitability had no prediction at all. C7 to C10 and D1 were added then, with thresholds
+  from the development means only, because those runs predate the fields.
+* D5's bound was set with a margin of 0.007 on two seeds, and the third seed went past it.
+* A script checking that every prediction path resolves had no `__main__` guard and broke the worker
+  pool on Windows. Adding the guard fixed it.
+* The real run started on battery with 1.2 GB free.
+* The explorer's first text said the hand-reading model beats the card-blind one "by at least" the
+  smallest *mean* difference, while the smallest lower bound is lower. It was caught reading the text
+  before the commit.
+* The `misspec_by_hands` figure first had a wide gap between its two panels: its legend hung under the
+  left panel, and `tight_layout` counted it as part of that panel. It was redrawn from the committed
+  results with a legend under both panels, in a commit of its own; no number changed.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -6216,10 +6555,10 @@ that gives 7.81×, for other bots.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 543 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+suite has 604 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
 runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
 Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
-in varying machine states (Step 41). `tests/conftest.py` starts the tests marked `long` first, so
+in varying machine states (Step 41); 604 took 214 to 229 s (Step 43). `tests/conftest.py` starts the tests marked `long` first, so
 the longest test does not start late and finish last (Step 40). `-m "not slow"` skips the slowest
 tests, and `-n 0` runs everything in one process, for a single file or for `--pdb`. The explorer's
 browser behavior has its own check (`python -m experiments.explorer.browser_check`, Step 25), since
@@ -6425,6 +6764,10 @@ Invert once, and look at every figure before committing it.
 | One pooled variance per lineup, proposed by a review as more efficient, took nits' cancelled share on a development seed from 26.8% to 0.8% | trying it on the development seeds | each condition keeps its own variance: a rare big pot then cancels | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
 | A test compared results with `==`, and `NaN != NaN` for a stat with no opportunities | the test failing | it compares `repr`, and means skip NaN | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
 | A commit message said 34 predictions (33), and an explorer subtitle said the calling station barely plays a pot under `off_mixed` (its VPIP is 0.410; the spread of its results is what falls) | a script's count; reading the built page | corrected before anything was pushed | [42](#step-42-where-six-copies-shortfall-comes-from-p211c) |
+| The plan's prediction against the equilibrium opponent could not fail (no strategy gains against an equilibrium), the KL correlation was one-sided, D5 tested a mean, and restricted Nash, the data-biased response, the population prior and exploitability had no prediction | the reviewer subagent | all fixed before the commit; checks counted apart from predictions | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
+| D5's bound left a margin of 0.007 on two development seeds | the run on seed 2026 (+0.024 against +0.02) | reported as failed; the substance rests on other numbers | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
+| A path-check script without a `__main__` guard broke the worker pool on Windows | the run failing | the guard | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
+| The `misspec_by_hands` figure had a wide gap between its panels: `tight_layout` counted the legend under the left panel as part of it | reading the figure while drafting the step | a legend under both panels, redrawn from the committed JSON; no number changed | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
 
 ---
 
@@ -6489,6 +6832,7 @@ Invert once, and look at every figure before committing it.
 | GRU | gated recurrent unit: a recurrent network that reads a sequence one item at a time, with gates that decide what to keep (Cho et al. 2014) |
 | Half-life (of a weighted average) | the age at which an observation's weight has fallen to half; with decay $d$ per step it is $\log 2 / \log(1/d)$ steps, so $d = 2^{-1/h}$ |
 | Hand class | one of the 169 strategically distinct starting hands (pairs, suited, offsuit), e.g. AKs |
+| Hands to evidence | $\log 20 / \mathrm{KL}$: the hands at which the expected log-likelihood ratio against the closest model reaches 20:1; optimistic, since it assumes the alternative is known (Step 43) |
 | Headless browser | a browser run without a window, driven from the command line (screenshots, DOM dumps, scripted checks) |
 | Hero's view (evaluation) | an evaluator that knows only what the hero saw (its cards, the actions, the public cards), never the opponent's cards; it can correct only steps whose probabilities do not depend on them (Step 38) |
 | Hot start (warm start) | starting a solver from an earlier solve instead of from scratch: a warm start hands it a starting point such as a basis; a hot start keeps the solver instance and its working data and changes only the data, here the costs (Step 40) |
@@ -6498,6 +6842,7 @@ Invert once, and look at every figure before committing it.
 | Information class (of an evaluator) | the histories an evaluator cannot tell apart at a point of a hand; AIVAT's terms and averages run over them |
 | Information set | the histories a player cannot tell apart when acting |
 | Intraclass correlation | the mean correlation between units of one group, here a player's results at two tables of one deal; at least $-1/(m-1)$ for groups of $m$, since a variance cannot be negative (Step 41) |
+| Kullback-Leibler divergence | $\mathrm{KL}(q \| p) = \mathrm{E}_q[\log q(X) - \log p(X)]$: the expected log-likelihood per observation that $p$ loses to the truth $q$; zero only when they agree (Kullback and Leibler 1951) |
 | Kurtosis | $\kappa = \mathbb E[(X - \mu)^4] / \sigma^4$, 3 for a normal distribution; large when rare extreme values carry most of the variance, which makes a sample SD noisy: its relative standard error is about $\sqrt{(\kappa - 1)/(4n)}$ |
 | Laplace approximation | a normal approximation to a posterior at its mode, with the inverse Hessian of the negative log posterior as covariance |
 | Latin square | an $n \times n$ array of $n$ symbols in which each symbol occurs once in every row and every column; here the rows are players, the columns tables and the symbols seats (Fisher 1935; Step 41) |
@@ -6520,6 +6865,7 @@ Invert once, and look at every figure before committing it.
 | Migration (of a schema) | reading records written in an older version of a format as the current version, filling in what the old version implied |
 | Minimum bet | the smallest bet allowed, which is also the smallest raise increment before anyone raises; usually one big blind |
 | Minimum detectable effect | the smallest true difference a test would detect with given power ($2.8\,SE$ for 80% at a two-sided 5% level) |
+| Misspecification | the true distribution is outside the model family, so no parameter value is right; measured here by the KL divergence to the closest member (Step 43) |
 | MIVAT | control-variate terms at chance steps only, valued at full histories: the chance-only method Burch et al. compare AIVAT with, as implemented here; it may differ from the paper's, whose Leduc self-play SD it does not reproduce (Step 38) |
 | Modern Standby | the sleep mode of many recent Windows laptops (S0 low-power idle): the system stays nominally on, and programs run slowly or not at all; logged as Kernel-Power events 506 and 507 |
 | Moebius inversion | recovering the terms of a sum over subsets, $G(T) = \sum_{B \subseteq T} W_B$, as $W_B = \sum_{T \subseteq B} (-1)^{|B| - |T|} G(T)$ |
@@ -6541,9 +6887,11 @@ Invert once, and look at every figure before committing it.
 | Presolve | an LP solver's first pass: simplify the LP (redundant rows, fixed columns, tighter bounds), solve the smaller LP, map the answer back (postsolve); HiGHS skips it when it starts from a basis (Step 40) |
 | Process pool | a fixed set of worker processes that run submitted tasks (`ProcessPoolExecutor`); each process has its own memory, so tasks share only what is sent to them (Steps 8 and 40) |
 | Profiler | a tool that measures where a program spends its time; Python's is `cProfile` (Steps 1, 39) |
+| Pseudo-true parameter | the parameter maximum likelihood converges to under misspecification: the family member closest to the truth in KL divergence (White 1982) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
 | Range | the set of hands a player plays in a spot |
 | Rao-Blackwell | replacing an estimator by its conditional expectation given some information never increases its variance (here: scoring each block by its exact expected value instead of the chips won) |
+| Reach-weighted total variation | the mean over information sets, weighted by how often play reaches them, of half the summed absolute difference between two action distributions (Step 43) |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
 | Reduced cost | the change in an LP's objective per unit of a variable brought into the basis, $d_j = c_j - M_j^\top y$; a basis is optimal when none is negative (for minimization), within the solver's tolerance (Step 40) |
 | Regret matching | play actions in proportion to their positive cumulative regret |
@@ -6688,6 +7036,12 @@ Statistics and machine learning
   Princeton University Press. (Step 42)
 * Owen, A. B. (2014). *Sobol' indices and Shapley value.* SIAM/ASA Journal on Uncertainty
   Quantification 2(1). (Step 42)
+* Kullback, S., Leibler, R. A. (1951). *On Information and Sufficiency.* Annals of Mathematical
+  Statistics 22(1). (Step 43)
+* White, H. (1982). *Maximum Likelihood Estimation of Misspecified Models.* Econometrica 50(1).
+  (Pseudo-true parameters; Step 43)
+* Kuhn, H. W. (1953). *Extensive Games and the Problem of Information.* In Contributions to the
+  Theory of Games II, Princeton University Press. (Kuhn's theorem; Step 43)
 * Rubin, D. (1984). *Bayesianly Justifiable and Relevant Frequency Calculations for the
   Applied Statistician.* Annals of Statistics 12. (Posterior predictive checks)
 * Gelman, A., Meng, X.-L., Stern, H. (1996). *Posterior Predictive Assessment of Model
@@ -6890,3 +7244,7 @@ Performance and numerics
   from the pre-registered plan in `experiments/phase2_randomness.py` and its run on seed 2026. C.1
   (543 tests), Parts D, E and F updated; Step 41's open item points here. Numbers checked by script
   against `randomness.json`.
+* 2026-11-09: Step 43 (P2.12: exploitation when the opponent model is wrong), from the
+  pre-registered plan in `experiments/phase2_misspec.py` (`8601332`) and its run on seed 2026
+  (results `e2b8c12`, explorer `9d94750`). C.1 (604 tests), Parts D, E and F updated. Numbers
+  checked by script against `misspec.json`.
