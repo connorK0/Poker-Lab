@@ -1,0 +1,997 @@
+{
+ "meta": {
+  "seed": 2026,
+  "config": {
+   "deep_stack": 100,
+   "shallow_stack": 10,
+   "deep_deals": 2000,
+   "shallow_deals": 4000,
+   "chunk_deals": 250,
+   "flop_sample": 300,
+   "ablation_opponents": [
+    "pot_odds",
+    "bot_tag"
+   ],
+   "ablation_deals": 500,
+   "workers": 4
+  },
+  "git": {
+   "commit": "24fbc2b0063b3033c6c0eed5660f1fbd9bf113fb",
+   "dirty": false
+  },
+  "timestamp_utc": "2026-11-10T19:22:58+00:00",
+  "python": "3.13.14",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "packages": {
+   "numpy": "2.4.6",
+   "pandas": "2.3.3",
+   "scipy": "1.18.0",
+   "scikit-learn": "1.9.0",
+   "matplotlib": "3.11.0",
+   "pokerkit": "0.7.7",
+   "phevaluator": "0.6.0",
+   "torch": "2.14.1"
+  }
+ },
+ "rows": {
+  "check_call": {
+   "opponent": "check_call",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 16347.41919191919,
+    "se": 514.7498910512136,
+    "lo": 15338.509405458812,
+    "hi": 17356.32897837957,
+    "n": 2000,
+    "sd": 23020.314956022485
+   },
+   "raw": {
+    "mean": 16458.75,
+    "se": 541.1861074715518,
+    "lo": 15398.025229355759,
+    "hi": 17519.474770644243,
+    "n": 2000,
+    "sd": 24202.578495697937
+   },
+   "variance_ratio": 1.105352384028473,
+   "exact": null,
+   "seconds": 354.0,
+   "ms_per_hand": 88.49811082502129,
+   "stats": {
+    "decisions": 8425,
+    "opponent_actions": 6422,
+    "surprises": 0,
+    "model_calls": 23272
+   },
+   "surprise_share": 0.0
+  },
+  "check_fold": {
+   "opponent": "check_fold",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 750.0,
+    "se": 0.0,
+    "lo": 750.0,
+    "hi": 750.0,
+    "n": 2000,
+    "sd": 0.0
+   },
+   "raw": {
+    "mean": 750.0,
+    "se": 0.0,
+    "lo": 750.0,
+    "hi": 750.0,
+    "n": 2000,
+    "sd": 0.0
+   },
+   "variance_ratio": null,
+   "exact": null,
+   "seconds": 3.7,
+   "ms_per_hand": 0.9155214749771403,
+   "stats": {
+    "decisions": 2000,
+    "opponent_actions": 0,
+    "surprises": 0,
+    "model_calls": 4000
+   },
+   "surprise_share": 0.0
+  },
+  "uniform_random": {
+   "opponent": "uniform_random",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 5842.849494949495,
+    "se": 342.0108142039383,
+    "lo": 5172.508299109776,
+    "hi": 6513.190690789214,
+    "n": 2000,
+    "sd": 15295.188592001134
+   },
+   "raw": {
+    "mean": 6274.875,
+    "se": 703.1291188473658,
+    "lo": 4896.741927059164,
+    "hi": 7653.008072940836,
+    "n": 2000,
+    "sd": 31444.89013404477
+   },
+   "variance_ratio": 4.226593597355762,
+   "exact": null,
+   "seconds": 171.1,
+   "ms_per_hand": 42.766205724998144,
+   "stats": {
+    "decisions": 5782,
+    "opponent_actions": 4153,
+    "surprises": 0,
+    "model_calls": 15653
+   },
+   "surprise_share": 0.0
+  },
+  "pot_odds": {
+   "opponent": "pot_odds",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 7558.631818181819,
+    "se": 330.19324113598736,
+    "lo": 6911.4530655552835,
+    "hi": 8205.810570808353,
+    "n": 2000,
+    "sd": 14766.690657820953
+   },
+   "raw": {
+    "mean": 7533.75,
+    "se": 631.426942397569,
+    "lo": 6296.153192900765,
+    "hi": 8771.346807099235,
+    "n": 2000,
+    "sd": 28238.271320516164
+   },
+   "variance_ratio": 3.656872842763833,
+   "exact": null,
+   "seconds": 665.5,
+   "ms_per_hand": 166.37008092500037,
+   "stats": {
+    "decisions": 9920,
+    "opponent_actions": 8051,
+    "surprises": 0,
+    "model_calls": 27867
+   },
+   "surprise_share": 0.0
+  },
+  "bot_nit": {
+   "opponent": "bot_nit",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 906.9961868686869,
+    "se": 95.24644707526168,
+    "lo": 720.313150601174,
+    "hi": 1093.6792231361999,
+    "n": 2000,
+    "sd": 4259.550605512423
+   },
+   "raw": {
+    "mean": 1003.1525,
+    "se": 127.01024698244291,
+    "lo": 754.212415914412,
+    "hi": 1252.0925840855882,
+    "n": 2000,
+    "sd": 5680.070921835598
+   },
+   "variance_ratio": 1.778197323769854,
+   "exact": null,
+   "seconds": 84.7,
+   "ms_per_hand": 21.16579075001937,
+   "stats": {
+    "decisions": 2862,
+    "opponent_actions": 1049,
+    "surprises": 0,
+    "model_calls": 6733
+   },
+   "surprise_share": 0.0
+  },
+  "bot_tag": {
+   "opponent": "bot_tag",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 1369.9171212121212,
+    "se": 124.4028553047765,
+    "lo": 1126.0875248147593,
+    "hi": 1613.746717609483,
+    "n": 2000,
+    "sd": 5563.464821131011
+   },
+   "raw": {
+    "mean": 1432.38,
+    "se": 168.99325201739182,
+    "lo": 1101.153226045912,
+    "hi": 1763.606773954088,
+    "n": 2000,
+    "sd": 7557.607984992832
+   },
+   "variance_ratio": 1.8453469436715475,
+   "exact": null,
+   "seconds": 120.3,
+   "ms_per_hand": 30.08583960001124,
+   "stats": {
+    "decisions": 3499,
+    "opponent_actions": 1759,
+    "surprises": 0,
+    "model_calls": 8684
+   },
+   "surprise_share": 0.0
+  },
+  "bot_lag": {
+   "opponent": "bot_lag",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 1541.4410353535354,
+    "se": 180.85002087626773,
+    "lo": 1186.9749944360506,
+    "hi": 1895.9070762710203,
+    "n": 2000,
+    "sd": 8087.858808231815
+   },
+   "raw": {
+    "mean": 1347.7125,
+    "se": 263.28444240731125,
+    "lo": 831.67499288167,
+    "hi": 1863.7500071183301,
+    "n": 2000,
+    "sd": 11774.438212817526
+   },
+   "variance_ratio": 2.1194016493166004,
+   "exact": null,
+   "seconds": 156.1,
+   "ms_per_hand": 39.019058575009694,
+   "stats": {
+    "decisions": 4138,
+    "opponent_actions": 2468,
+    "surprises": 0,
+    "model_calls": 10551
+   },
+   "surprise_share": 0.0
+  },
+  "bot_calling_station": {
+   "opponent": "bot_calling_station",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 5797.470555555556,
+    "se": 402.68863818218506,
+    "lo": 5008.200824718473,
+    "hi": 6586.740286392638,
+    "n": 2000,
+    "sd": 18008.783374843664
+   },
+   "raw": {
+    "mean": 6200.79,
+    "se": 544.1106053008435,
+    "lo": 5134.333213610347,
+    "hi": 7267.246786389653,
+    "n": 2000,
+    "sd": 24333.366014624873
+   },
+   "variance_ratio": 1.8257261216765122,
+   "exact": null,
+   "seconds": 511.4,
+   "ms_per_hand": 127.86180332499498,
+   "stats": {
+    "decisions": 6880,
+    "opponent_actions": 5278,
+    "surprises": 0,
+    "model_calls": 19017
+   },
+   "surprise_share": 0.0
+  },
+  "bot_maniac": {
+   "opponent": "bot_maniac",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 2000,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 5051.326515151515,
+    "se": 330.78349612421204,
+    "lo": 4402.99086274806,
+    "hi": 5699.66216755497,
+    "n": 2000,
+    "sd": 14793.087663375527
+   },
+   "raw": {
+    "mean": 4848.825,
+    "se": 543.3147120664609,
+    "lo": 3783.9281643497366,
+    "hi": 5913.7218356502635,
+    "n": 2000,
+    "sd": 24297.772587126634
+   },
+   "variance_ratio": 2.6978342522460856,
+   "exact": null,
+   "seconds": 386.5,
+   "ms_per_hand": 96.63470609996875,
+   "stats": {
+    "decisions": 6564,
+    "opponent_actions": 5345,
+    "surprises": 0,
+    "model_calls": 17908
+   },
+   "surprise_share": 0.0
+  },
+  "pf_nash": {
+   "opponent": "pf_nash",
+   "depth": "shallow",
+   "actions": [
+    "fold",
+    "allin"
+   ],
+   "deals": 4000,
+   "stack_bb": 10,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 1.058749999999998,
+    "se": 0.6001943501265702,
+    "lo": -0.11763092624807947,
+    "hi": 2.2351309262480754,
+    "n": 4000,
+    "sd": 37.959623703290625
+   },
+   "raw": {
+    "mean": -1.875,
+    "se": 2.8369011431091398,
+    "lo": -7.4353262404939136,
+    "hi": 3.6853262404939136,
+    "n": 4000,
+    "sd": 179.42138217920342
+   },
+   "variance_ratio": 22.341102379489595,
+   "exact": -5.551115123125783e-14,
+   "seconds": 19.4,
+   "ms_per_hand": 2.4282180500085815,
+   "stats": {
+    "decisions": 6346,
+    "opponent_actions": 2346,
+    "surprises": 0,
+    "model_calls": 6346
+   },
+   "surprise_share": 0.0,
+   "lbr_minus_exact": 1.0587500000000536,
+   "lbr_minus_exact_z": 1.7640119400937084
+  },
+  "pf_any_two": {
+   "opponent": "pf_any_two",
+   "depth": "shallow",
+   "actions": [
+    "fold",
+    "allin"
+   ],
+   "deals": 4000,
+   "stack_bb": 10,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 448.73125,
+    "se": 14.026952198459004,
+    "lo": 421.23842369102033,
+    "hi": 476.22407630897965,
+    "n": 4000,
+    "sd": 887.1423515487328
+   },
+   "raw": {
+    "mean": 379.375,
+    "se": 52.65105469726066,
+    "lo": 276.1789327933691,
+    "hi": 482.5710672066309,
+    "n": 4000,
+    "sd": 3329.945081069016
+   },
+   "variance_ratio": 14.089238364572543,
+   "exact": 473.2835356127634,
+   "seconds": 37.5,
+   "ms_per_hand": 4.687435962478048,
+   "stats": {
+    "decisions": 8000,
+    "opponent_actions": 4000,
+    "surprises": 0,
+    "model_calls": 8000
+   },
+   "surprise_share": 0.0,
+   "lbr_minus_exact": -24.5522856127634,
+   "lbr_minus_exact_z": -1.7503649592147825
+  },
+  "pf_push50_call20": {
+   "opponent": "pf_push50_call20",
+   "depth": "shallow",
+   "actions": [
+    "fold",
+    "allin"
+   ],
+   "deals": 4000,
+   "stack_bb": 10,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 165.695,
+    "se": 12.730442290391062,
+    "lo": 140.7433331108335,
+    "hi": 190.64666688916648,
+    "n": 4000,
+    "sd": 805.1438651793286
+   },
+   "raw": {
+    "mean": 193.75,
+    "se": 31.823507125652323,
+    "lo": 131.37592603372144,
+    "hi": 256.12407396627856,
+    "n": 4000,
+    "sd": 2012.6953130331915
+   },
+   "variance_ratio": 6.248979417141113,
+   "exact": 150.99441516762886,
+   "seconds": 16.7,
+   "ms_per_hand": 2.0815669250150677,
+   "stats": {
+    "decisions": 5962,
+    "opponent_actions": 1962,
+    "surprises": 0,
+    "model_calls": 5962
+   },
+   "surprise_share": 0.0,
+   "lbr_minus_exact": 14.700584832371135,
+   "lbr_minus_exact_z": 1.1547583734358653
+  },
+  "pf_push15_call60": {
+   "opponent": "pf_push15_call60",
+   "depth": "shallow",
+   "actions": [
+    "fold",
+    "allin"
+   ],
+   "deals": 4000,
+   "stack_bb": 10,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 183.1925,
+    "se": 11.662191605320045,
+    "lo": 160.3346044535727,
+    "hi": 206.0503955464273,
+    "n": 4000,
+    "sd": 737.5817596421357
+   },
+   "raw": {
+    "mean": 156.875,
+    "se": 37.58310449563251,
+    "lo": 83.21211518856028,
+    "hi": 230.5378848114397,
+    "n": 4000,
+    "sd": 2376.9642349262494
+   },
+   "variance_ratio": 10.385441365107846,
+   "exact": 197.2112260448471,
+   "seconds": 13.2,
+   "ms_per_hand": 1.6547998750102124,
+   "stats": {
+    "decisions": 4572,
+    "opponent_actions": 572,
+    "surprises": 0,
+    "model_calls": 4572
+   },
+   "surprise_share": 0.0,
+   "lbr_minus_exact": -14.018726044847114,
+   "lbr_minus_exact_z": -1.202066174118771
+  },
+  "pf_nash_fallback_fcpa": {
+   "opponent": "pf_nash_fallback",
+   "depth": "shallow",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 4000,
+   "stack_bb": 10,
+   "track_range": true,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 299.06407828282835,
+    "se": 29.84411870477567,
+    "lo": 240.56960562146804,
+    "hi": 357.55855094418865,
+    "n": 4000,
+    "sd": 1887.5077973505074
+   },
+   "raw": {
+    "mean": 296.96875,
+    "se": 33.25107625831747,
+    "lo": 231.79664053369777,
+    "hi": 362.14085946630223,
+    "n": 4000,
+    "sd": 2102.9827125646502
+   },
+   "variance_ratio": 1.2413489935115,
+   "exact": null,
+   "seconds": 1147.2,
+   "ms_per_hand": 143.4035083750132,
+   "stats": {
+    "decisions": 13409,
+    "opponent_actions": 11840,
+    "surprises": 0,
+    "model_calls": 32253
+   },
+   "surprise_share": 0.0
+  },
+  "norange_pot_odds": {
+   "opponent": "pot_odds",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 500,
+   "stack_bb": 100,
+   "track_range": false,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": 3385.8908080808083,
+    "se": 621.8122863327268,
+    "lo": 2167.138726868664,
+    "hi": 4604.6428892929525,
+    "n": 500,
+    "sd": 13904.145414845407
+   },
+   "raw": {
+    "mean": 3470.61,
+    "se": 950.8423808509194,
+    "lo": 1606.958933532198,
+    "hi": 5334.261066467802,
+    "n": 500,
+    "sd": 21261.481994704
+   },
+   "variance_ratio": 2.338290491746754,
+   "exact": null,
+   "seconds": 151.4,
+   "ms_per_hand": 151.37676210002974,
+   "stats": {
+    "decisions": 2760,
+    "opponent_actions": 0,
+    "surprises": 0,
+    "model_calls": 5439
+   },
+   "surprise_share": 0.0,
+   "paired_difference": {
+    "mean": -3146.409696969697,
+    "se": 603.1280440124947,
+    "lo": -4328.5406632341865,
+    "hi": -1964.2787307052074,
+    "n": 500,
+    "sd": 13486.353055484233
+   }
+  },
+  "exactflop_pot_odds": {
+   "opponent": "pot_odds",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 500,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": null,
+   "lbr": {
+    "mean": 6736.155050505049,
+    "se": 586.3065582005479,
+    "lo": 5586.994196431975,
+    "hi": 7885.315904578123,
+    "n": 500,
+    "sd": 13110.213197903618
+   },
+   "raw": {
+    "mean": 8679.25,
+    "se": 1257.717379775671,
+    "lo": 6214.123935639685,
+    "hi": 11144.376064360315,
+    "n": 500,
+    "sd": 28123.415576613195
+   },
+   "variance_ratio": 4.6016821802765335,
+   "exact": null,
+   "seconds": 575.3,
+   "ms_per_hand": 575.2784044999862,
+   "stats": {
+    "decisions": 2465,
+    "opponent_actions": 1994,
+    "surprises": 0,
+    "model_calls": 6919
+   },
+   "surprise_share": 0.0,
+   "paired_difference": {
+    "mean": 203.85454545454542,
+    "se": 348.47383707128404,
+    "lo": -479.15417520517127,
+    "hi": 886.8632661142622,
+    "n": 500,
+    "sd": 7792.111880715774
+   }
+  },
+  "norange_bot_tag": {
+   "opponent": "bot_tag",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 500,
+   "stack_bb": 100,
+   "track_range": false,
+   "flop_sample": 300,
+   "lbr": {
+    "mean": -641.8988888888889,
+    "se": 493.3614232398563,
+    "lo": -1608.8872784390073,
+    "hi": 325.0895006612295,
+    "n": 500,
+    "sd": 11031.896798403634
+   },
+   "raw": {
+    "mean": -317.41,
+    "se": 606.9470713155777,
+    "lo": -1507.0262597785322,
+    "hi": 872.2062597785321,
+    "n": 500,
+    "sd": 13571.749102060445
+   },
+   "variance_ratio": 1.513461103172399,
+   "exact": null,
+   "seconds": 25.0,
+   "ms_per_hand": 25.044523699965794,
+   "stats": {
+    "decisions": 861,
+    "opponent_actions": 0,
+    "surprises": 0,
+    "model_calls": 1672
+   },
+   "surprise_share": 0.0,
+   "paired_difference": {
+    "mean": -2019.421111111111,
+    "se": 505.598936734846,
+    "lo": -3010.395027111409,
+    "hi": -1028.447195110813,
+    "n": 500,
+    "sd": 11305.535918907313
+   }
+  },
+  "exactflop_bot_tag": {
+   "opponent": "bot_tag",
+   "depth": "deep",
+   "actions": [
+    "fold",
+    "call",
+    "pot",
+    "allin"
+   ],
+   "deals": 500,
+   "stack_bb": 100,
+   "track_range": true,
+   "flop_sample": null,
+   "lbr": {
+    "mean": 1315.4222222222222,
+    "se": 228.34667279417866,
+    "lo": 867.862743545632,
+    "hi": 1762.9817008988125,
+    "n": 500,
+    "sd": 5105.986828036854
+   },
+   "raw": {
+    "mean": 1647.3,
+    "se": 289.22837122495923,
+    "lo": 1080.4123923990799,
+    "hi": 2214.1876076009203,
+    "n": 500,
+    "sd": 6467.3429908055305
+   },
+   "variance_ratio": 1.6043252096515979,
+   "exact": null,
+   "seconds": 90.5,
+   "ms_per_hand": 90.47477999998955,
+   "stats": {
+    "decisions": 866,
+    "opponent_actions": 423,
+    "surprises": 0,
+    "model_calls": 2144
+   },
+   "surprise_share": 0.0,
+   "paired_difference": {
+    "mean": -62.1,
+    "se": 41.84914912593958,
+    "lo": -144.1243322868416,
+    "hi": 19.924332286841583,
+    "n": 500,
+    "sd": 935.7754224612682
+   }
+  }
+ },
+ "elapsed_seconds": 1152.4,
+ "predictions": {
+  "C1": {
+   "claim": "Check: against check/fold LBR wins exactly the blinds, 750 mbb/hand (the most any strategy can win from it)",
+   "values": {
+    "rows.check_fold.lbr.mean": 750.0
+   },
+   "test": "between",
+   "threshold": [
+    749.999,
+    750.001
+   ],
+   "passed": true
+  },
+  "C2": {
+   "claim": "Check: in the push/fold game (LBR folds or goes all-in) each row is within 3 standard errors of P3.1's exact exploitability",
+   "values": {
+    "rows.pf_nash.lbr_minus_exact_z": 1.7640119400937084,
+    "rows.pf_any_two.lbr_minus_exact_z": -1.7503649592147825,
+    "rows.pf_push50_call20.lbr_minus_exact_z": 1.1547583734358653,
+    "rows.pf_push15_call60.lbr_minus_exact_z": -1.202066174118771
+   },
+   "test": "between",
+   "threshold": [
+    -3.0,
+    3.0
+   ],
+   "passed": true
+  },
+  "C3": {
+   "claim": "Check: against push/fold Nash LBR wins between -10 and +10 mbb/hand",
+   "values": {
+    "rows.pf_nash.lbr.mean": 1.058749999999998
+   },
+   "test": "between",
+   "threshold": [
+    -10.0,
+    10.0
+   ],
+   "passed": true
+  },
+  "C4": {
+   "claim": "Check: the range models never give probability 0 to an action the opponent took",
+   "values": {
+    "rows.check_call.surprise_share": 0.0,
+    "rows.uniform_random.surprise_share": 0.0,
+    "rows.pot_odds.surprise_share": 0.0,
+    "rows.bot_nit.surprise_share": 0.0,
+    "rows.bot_tag.surprise_share": 0.0,
+    "rows.bot_lag.surprise_share": 0.0,
+    "rows.bot_calling_station.surprise_share": 0.0,
+    "rows.bot_maniac.surprise_share": 0.0,
+    "rows.pf_nash_fallback_fcpa.surprise_share": 0.0
+   },
+   "test": "<=",
+   "threshold": 0.0,
+   "passed": true
+  },
+  "P1": {
+   "claim": "Every deep strategy other than check/fold loses at least 500 mbb/hand to LBR (lower end of the 95% interval)",
+   "values": {
+    "rows.check_call.lbr.lo": 15338.509405458812,
+    "rows.uniform_random.lbr.lo": 5172.508299109776,
+    "rows.pot_odds.lbr.lo": 6911.4530655552835,
+    "rows.bot_nit.lbr.lo": 720.313150601174,
+    "rows.bot_tag.lbr.lo": 1126.0875248147593,
+    "rows.bot_lag.lbr.lo": 1186.9749944360506,
+    "rows.bot_calling_station.lbr.lo": 5008.200824718473,
+    "rows.bot_maniac.lbr.lo": 4402.99086274806
+   },
+   "test": ">=",
+   "threshold": 500.0,
+   "passed": true
+  },
+  "P2": {
+   "claim": "Always check/call is the most exploitable: LBR wins at least 14,000 mbb/hand",
+   "values": {
+    "rows.check_call.lbr.mean": 16347.41919191919
+   },
+   "test": ">=",
+   "threshold": 14000.0,
+   "passed": true
+  },
+  "P3": {
+   "claim": "The play page's advisor baseline (pot odds) loses 5,500 to 8,500 mbb/hand to LBR",
+   "values": {
+    "rows.pot_odds.lbr.mean": 7558.631818181819
+   },
+   "test": "between",
+   "threshold": [
+    5500.0,
+    8500.0
+   ],
+   "passed": true
+  },
+  "P4": {
+   "claim": "Uniform random loses 4,500 to 7,500 mbb/hand to LBR",
+   "values": {
+    "rows.uniform_random.lbr.mean": 5842.849494949495
+   },
+   "test": "between",
+   "threshold": [
+    4500.0,
+    7500.0
+   ],
+   "passed": true
+  },
+  "P5": {
+   "claim": "The bots order maniac > loose-aggressive > tight-aggressive > nit",
+   "values": {
+    "rows.bot_maniac.lbr.mean": 5051.326515151515,
+    "rows.bot_lag.lbr.mean": 1541.4410353535354,
+    "rows.bot_tag.lbr.mean": 1369.9171212121212,
+    "rows.bot_nit.lbr.mean": 906.9961868686869
+   },
+   "test": "decreasing",
+   "threshold": null,
+   "passed": true
+  },
+  "P6": {
+   "claim": "The loose, passive and wild bots (calling station, maniac) lose at least 4,000 mbb/hand; the nit, TAG and LAG at most 2,500",
+   "values": {
+    "rows.bot_calling_station.lbr.mean": 5797.470555555556,
+    "rows.bot_maniac.lbr.mean": 5051.326515151515
+   },
+   "test": ">=",
+   "threshold": 4000.0,
+   "passed": true
+  },
+  "P6b": {
+   "claim": "(second half of P6)",
+   "values": {
+    "rows.bot_nit.lbr.mean": 906.9961868686869,
+    "rows.bot_tag.lbr.mean": 1369.9171212121212,
+    "rows.bot_lag.lbr.mean": 1541.4410353535354
+   },
+   "test": "<=",
+   "threshold": 2500.0,
+   "passed": true
+  },
+  "P7": {
+   "claim": "Without range tracking LBR wins less, on the same deals (upper end of the paired interval below 0)",
+   "values": {
+    "rows.norange_pot_odds.paired_difference.hi": -1964.2787307052074,
+    "rows.norange_bot_tag.paired_difference.hi": -1028.447195110813
+   },
+   "test": "<=",
+   "threshold": 0.0,
+   "passed": true
+  },
+  "P8": {
+   "claim": "Using all 1,176 flop runouts instead of 300 changes LBR's value by less than 800 mbb/hand on the same deals",
+   "values": {
+    "rows.exactflop_pot_odds.paired_difference.mean": 203.85454545454542,
+    "rows.exactflop_bot_tag.paired_difference.mean": -62.1
+   },
+   "test": "between",
+   "threshold": [
+    -800.0,
+    800.0
+   ],
+   "passed": true
+  },
+  "P9": {
+   "claim": "Push/fold Nash with a pot-odds fallback is exploitable at 10 bb once LBR may limp or bet the pot: at least 150 mbb/hand (lower end of the interval)",
+   "values": {
+    "rows.pf_nash_fallback_fcpa.lbr.lo": 240.56960562146804
+   },
+   "test": ">=",
+   "threshold": 150.0,
+   "passed": true
+  },
+  "P10": {
+   "claim": "Scoring all-ins at their expectation never increases the variance of a deep row",
+   "values": {
+    "rows.check_call.variance_ratio": 1.105352384028473,
+    "rows.uniform_random.variance_ratio": 4.226593597355762,
+    "rows.pot_odds.variance_ratio": 3.656872842763833,
+    "rows.bot_nit.variance_ratio": 1.778197323769854,
+    "rows.bot_tag.variance_ratio": 1.8453469436715475,
+    "rows.bot_lag.variance_ratio": 2.1194016493166004,
+    "rows.bot_calling_station.variance_ratio": 1.8257261216765122,
+    "rows.bot_maniac.variance_ratio": 2.6978342522460856
+   },
+   "test": ">=",
+   "threshold": 1.0,
+   "passed": true
+  }
+ }
+}
