@@ -78,3 +78,13 @@ misspec:
     family_fast: {speed: 0.5, window: 100, mode: family}
     tabular_fast: {speed: 0.5, window: 100, mode: tabular}
   workers: 4
+lbr:
+  deep_stack: 100
+  shallow_stack: 10
+  deep_deals: 20
+  shallow_deals: 40
+  chunk_deals: 10
+  flop_sample: 60
+  ablation_opponents: [pot_odds]
+  ablation_deals: 10
+  workers: 4

@@ -325,6 +325,7 @@ def test_run_phase2_runs_duplicate_randomness_and_misspec_last(monkeypatch, tmp_
         "duplicate",
         "randomness",
         "misspec",
+        "lbr",
     )
     seen = {}
 

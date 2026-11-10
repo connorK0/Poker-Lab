@@ -19,6 +19,7 @@ _EXPORTS = {
     ),
     "poker_lab.strategy.baselines": (
         "CheckCallStrategy",
+        "CheckFoldStrategy",
         "PotOddsStrategy",
         "UniformRandomStrategy",
     ),

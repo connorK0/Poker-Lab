@@ -1,6 +1,7 @@
 """Baseline strategy providers that let the pipeline run end to end before Phase 2.
 
 * ``CheckCallStrategy``: always check or call (trivial baseline).
+* ``CheckFoldStrategy``: check when free, otherwise fold (the opposite extreme).
 * ``UniformRandomStrategy``: uniform over fold (when legal), check/call, min-raise.
 * ``PotOddsStrategy``: a simple equity heuristic. Continue when Monte Carlo equity against one
   random hand beats the pot odds, raise strong hands. It is a reference point, not a model of
@@ -23,6 +24,14 @@ class CheckCallStrategy(StrategyProvider):
     def action_distribution(self, view: SeatView) -> ActionDistribution:
         require_actor(view)
         return ActionDistribution.pure(Decision.check_call())
+
+
+class CheckFoldStrategy(StrategyProvider):
+    name = "check_fold"
+
+    def action_distribution(self, view: SeatView) -> ActionDistribution:
+        legal = require_actor(view)
+        return ActionDistribution.pure(Decision.fold() if legal.can_fold else Decision.check_call())
 
 
 class UniformRandomStrategy(StrategyProvider):

@@ -80,3 +80,13 @@ misspec:            # P2.12: the same bots as ``exploit``, then opponents outsid
     tabular_slow: {speed: 0.1, window: 400, mode: tabular}
     tabular_fast: {speed: 0.5, window: 100, mode: tabular}
   workers: 12
+lbr:                # P2.8b: local best response (lower bounds on exploitability), heads-up NLHE
+  deep_stack: 100     # bb
+  shallow_stack: 10   # bb: the push/fold game of P3.1, where exact values are known
+  deep_deals: 2000    # duplicate deals (two hands each) per opponent at 100 bb
+  shallow_deals: 4000
+  chunk_deals: 250    # deals per worker job
+  flop_sample: 300    # of the flop's 1,176 runouts, for LBR's and the models' equities
+  ablation_opponents: [pot_odds, bot_tag]
+  ablation_deals: 500 # no range tracking / all flop runouts, on the main rows' first deals
+  workers: 4

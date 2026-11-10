@@ -32,7 +32,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness", "misspec")
+STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness", "misspec", "lbr")
 
 
 def run(
@@ -51,6 +51,7 @@ def run(
         phase2_deep_cfr,
         phase2_duplicate,
         phase2_exploit,
+        phase2_lbr,
         phase2_misspec,
         phase2_randomness,
     )
@@ -64,6 +65,7 @@ def run(
         "duplicate": phase2_duplicate,
         "randomness": phase2_randomness,
         "misspec": phase2_misspec,
+        "lbr": phase2_lbr,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):
