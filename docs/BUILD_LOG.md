@@ -78,6 +78,7 @@ $B(a,b)$ the beta function.
   * [Step 41: Duplicate dealing at more than two seats](#step-41-duplicate-dealing-at-more-than-two-seats-p211b)
   * [Step 42: Where six copies' shortfall comes from](#step-42-where-six-copies-shortfall-comes-from-p211c)
   * [Step 43: Exploitation when the model is wrong](#step-43-exploitation-when-the-model-is-wrong-p212)
+  * [Step 45: How exploitable are the hold'em strategies? Local best response](#step-45-how-exploitable-are-the-holdem-strategies-local-best-response-p28b)
   * Tools
   * [Step 44: Playing against the model](#step-44-playing-against-the-model-a-local-web-page)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
@@ -6727,6 +6728,282 @@ while the engine works and every 2 s while it waits for you (a decision or the n
   idempotent, waits at most 5 s outside the lock and always ends the session, and a stalled
   client times out after 10 s.
 
+## Step 45: How exploitable are the hold'em strategies? Local best response (P2.8b)
+
+**The question.** Every exploitability number so far came from a game small enough to solve:
+Kuhn and Leduc exactly (Step 18 onward), and heads-up push/fold in closed form (Step 26). The play
+page (Step 44) plays real no-limit hold'em, 100 big blinds deep, and its exploit slot holds only a
+labeled heuristic, because nothing could measure a computed engine there. A best response to a
+no-limit strategy needs the whole game tree: more than $10^{160}$ information sets at 200 bb stacks
+(Johanson, 2013). This step builds the standard way around that, local best response (Lisý and
+Bowling, 2017), and measures every hold'em strategy in the repository with it. The code is
+`poker_lab/exploit/lbr/` and `experiments/phase2_lbr.py`. Nothing under `poker_lab/bots`,
+`poker_lab/engine` or `poker_lab/schema` is edited; `poker_lab/strategy` gains `CheckFoldStrategy`,
+and every existing default behaves as before.
+
+**1. Exploitability and why a lower bound is still useful.**
+
+For a strategy $\sigma$ in a two-player zero-sum game, a best response $\mathrm{BR}(\sigma)$ maximises
+the responder's expected winnings $u(\mathrm{BR}, \sigma)$. Averaged over both seats, that maximum is
+the exploitability $\varepsilon(\sigma)$ (Step 18: NashConv / 2 when the game value is 0 over the two
+seats). Any strategy $\rho$ the responder could play wins at most as much:
+
+$$u(\rho, \sigma) \le \max_{\rho'} u(\rho', \sigma) = \varepsilon(\sigma).$$
+
+So if we can play *some* clever $\rho$ against $\sigma$ and measure what it wins, that number is a
+lower bound on $\varepsilon(\sigma)$, whatever $\rho$ is. LBR is one such $\rho$. A big LBR value is
+proof that $\sigma$ is at least that exploitable. A small one proves nothing: it may be that LBR's
+look-ahead is too short to find the leak.
+
+**2. What LBR does at one decision.**
+
+LBR holds a belief over the opponent's 1,326 possible hands, $w(c)$ for combo $c$, starting uniform
+over the combos its own cards and the board do not block. When the opponent acts, Bayes' rule:
+
+$$w'(c) \propto w(c)\, \sigma(a \mid c, h),$$
+
+where $\sigma(a \mid c, h)$ is the probability the opponent's strategy takes action $a$ holding $c$
+after public history $h$. This is the one place LBR uses its knowledge of $\sigma$.
+
+At its own decision LBR scores a few actions as if, after it, both players simply check or call to
+the showdown. With $\mathrm{wp} = \sum_c w(c)\, e(c)$ its win probability (ties counted half; $e(c)$
+its equity against combo $c$), pot $P$ and $A$ chips to call:
+
+* fold: $0$ (chips already in are gone either way);
+* call or check: $\mathrm{wp}\,(P + A) - A$;
+* a bet or raise that adds $b$ chips: the opponent folds with probability
+  $f = \sum_c w(c)\, \sigma(\text{fold} \mid c, h')$, where $h'$ is the history after the bet. If it
+  continues, its range is $w(c)(1 - \sigma(\text{fold} \mid c, h'))$, against which LBR's win
+  probability is $\mathrm{wp}'$; with $P'$ the pot after the call,
+  $$U = f\,P + (1 - f)\,(\mathrm{wp}'\,P' - b).$$
+
+LBR takes the highest score. The approximation is in "check or call to the showdown": LBR does not
+plan later bets, and treats the opponent's raises as calls. That is why it is *local*.
+
+**3. The opponent's views, rebuilt.**
+
+Bayes' rule needs $\sigma(a \mid c, h)$ at every past opponent decision, and the fold probability
+needs the opponent's view after a bet that never happened. The table hands LBR only its own
+`SeatView`, which is right (the information firewall of Step 3 stays intact), so LBR rebuilds the
+opponent's views from the public log. `HeadsUpTracker` replays the log action by action (stacks,
+street bets, pot, the size of the last full raise) and produces the `PublicHandState` and
+`LegalActions` the opponent had. The betting rules are PokerKit's, restated for two players:
+the minimum raise is the last full raise (at least the big blind), an all-in for less does not
+change it, and nobody may raise against a player who is all-in. A test plays random hands through
+the simulator with short and uneven stacks and checks that every rebuilt view equals, field by
+field, the view the simulator handed out, and that a hypothetical bet gives the view that followed
+the real one (the test checks over 500 views and 100 bets; a development script checked 4,251 views).
+
+**4. Equity for 1,326 hands at once.**
+
+Two numbers are needed for every combo at every decision. LBR's equity against combo $c$, and,
+for the opponent models, each combo's equity against one random hand (what the bots estimate).
+Computing each with a loop over runouts would cost seconds per decision in Python.
+
+The trick is one table per board: $R[r, c]$, the rank of combo $c$ on runout $r$ (0 where they share
+a card). On a flop there are $\binom{49}{2} = 1{,}176$ turn-river runouts, so $1{,}176 \times 1{,}081$
+valid entries, about 1.27 million 7-card evaluations: half a second with the C evaluator. The
+experiment uses a sample of 300 flop runouts, seeded by the board so both plays of a deal see the
+same sample. The turn table has 48 rows, the river one.
+
+LBR's equity against every combo is then a vectorised comparison of one column with the table:
+
+$$e(c) = \frac{\sum_r \big([R_{rh} < R_{rc}] + \tfrac12 [R_{rh} = R_{rc}]\big)\,[R_{rc} > 0]}
+{\sum_r [R_{rc} > 0]}, \qquad r \text{ ranging over runouts that miss the hero's cards } h.$$
+
+Equity against a random hand is harder: it averages over opponent combos $d$ that share no card
+with $c$, so naively it is a $1{,}326 \times 1{,}326$ comparison per runout. Instead, sort each row
+once and count, for every entry, how many entries rank worse and how many tie (runs of equal values
+found with a running maximum and minimum). That counts every combo, including the 101 that share a
+card with $c$; those are exactly the combos in card $a$'s row and card $b$'s row of $c = (a, b)$,
+so the same counting on the $52 \times 51$ "combos holding card $x$" table gives the correction,
+with $c$ itself counted in both rows and added back once. Brute force agrees on a flop (a
+development check) and on the turn and river (`tests/test_lbr.py`); a 300-runout flop takes about
+0.1 s (0.4 s with all 1,176) instead of minutes.
+
+Preflop LBR uses P3.1's class-against-class equity table, which ignores suits inside a class (the
+approximation the push/fold game itself makes).
+
+**5. Strategies that only sample.**
+
+`StrategyProvider` already returns a distribution, so for the baselines $\sigma(a \mid c, h)$ is one
+call per combo (one call in all for strategies that ignore their cards). Two strategies decide with
+private randomness. The archetype bots (`ParametricBot`) are agents that *sample* a decision, and
+both they and `PotOddsStrategy` estimate their equity against a random hand by Monte Carlo (150 and
+200 rollouts). Their real action probability averages over that estimate's noise:
+
+$$\sigma(a \mid c, h) = \operatorname{E}_{\hat e}\big[\pi(a \mid \hat e, h)\big], \qquad
+\hat e \approx \mathcal N\!\big(e(c), \, e(c)(1 - e(c)) / n\big).$$
+
+With the bots' thresholds (bucket cut points 0.45, 0.62, 0.80, higher facing a bet), the probability
+of each bucket is a difference of normal CDFs, and the action probabilities follow by mixing the
+per-bucket policy. Bet-size noise does not depend on the cards, so it cancels in Bayes' rule and the
+models use the median size. `ParametricBotStrategy` exposes the same averaged distribution as a
+`StrategyProvider` for one view, without touching `ParametricBot`. Tests compare the models with
+thousands of sampled decisions of the real bot and strategy.
+
+These are approximations, and they are safe ones. LBR is scored by playing the *real* opponent, so a
+wrong model only makes LBR a worse responder, never a larger number than the best response.
+
+**6. Measuring: duplicate deals and the all-in expectation.**
+
+Each deal is played twice with the same cards and the seats swapped (Steps 23 and 41), and the deal's mean
+is the unit. Two plays that go the same way cancel the card luck exactly. When the money goes in
+before the river, the hand is scored at its expectation instead of its runout:
+
+$$\tilde v = q \cdot \text{(contested pot)} - \text{(LBR's matched chips)}, \qquad
+\operatorname{E}[v \mid \text{cards, actions}] = \tilde v,$$
+
+with $q$ LBR's equity against the opponent's actual hand on the remaining board (exact from the flop
+on; 1,000 boards preflop, seeded by the two hands so both plays of a deal use the same boards). The
+replacement is unbiased because $q$ is the conditional expectation of the share LBR wins. The
+interval is the normal 95% interval on the deal means.
+
+**7. Checks with known answers.**
+
+Three opponents have exploitability known without LBR, so they test the code before any number is
+believed.
+
+* *Check or fold.* The opponent never puts in more than its blind, so no strategy can win more than
+  the blinds: 100 chips in the big blind's seat plus 50 in the small blind's, $75/100 = 0.75$ bb per
+  hand, 750 mbb/hand. LBR must win exactly that.
+* *The push/fold game.* At 10 bb with LBR's actions cut to fold and all-in (all-in facing a shove
+  means calling it), LBR plays exactly the push/fold game of Step 26, where the exploitability of a
+  pair of per-class ranges is the closed form `strategy_exploitability`. With class equities LBR's
+  look-ahead *is* the best response there: its score for playing a hand equals the hand's gain
+  over folding in that game (a test checks all 169 classes in both seats). So LBR should land on the
+  exact value, up to sampling.
+* *Push/fold Nash.* An equilibrium cannot be exploited, so LBR should win about 0.
+
+Before the predictions were fixed, the development seeds put two threshold strategies 0.8 to 1.8
+standard errors below their exact values on both seeds. Two checks settled it before anything was
+committed. LBR's expected value computed from its own scores over all 1,326 hands equals the exact
+value to 0.1 mbb, so its decisions are the best response. A direct simulation of those decisions
+with real cards and 30 boards per deal gave 197.3 ± 5.7 against an exact 197.2, and a
+30,000-deal rerun through the real engine 202.7 ± 8.4. The low values were sampling noise.
+
+**Results.** Seed 2026, commit `24fbc2b`, clean tree: 2,000 duplicate deals (4,000 hands) per deep
+row, 4,000 per push/fold row, 500 per ablation. Every LBR value is a lower bound on exploitability.
+
+| Opponent (100 bb, LBR folds, calls, bets the pot or goes all-in) | LBR, mbb/hand [95% CI] |
+|---|---|
+| Always check or call | 16,347 [15,339, 17,356] |
+| Pot odds (the play page's advisor baseline) | 7,559 [6,911, 8,206] |
+| Uniform random | 5,843 [5,173, 6,513] |
+| Bot: calling station | 5,797 [5,008, 6,587] |
+| Bot: maniac | 5,051 [4,403, 5,700] |
+| Bot: loose-aggressive | 1,541 [1,187, 1,896] |
+| Bot: tight-aggressive | 1,370 [1,126, 1,614] |
+| Bot: nit | 907 [720, 1,094] |
+| Check or fold | 750 [750, 750] |
+
+| Opponent (10 bb) | LBR actions | LBR [95% CI] | Exact (Step 26) |
+|---|---|---|---|
+| Push/fold Nash | fold, all-in | 1 [-0, 2] | 0 |
+| Push and call any two | fold, all-in | 449 [421, 476] | 473 |
+| Push top 50%, call top 20% | fold, all-in | 166 [141, 191] | 151 |
+| Push top 15%, call top 60% | fold, all-in | 183 [160, 206] | 197 |
+| Push/fold Nash, pot-odds fallback off its tree | fold, call, pot, all-in | 299 [241, 358] | |
+
+Ablations, paired with the main rows' first 500 deals: without range tracking LBR wins 3,146
+[1,964, 4,329] mbb/hand less against pot odds and 2,019 [1,028, 3,010] less against the TAG bot;
+with all 1,176 flop runouts instead of 300 the change is +204 [-479, +887] and -62 [-144, +20].
+
+**Predictions: all 4 checks and all 11 predictions hold.** C1 (check/fold exactly 750), C2 (each
+push/fold row within 3 standard errors of exact: z = +1.76, -1.75, +1.15, -1.20), C3 (Nash between
+-10 and +10), C4 (no opponent action the model gave probability 0). P1 (every deep strategy but
+check/fold loses at least 500 at the low end: the least is the nit's 720), P2 (always call at
+least 14,000), P3 (pot odds 5,500 to 8,500), P4 (uniform random 4,500 to 7,500), P5 (maniac > LAG >
+TAG > nit), P6 and P6b (station and maniac at least 4,000; nit, TAG, LAG at most 2,500), P7 (no
+range tracking loses on both), P8 (all flop runouts within ±800), P9 (Nash with the fallback at
+least 150 at the low end: 241), P10 (the all-in expectation never raised a deep row's variance; it
+cut it by 1.1x for always call up to 4.2x for uniform random). The thresholds came from seeds 98 and
+99, so this is a replication, not a strong test.
+
+**How to read these numbers.**
+
+* *They are lower bounds.* "Pot odds loses 7.6 bb/hand to LBR" means its exploitability is at least
+  about 6.9 bb/hand (the low end of the interval). The true value can be much higher: LBR plans
+  one action ahead with four actions.
+* *Every hold'em strategy in the repository is very exploitable*, which is expected: none was built
+  to be hard to exploit. For scale, folding every hand loses 750 mbb/hand; the play page's baseline
+  loses at least nine times that. The bots' ordering follows their archetypes: loose players who
+  call too much (station, maniac) lose 5-6 bb/hand, the nit, TAG and LAG 0.9 to 1.5.
+* *Range tracking carries much of the value.* Without it LBR treats every hand as equally likely to
+  the river, and against the TAG bot its value drops to -642 [-1,609, +325]: no longer a useful
+  bound. Here LBR's model of the opponent is exact up to the approximations of section 5; an engine
+  that has to learn its model from hands starts from less.
+* *Off the abstraction's tree, the fallback decides.* Push/fold Nash is unexploitable inside the
+  push/fold game (1 [-0, 2]), but at the same 10 bb LBR wins 299 once it may limp or bet the pot,
+  because the pot-odds fallback then plays. An equilibrium of an abstract game protects only the
+  spots it covers.
+* *The flop sample does not matter at this precision* (P8), so 300 runouts were enough.
+
+**Run times, awake only** (C.3).
+
+* The real run took 1,152 s (19.2 minutes) on 4 workers, 4,530 s of work: 13:23 to 13:42 by the
+  shell's clock, matching the elapsed time, and the System log has no Kernel-Power 506 or 507 in that
+  window, so the machine did not pause. It ran on battery until 13:33:44 (Kernel-Power 105, plugged
+  in), with 0.29 to 1.27 GB free in one-minute samples; each worker held about 120 MB in a
+development run's process list.
+* Per hand, including the opponent's own time: always call 88 ms, uniform random 43, pot odds 166,
+  bots 21 (nit) to 128 (calling station), push/fold rows 2 to 5, and push/fold Nash with the
+  fallback 143. The costly parts are the flop table and the opponent models' equity against a
+  random hand, once per board. All 1,176 flop runouts cost about 3.5x as much per hand against pot
+  odds (575 ms) and 3x against the TAG bot (90 ms).
+* Seed 98 took 1,136 s. Seed 99's 41,190 s includes the laptop sleeping and is not a timing.
+
+**To reproduce.**
+
+```bash
+python -m experiments.phase2_lbr --seed 2026
+```
+
+`--quick` runs a 16 s version; `python -m experiments.run_phase2 --only lbr` runs it as a Phase 2
+step. LBR on its own:
+
+```python
+from poker_lab.exploit.lbr.agent import LBRConfig, LocalBestResponse
+from poker_lab.exploit.lbr.match import lbr_match
+from poker_lab.exploit.lbr.models import PotOddsModel
+from poker_lab.strategy import PotOddsStrategy, StrategyAgent
+
+r = lbr_match(lambda: StrategyAgent(PotOddsStrategy(seed=1)),
+              lambda: LocalBestResponse(PotOddsModel(), LBRConfig(flop_sample=300)),
+              n_deals=200, seed=1)
+print(r.estimate())  # method "local_best_response", is_upper_bound False: a lower bound
+```
+
+**What was left.**
+
+* *An engine for the play page's slot.* The natural next step is LBR's own look-ahead played against
+  a *fitted* model: profile the opponent from completed hands (Phase 1's classifier and parameter
+  estimates), build a `ParametricBotModel` from the estimate, track the range, and pick the best of
+  a few actions, mixed with the baseline for safety. It fits `ExploitEngine` as it is (a `SeatView`,
+  a baseline, a `ProfileSnapshot`), and the play page would label it "computed". Measuring it needs
+  two numbers: what it gains against the bots, and its own exploitability by LBR, which needs a
+  `RangeModel` of the engine (its distribution for all 1,326 of its possible hands at each
+  decision, so the engine has to be cheap or vectorized).
+* *A less exploitable baseline.* The advisor's baseline gives up at least 6.9 bb/hand; an exploit
+  engine built on it inherits that. A solved abstraction would be a better anchor.
+* *LBR itself:* heads-up only; more bet sizes (half pot, two pots) could tighten the bound; the
+  look-ahead ignores later streets' betting.
+
+**What it means.** The repository now has a yardstick for heads-up hold'em: a lower bound on a
+strategy's exploitability, at 2 to 170 ms per hand, checked against exact answers where they exist.
+Every hold'em strategy here, including the play page's baseline, can be beaten by at least most of
+a big blind per hand, and knowing the opponent's range is what makes the beating possible.
+
+**Mistakes.**
+
+* A test hand shared a card with the river of its own test board, so the brute-force check compared
+  an impossible hand: the test was wrong, the code right.
+* The first start of the real run set its log path in a subshell the main command could not see, so
+  it wrote nowhere and exited at once; it was restarted from the same clean tree. A light sampler
+  loop from that attempt kept writing memory and power samples, which became the run's sampler.
+* Seed 99's development run spanned a laptop sleep (41,190 s of wall time); its values are used,
+  its times are not.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -6767,10 +7044,10 @@ while the engine works and every 2 s while it waits for you (a decision or the n
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 624 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+suite has 642 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
 runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
 Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
-in varying machine states (Step 41); 604 took 214 to 229 s (Step 43). `tests/conftest.py` starts the tests marked `long` first, so
+in varying machine states (Step 41); 604 took 214 to 229 s (Step 43); 642 took 265 s (Step 45). `tests/conftest.py` starts the tests marked `long` first, so
 the longest test does not start late and finish last (Step 40). `-m "not slow"` skips the slowest
 tests, and `-n 0` runs everything in one process, for a single file or for `--pdb`. The explorer's
 browser behavior has its own check (`python -m experiments.explorer.browser_check`, Step 25), since
@@ -6981,6 +7258,9 @@ Invert once, and look at every figure before committing it.
 | A path-check script without a `__main__` guard broke the worker pool on Windows | the run failing | the guard | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
 | The `misspec_by_hands` figure had a wide gap between its panels: `tight_layout` counted the legend under the left panel as part of it | reading the figure while drafting the step | a legend under both panels, redrawn from the committed JSON; no number changed | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
 | A click answered the next decision: an answered turn still looked pending until the engine thread woke | stale-decision error in the first smoke test | `pending()` hides a turn once answered; turn tokens | [44](#step-44-playing-against-the-model-a-local-web-page) |
+| A brute-force equity test used a hand that shared a card with its own river | the test failing against code that was right | another river card | [45](#step-45-how-exploitable-are-the-holdem-strategies-local-best-response-p28b) |
+| The real run's first start set its log path in a subshell, so it wrote nowhere and exited at once | the run failing in its first second | restarted from the same clean tree | [45](#step-45-how-exploitable-are-the-holdem-strategies-local-best-response-p28b) |
+| Two push/fold rows sat 0.8 to 1.8 standard errors below their exact values on both development seeds | comparing with the closed form before the predictions | LBR's expected value from its own scores (exact to 0.1 mbb), a direct simulation with real cards and a 30,000-deal rerun: sampling noise, no bias | [45](#step-45-how-exploitable-are-the-holdem-strategies-local-best-response-p28b) |
 
 ---
 
@@ -7069,6 +7349,8 @@ Invert once, and look at every figure before committing it.
 | Linear program (LP) | optimizing a linear function subject to linear equalities and inequalities; the feasible set is a polyhedron, and if an optimum exists and the feasible set has a vertex (always so when every variable is bounded below, as in standard form), one optimum is at a vertex |
 | Log-loss | mean negative log-probability of the true class |
 | Logical processor | a hardware thread that the operating system can schedule; with SMT, two per physical core |
+| Local best response (LBR) | a responder that tracks the opponent's range by Bayes' rule with the opponent's known strategy and picks the best of a few actions by a one-step look-ahead that assumes a check-down; what it wins is a lower bound on exploitability (Lisý and Bowling 2017; Step 45) |
+| Lower bound on exploitability | what any particular strategy wins against $\sigma$: never more than a best response, so never more than $\sigma$'s exploitability (Step 45) |
 | Lower confidence bound | the low end of an interval; ranking by it prefers what is surely good over what is good on average |
 | LPT scheduling | longest processing time first: sort jobs longest first and give each to the first free worker; the makespan is at most $4/3 - 1/(3m)$ times the best on $m$ workers (Graham 1969; Step 40) |
 | LRU cache | a cache of bounded size that, when full, drops the entry used longest ago (Step 39) |
@@ -7106,7 +7388,7 @@ Invert once, and look at every figure before committing it.
 | Profiler | a tool that measures where a program spends its time; Python's is `cProfile` (Steps 1, 39) |
 | Pseudo-true parameter | the parameter maximum likelihood converges to under misspecification: the family member closest to the truth in KL divergence (White 1982) |
 | Push/fold | a short-stack strategy space: go all-in or fold, and call or fold facing an all-in |
-| Range | the set of hands a player plays in a spot |
+| Range | the set of hands a player plays in a spot; as a belief, weights over the 1,326 combos (Step 45) |
 | Rao-Blackwell | replacing an estimator by its conditional expectation given some information never increases its variance (here: scoring each block by its exact expected value instead of the chips won) |
 | Reach-weighted total variation | the mean over information sets, weighted by how often play reaches them, of half the summed absolute difference between two action distributions (Step 43) |
 | Realization plan | sequence-form strategy: probability of each own action sequence |
@@ -7171,6 +7453,11 @@ Poker, games and engines
 
 Equilibrium, exploitation, evaluation (Phase 2 and 5)
 
+* Lisý, V., Bowling, M. (2017). *Equilibrium Approximation Quality of Current No-Limit Poker
+  Bots.* AAAI Workshop on Computer Poker and Imperfect Information Games; arXiv:1612.07547.
+  (Local best response; Step 45)
+* Johanson, M. (2013). *Measuring the Size of Large No-Limit Poker Games.* arXiv:1302.7008.
+  (Step 45)
 * Koller, D., Megiddo, N., von Stengel, B. (1996). *Efficient Computation of Equilibria for
   Extensive Two-Person Games.* Games and Economic Behavior 14. (The sequence form)
 * Huangfu, Q., Hall, J. A. J. (2018). *Parallelizing the dual revised simplex method.*
@@ -7468,3 +7755,7 @@ Performance and numerics
 * 2026-11-09: Step 44 (playing against the model: a local web page, push/fold and hold'em, the
   exploit slot), a tool rather than a result. C.1 (624 tests), Parts D and E updated. The P3.9
   numbers it quotes were checked against Step 36.
+* 2026-11-10: Step 45 (P2.8b: local best response for heads-up no-limit), from the
+  pre-registered plan in `experiments/phase2_lbr.py` (`24fbc2b`) and its run on seed 2026
+  (results `ed239d6`, explorer `ccc1374`). C.1 (642 tests), Parts D, E and F updated. Numbers
+  checked by script against `lbr.json`.

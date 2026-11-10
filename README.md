@@ -196,22 +196,23 @@ Phase 2 works on Kuhn poker (12 information sets) and Leduc hold'em (936). Both 
 that every strategy is evaluated **exactly**: exploitability comes from a full best response, never
 from sampled play. Exploitability is NashConv / 2 in chips per hand (OpenSpiel's convention), so 0
 means an exact equilibrium and the uniform random policy scores 0.46 in Kuhn and 2.37 in Leduc.
-Reproduce with `python -m experiments.run_phase2 --seed 2026` (~2 h 40 min on 16 logical
+Reproduce with `python -m experiments.run_phase2 --seed 2026` (~3 h on 16 logical
 processors, the sum of the steps' recorded times, 72 min of it the randomness step, 48 min the
-misspecification step and 24 min the duplicate step). The CFR, Deep CFR and
+misspecification step, 24 min the duplicate step and 19 min the local best response step). The CFR, Deep CFR and
 exploitation results come from commits `53eb199`, `d09ad62` and `963cee6`. A single `run_phase2` at
 commit `348c4d5` reproduced those numbers exactly; only wall-clock timings differ. AIVAT (P2.11,
 added after Phase 3) comes from its pre-registered run at `695cb26`, and duplicate dealing for n
 players (P2.11b) from its own at `0fb6e53`, the split of the copies' shortfall (P2.11c) from its
-own at `2b02bed`, and opponents outside the model's family (P2.12) from its own at `8601332`. Full
-tables:
+own at `2b02bed`, opponents outside the model's family (P2.12) from its own at `8601332`, and local
+best response for hold'em (P2.8b) from its own at `24fbc2b`. Full tables:
 [`cfr_summary.md`](experiments/results/phase2/cfr/cfr_summary.md),
 [`deep_cfr_summary.md`](experiments/results/phase2/deep_cfr/deep_cfr_summary.md),
 [`exploit_summary.md`](experiments/results/phase2/exploit/exploit_summary.md),
 [`aivat_summary.md`](experiments/results/phase2/aivat/aivat_summary.md),
 [`duplicate_summary.md`](experiments/results/phase2/duplicate/duplicate_summary.md),
 [`randomness_summary.md`](experiments/results/phase2/randomness/randomness_summary.md),
-[`misspec_summary.md`](experiments/results/phase2/misspec/misspec_summary.md).
+[`misspec_summary.md`](experiments/results/phase2/misspec/misspec_summary.md),
+[`lbr_summary.md`](experiments/results/phase2/lbr/lbr_summary.md).
 
 **Checked against independent references first.** The best response reproduces the published
 uniform-policy NashConv (11/12 in Kuhn, 4.747222 in Leduc) and a brute force over all 64 pure
@@ -452,6 +453,50 @@ thresholds came from two development seeds.
   <img alt="Gain over the equilibrium hero in 2,000-hand sessions for seven heroes against five kinds of bot: all positive against fixed and family-adapting bots, most negative against bots that adapt freely, while the clairvoyant reference gains 0.78 and 0.98" src="experiments/results/phase2/misspec/misspec_sessions.png">
 </picture>
 
+### 7. How exploitable are the hold'em strategies? Local best response (P2.8b)
+
+Sections 1-6 measure exploitability exactly, which hold'em does not allow: a best response there
+needs the whole game tree. Local best response (Lisý and Bowling, 2017) gives a **lower bound**
+instead. It knows the opponent's strategy, tracks the opponent's range over all 1,326 hands by
+Bayes' rule, and at each decision picks fold, call, a pot-size bet or all-in by a one-step
+look-ahead that assumes the hand is then checked down. What it wins is never more than a best
+response wins, so the strategy's exploitability is at least that much. Heads-up, blinds 50/100,
+each deal played twice with the seats swapped, all-ins scored at their expectation; 2,000 deals
+per strategy at 100 bb, 4,000 per push/fold row at 10 bb. All 4 checks and 11 pre-registered
+predictions hold (thresholds from two development seeds).
+
+| Strategy (100 bb) | LBR wins, mbb/hand [95% CI] |
+|---|---|
+| Always check or call | 16,347 [15,339, 17,356] |
+| Pot odds (the [play page](#play-against-the-model)'s advisor baseline) | 7,559 [6,911, 8,206] |
+| Uniform random | 5,843 [5,173, 6,513] |
+| Bot: calling station | 5,797 [5,008, 6,587] |
+| Bot: maniac | 5,051 [4,403, 5,700] |
+| Bot: loose-aggressive | 1,541 [1,187, 1,896] |
+| Bot: tight-aggressive | 1,370 [1,126, 1,614] |
+| Bot: nit | 907 [720, 1,094] |
+| Check or fold (the most anyone can win from it: the blinds) | 750 [750, 750] |
+
+* **Checked against exact answers first.** Against check/fold LBR wins exactly the blinds. In the
+  push/fold game of Phase 3 (10 bb, LBR folds or goes all-in) it lands within 1.8 standard errors
+  of the exact exploitability of three threshold strategies (449, 166, 183 against 473, 151, 197
+  mbb/hand), and wins +1 [-0, +2] against push/fold Nash.
+* **Every hold'em strategy in the repository is very exploitable.** None was built not to be; the
+  play page's baseline gives up at least 6.9 bb/hand, nine times what folding every hand loses.
+* **The range is what makes the bound useful.** Without range tracking LBR wins 2.0-3.1 bb/hand
+  less on the same deals, and against the TAG bot no longer wins at all.
+* **An equilibrium protects only the spots it covers.** Push/fold Nash with a pot-odds fallback
+  loses 299 [241, 358] mbb/hand at 10 bb once LBR may limp or bet the pot instead of only shoving.
+
+These are lower bounds, never the exploitability itself: a small value would say only that this
+look-ahead found little. About 0.1 s per hand (2 ms in push/fold, 166 ms against pot odds); the run
+took 19 minutes on 4 workers.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="experiments/results/phase2/lbr/lbr_values-dark.png">
+  <img alt="Local best response's winnings with 95% intervals: at 100 bb from 0.75 bb per hand against check/fold to 16.3 against always calling; at 10 bb push/fold the four LBR values sit next to the exact exploitabilities" src="experiments/results/phase2/lbr/lbr_values.png">
+</picture>
+
 **What Phase 2 does not show.**
 
 * Section 6 tests a few rules outside the bot family and two ways of adapting, in Leduc only. Other
@@ -463,7 +508,8 @@ thresholds came from two development seeds.
   AIVAT (`evaluation/aivat.py`, exact for small games) are built and measured for that; hold'em has
   no AIVAT value function yet.
 * Leduc is not hold'em. Carrying these methods to no-limit hold'em needs an abstraction
-  (Phase 3).
+  (Phase 3). Section 7 measures hold'em strategies only from below, heads-up, with LBR knowing the
+  opponent's strategy; no exploit engine for hold'em is measured yet.
 
 ## Phase 3: a bridge to hold'em
 
@@ -835,6 +881,7 @@ python -m experiments.run_phase1 --seed 2026 --quick  # smoke test, ~1 min (not 
 python -m experiments.run_phase2 --seed 2026          # ~40 min on 16 logical processors
 python -m experiments.run_phase2 --seed 2026 --quick  # smoke test (not for reporting)
 python -m experiments.run_phase2 --seed 2026 --only exploit   # one step: cfr, deep_cfr, exploit, aivat or duplicate
+python -m experiments.phase2_lbr --seed 2026          # local best response for hold'em (P2.8b), ~19 min on 4 workers
 
 # Reproduce every Phase 3 experiment: push/fold solved and checked (1 min), opponents modeled
 # (4 min), the solved strategy played through the real engine (21 min), recommendations evaluated
@@ -877,7 +924,9 @@ A local web page (Python's standard library, vanilla JS, nothing loaded from out
 * **No-limit hold'em,** heads-up or six-handed, against Phase 1's archetype bots or advisors. The
   model profiles you (shrunk stats, archetype probabilities from the bot-trained classifier). The
   advisors' exploit slot holds a fold-equity rule of thumb, labeled as a heuristic; the slot takes
-  any `ExploitEngine`, so another engine plugs in without changing the page.
+  any `ExploitEngine`, so another engine plugs in without changing the page. The advisors' baseline
+  (pot odds) loses at least 6.9 bb/hand to local best response (Phase 2, section 7), the yardstick
+  a computed engine will be measured against.
 
 The model's read of you is a switch, off by default: in push/fold, your estimated ranges, the
 response it chose with its gain interval, the fit checks and the exact value of its strategy
@@ -1024,15 +1073,17 @@ docs/          BUILD_LOG.md: how every step was built, with the math
 | Phase | Goal | What exists now |
 |---|---|---|
 | 1 | Opponent modeling on synthetic players | **Done**: this README |
-| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README, including AIVAT measured exactly (P2.11) and duplicate dealing for n players measured at 6-max (P2.11b). Hold'em-scale exploitability (local best response) is a stretch task |
+| 2 | GTO baseline (CFR / Deep CFR on Kuhn and Leduc), exploit strategies, exploitability measurement | **Done** for small games: this README, including AIVAT measured exactly (P2.11) and duplicate dealing for n players measured at 6-max (P2.11b). For heads-up hold'em, a lower bound on exploitability by local best response (P2.8b) |
 | 3 | General framework: hand histories → profiles → type estimates with confidence → ranked exploit recommendations | **Done** for heads-up push/fold and the general pipeline (import, profiles, recommendations, checks), not full hold'em solving. Every step reproduces from one command: push/fold solved exactly (P3.1); push/fold opponents modeled and exploited (P3.2); the solved strategy plays real hands behind the firewall, checked against exact values (P3.3); ranked exploit recommendations with posterior intervals, checked against the truth (P3.4); model-fit checks that flag a wrong or changing opponent model (P3.5), with the fallback rule confirmed on fresh seeds (P3.5b); completed hand histories imported from PHH text files, strictly checked (P3.6); priors fit to real players, a support check, and the bot-trained models tested on professionals (P3.7); a PyTorch sequence model over raw actions, compared with Phase 1's classifier (P3.8); push/fold opponents that adapt to the hero, exploited with and without the recommender's safeguards (P3.9); schema v2 with big-blind antes, straddles and minimum bets (P3.10). Also `ProfileStore`, calibrated classifier, `Advisor` |
 | 4 | Home-game capture: camera card recognition + manual action entry → hand histories | `CaptureIngestor` (fusion, typed conflicts, PokerKit replay check), `source`/`confidence` per card |
 | 5 | Live evaluation: action-prediction accuracy and win rate with variance reduction | action-prediction metric (reused as-is), `WinRateEvaluator`, duplicate-deal estimator, AIVAT control variates (exact for small games; hold'em needs a value function) |
 
 Next tasks:
 
-* **Phase 2 stretch.** Local best response (LBR) for hold'em strategies; a Leduc hero whose model can
-  grow, or that notices an opponent adapting (section 6's open questions).
+* **A computed exploit engine for hold'em**, measured against local best response (section 7):
+  LBR's look-ahead against a model fitted from the opponent's hands, for the play page's slot.
+* **Phase 2 stretch.** A Leduc hero whose model can grow, or that notices an opponent adapting
+  (section 6's open questions).
 * **Phase 4.** A card detector with calibrated confidence, an action-entry app that records
   through the sealed store, a review screen for capture conflicts, and a consent and
   data-handling policy for recording other players.
