@@ -860,6 +860,32 @@ commit, dirty flag and package versions), a markdown summary, and figures in lig
 variants. Phase 1's simulated hands are cached in `experiments/cache/` (git-ignored) so
 analyses can be re-run without re-simulating.
 
+## Play against the model
+
+```bash
+python -m poker_lab.play          # opens http://127.0.0.1:8790/ (--port, --data-dir, --no-browser)
+```
+
+A local web page (Python's standard library, vanilla JS, nothing loaded from outside, bound to
+127.0.0.1) with two games:
+
+* **Heads-up push/fold at 5-20 bb.** The model is the Phase 3 pipeline with you as its opponent: it
+  learns your push and call ranges from completed hands only (your cards count only when you show
+  them), refits after every hand, and plays the ranked recommendation (P3.4), falling back to the
+  equilibrium when the stability check fails (P3.5b). The first session at a stack calibrates the
+  fit checks once (a minute or two) and caches them.
+* **No-limit hold'em,** heads-up or six-handed, against Phase 1's archetype bots or advisors. The
+  model profiles you (shrunk stats, archetype probabilities from the bot-trained classifier). The
+  advisors' exploit slot holds a fold-equity rule of thumb, labeled as a heuristic; the slot takes
+  any `ExploitEngine`, so another engine plugs in without changing the page.
+
+The model's read of you is a switch, off by default: in push/fold, your estimated ranges, the
+response it chose with its gain interval, the fit checks and the exact value of its strategy
+against your estimated one. Every session ends with a report, with results in chips and in all-in
+EV. Your hands are saved as JSON Lines outside the repository (`POKER_LAB_PLAY_DIR`, default
+`%LOCALAPPDATA%/poker_lab/play`). It is a practice game against the program: nothing in it reads
+hands from another site or app. Design and math: `docs/BUILD_LOG.md`, Step 44.
+
 ## How it fits together
 
 ```mermaid
@@ -986,6 +1012,7 @@ poker_lab/
   advisor/     firewalled Advisor + AdvisorAgent                (Phase 3/4)
   capture/     CaptureIngestor: camera + manual logs -> HandHistory (Phase 4)
   importers/   PHH text files -> HandHistory, strictly replayed through PokerKit; exporter; CLI
+  play/        play against the model: local web page, push/fold and hold'em sessions, exploit slot
 experiments/   run_phase1/2/3.py (one command each), configs/, results/, references/
   explorer/    builds results/explorer.html (one section per quantified result, all phases)
 tests/         unit, contract, firewall, differential and end-to-end tests

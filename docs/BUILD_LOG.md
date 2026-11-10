@@ -78,6 +78,8 @@ $B(a,b)$ the beta function.
   * [Step 41: Duplicate dealing at more than two seats](#step-41-duplicate-dealing-at-more-than-two-seats-p211b)
   * [Step 42: Where six copies' shortfall comes from](#step-42-where-six-copies-shortfall-comes-from-p211c)
   * [Step 43: Exploitation when the model is wrong](#step-43-exploitation-when-the-model-is-wrong-p212)
+  * Tools
+  * [Step 44: Playing against the model](#step-44-playing-against-the-model-a-local-web-page)
 * [Part C: cross-cutting engineering](#part-c-cross-cutting-engineering)
 * [Part D: mistakes and how they were caught](#part-d-mistakes-and-how-they-were-caught)
 * [Part E: glossary](#part-e-glossary)
@@ -6515,6 +6517,207 @@ opponent reacts to you, not about how the opponent plays.
   left panel, and `tight_layout` counted it as part of that panel. It was redrawn from the committed
   results with a legend under both panels, in a commit of its own; no number changed.
 
+## Step 44: Playing against the model (a local web page)
+
+**The request.** Before any home-game capture, the owner wanted to play against the model themselves,
+so it can learn from their hands and look for exploits, and wanted a no-limit hold'em framework that a
+future exploit engine can plug into. Their choices: heads-up push/fold first (5-20 bb), because the
+whole learn-and-exploit pipeline already exists for it; full no-limit hold'em playable now, with an
+empty-or-heuristic exploit slot; a local web page served by Python's standard library; the model's
+read of them behind a switch that is off by default, and a report after every session. This is a
+tool, not a research result: nothing here is pre-registered, and no number from it is reported.
+The code is `poker_lab/play/` (new); nothing outside it changes except the package data list in
+`pyproject.toml`, so every committed result and every existing default stays as it was.
+
+Start it with `python -m poker_lab.play` and open `http://127.0.0.1:8790/`.
+
+**1. A person inside a synchronous engine: a condition variable.**
+
+`TableSimulator` asks each seat for a decision with an ordinary function call, `agent.act(view,
+rng)`, and cannot go on until it returns. A bot returns at once. A person answers seconds later,
+through a different thread: the web server's. One standard way to join the two is a *condition
+variable*: a lock plus a waiting room. A thread holding the lock can `wait()`, which releases the
+lock and sleeps until another thread calls `notify()`; it then takes the lock back and rechecks
+what it was waiting for (waits can wake spuriously, so the check runs in a loop).
+
+`DecisionChannel` (in `channel.py`) has one lock and four fields: the pending `SeatView`, the
+answer, a turn token, and a closed flag.
+
+* The engine thread, inside `HumanAgent.act`, stores the view, increments the token, and waits
+  until an answer or the closed flag appears.
+* A server thread shows `pending()` to the page. When the page posts `{token, action, amount}`,
+  `submit` checks that the token is the current one, that no answer is already there, and that the
+  decision is legal (`check_decision` against `view.legal`, plus the mode's own rule: in push/fold
+  only push or fold, and call or fold facing a push). Only then does it store the answer and
+  notify.
+* `close()` sets the flag and notifies; the waiting engine thread raises `SessionClosed`, which
+  unwinds the hand. The unfinished hand never completes, so it is never saved or learned from.
+
+The token matters. Without it a double click, or a page that polled just before the engine moved
+on, could answer the *next* decision with a click meant for this one. With it, a stale click is
+refused (HTTP 409) and nothing reaches the engine.
+
+Everything else in a session (results, the hand log, the read) is guarded by the same lock, which
+is re-entrant, so the server's `state()` can call `pending()` while holding it.
+
+**2. The firewall, again.**
+
+The model must learn only what it could see at a real table: completed hands, with your cards only
+when you showed them. Three layers already enforce that, and the play code uses them rather than
+adding its own:
+
+1. The simulator calls `hand_completed` with the hand passed through `redact_hole_cards` for that
+   seat, and only after the hand is complete.
+2. `PushFoldModel.observe` redacts again (to the model's seat) before keeping the hand, so even a
+   caller that passed a full record could not leak your cards; earlier sessions loaded from disk go
+   through the same function.
+3. `push_fold_observations` redacts a third time and reads your class only where `shown` is true.
+   In hold'em, `ProfileStore.ingest` redacts to public information and keeps counters, never hands.
+
+Two tests check the result rather than the code path. One plays 60 hands and walks every object
+reachable from the model (history, posterior, recommender, the read): the only card strings in it
+are the model's own cards, the boards and the cards you showed. The other is a counterfactual: it
+gives two models the same hands, except that in every hand where you did not show, your hole cards
+are replaced by others, and checks that the two reads are identical, number for number. If an
+unshown card could reach the model by any path, some number would differ.
+
+Your hands themselves are saved in full, as JSON Lines, in a folder outside the repository
+(`POKER_LAB_PLAY_DIR`, default `%LOCALAPPDATA%/poker_lab/play`); the code refuses a folder inside
+the repository. They are the owner's own data: using them in a research result needs their OK.
+
+**3. Push/fold: the P3.4 pipeline with you as the opponent.**
+
+The model plays the hero's side of P3.4, and you are the opponent it models:
+
+* *Prior.* `PushFoldPrior.fit` on 20 push/fold bots per archetype (P3.2's population, a fixed
+  seed). Before any hand, the model expects you to be one of those bots.
+* *Posterior and ranking.* Exactly `PushFoldRecommender.recommend` on your decisions in hand
+  order: posterior draws, the equilibrium, restricted Nash responses at $p \in \{0.1, 0.25, 0.5,
+  0.75, 0.9\}$ and the best response, ranked by the lower end of a 90% interval on the gain over
+  the equilibrium against you. The equilibrium's gain is 0, so the model deviates only when some
+  response gains with posterior probability of at least 95%. (The play code calls the
+  recommender's two internal steps itself, so it can keep the posterior for the read; the numbers
+  are the ones `recommend` returns.)
+* *Fit checks and fallback.* P3.5's checks, with thresholds calibrated for the session's stack on
+  200 bots drawn from the prior and played by the equilibrium, at 10 to 800 hands, then cached in
+  the data folder (about 0.5 s per bot on this laptop, so a minute or two with four worker
+  processes, once per stack). A failed stability check means the model plays the equilibrium
+  (P3.5b's rule).
+* *Refit schedule: after every completed hand, on all your hands at this stack.* Two facts set it.
+  A refit is cheap (about 0.15 s here), so there is no reason to wait. And P3.9 compared the
+  options: the *refit* hero kept 94% of the clairvoyant's gain against static bots and stayed
+  within 0.002 bb/hand of equilibrium play against bots that adapt, and refitting on the last 300
+  hands instead of all of them changed the gain by about 0.001 bb/hand either way (post hoc there).
+  In a short session a window would also discard most of the evidence. Your earlier sessions at
+  the same stack count too, unless you start a fresh model.
+
+One caveat goes in every report. The checks were calibrated for a single look at the data; here
+they run after every hand, so the chance that some check fails by accident during a session is
+well above 5% (in P3.9, 19% of static bots saw at least one fallback over 40 refits). A false fallback costs little (the equilibrium cannot lose against any opponent in
+expectation), so the rule is kept as it is and the report says so.
+
+*What the read shows* (the switch, or the report): your estimated push and call ranges as 13x13
+grids (the posterior mean probability per hand class, with the equilibrium's range outlined); the
+estimated range sizes with 90% intervals; the response chosen, its rank and its gain interval;
+P(gain > 0); the fit checks and whether it fell back; and two exact values from the closed form
+$v(s,c)$ of P3.4: the model's strategy against your estimated strategy, and the equilibrium's. Your
+estimated exploitability (how much a best response would win from you, if the estimate were right)
+comes from the same closed form. Because the hero's value is linear in your per-class
+probabilities, its value against the posterior mean equals its posterior expected value.
+
+**4. All-in EV: taking the cards' luck out of your results.**
+
+When two players are all in before the river, the remaining cards decide the pot but say nothing
+about the decisions. With $P$ the pot once uncalled chips are returned, $c$ your contribution and
+$e$ your equity (win probability, ties counted half) given both hands and the board at the moment
+of the all-in:
+
+$$\text{all-in EV} = e P - c, \qquad \text{actual} = (\text{what you won}) - c.$$
+
+The expected difference between the two is zero, and summed over a session the luck of the
+run-outs drops out. The two players' all-in EVs sum to zero, as their actual results do (a test
+checks both).
+
+The equity is exact from the flop on: $\binom{45}{2} = 990$ run-outs from the flop, 44 from the
+turn. Preflop there are $\binom{48}{5} = 1{,}712{,}304$ boards, too many to evaluate in Python
+each hand, so the code averages over 20,000 random boards. Each board's outcome is a value in
+$\{0, \tfrac12, 1\}$ with variance at most $\tfrac14$, so the standard error of the mean is at most
+$\sqrt{1/4 \div 20{,}000} \approx 0.0035$: about 0.14 bb in a 40 bb pot. The random numbers are
+seeded with the hand id, so a report reproduces exactly. Pots with three or more players, all-ins
+on the river and hands without an all-in keep their actual result.
+
+**5. No-limit hold'em: profiling and an exploit slot.**
+
+You sit at a heads-up or six-handed table, 1/2 blinds, 100 bb, stacks topped up each hand. The
+opponents are Phase 1's archetype bots (drawn at random; the report reveals which) or advisors: the
+pot-odds baseline adjusted by the exploit slot.
+
+*The read* is Phase 1's profile: shrunk stats with 95% intervals and the calibrated logistic
+classifier's archetype probabilities. Its training rows come from a small league (120 bots, 600
+hands each, windows of 25 to 600 hands), simulated once and cached as plain arrays; the classifier
+is refit from them at each session start. Both the priors and the classifier were built on
+six-handed bot tables, so the read says which bot your stats resemble, not how a person plays, and
+heads-up it is outside its training range. The page says both.
+
+*The exploit slot* (`exploit_slot.py`) is a registry of `ExploitEngine`s, each with a `kind`:
+`heuristic` (a rule of thumb whose gain was never measured), `computed` (a response computed
+against a model of the opponent, with a stated method) or `none`. The page shows the kind next to
+the name. It ships with `FoldEquityHeuristic` (the default, labeled as a heuristic everywhere) and
+the identity. The contract a future engine must meet is the existing one: take exactly a
+`SeatView`, a baseline `ActionDistribution` and a `ProfileSnapshot` built from completed hands;
+return a strategy that is legal under `view.legal`, an exploitability estimate (or `not_computed`
+with a reason) and a one-line rationale; and be deterministic given its inputs. `Advisor` checks
+the types and the legality. A new engine needs one `register(...)` call and no change to the page.
+
+**6. Local only, by construction.**
+
+The server is `http.server.ThreadingHTTPServer`, and it refuses any address but 127.0.0.1. That
+alone does not stop a web page elsewhere from talking to it: a page on another site can make the
+browser send requests to `127.0.0.1`. Three checks close that:
+
+* *Host.* Every request must name `127.0.0.1:<port>` or `localhost:<port>`. A *DNS rebinding*
+  attack points an attacker's domain at 127.0.0.1, so the browser treats the attacker's page as
+  the same site as the server; but the request then carries the attacker's domain as its `Host`,
+  and is refused.
+* *Content type.* A `POST` must be `application/json`. A cross-site HTML form can send only
+  `text/plain`, URL-encoded or multipart bodies; a script on another site that sets
+  `application/json` triggers a CORS *preflight*, which this server never approves. So another
+  site cannot submit a decision or start a session.
+* *Origin and Fetch Metadata.* When the browser sends `Origin` or `Sec-Fetch-Site`, they must say
+  same-origin.
+
+The page itself is vanilla HTML, CSS and JS with a Content-Security-Policy of `'self'`: it can load
+nothing from anywhere else, and the server makes no outgoing request. Bodies are capped at 4 KB,
+every JSON field is checked for exact type (a `true` is not a stack size) and range, and unknown
+fields are refused. The tests post each kind of bad input and check the status code.
+
+**7. The page.** Cards, the board, the pot and stacks in big blinds, the legal actions with sizes
+(raise presets at half pot, three quarters and pot), the hand log, the session's results in chips
+and all-in EV, the switch and the report. It works from the keyboard (F fold, C check or call,
+P push, A all-in, R raise then Enter, N next hand, M the read, E twice to end) and at phone width
+(checked at 375 px: no element wider than the screen). It polls `GET /api/state` every 0.3 s
+while the engine works and every 2 s while it waits for you (a decision or the next hand).
+
+**What was left.**
+
+* *A computed exploit for hold'em.* The slot's `computed` kind is empty. P2.8b (a local best
+  response over an action abstraction) is the natural first entry; it would also give the
+  advisors an exploitability estimate.
+* *A model of a person in hold'em.* The read is a bot classifier. Hands from real players (Phase 4,
+  only on the owner's go) are what a human model needs.
+* *Tournament stacks.* Push/fold resets the stacks every hand, so the effective stack never moves;
+  a sit-and-go with changing stacks would need one recommender per stack.
+
+**Mistakes.**
+
+* The first smoke test failed with a stale-decision error on a legal click. Between the click and
+  the engine thread waking up, the old turn still looked pending, so the next poll offered it
+  again. `pending()` now hides a turn as soon as it is answered.
+* Inline `style` attributes broke under the page's own Content-Security-Policy; the page sets the
+  heat-map shading through the DOM instead.
+* A first draft confirmed "end session" with the browser's blocking `confirm()` dialog; it became
+  a second key press, which works the same from the keyboard and cannot freeze the page.
+
 ---
 
 # Part C: cross-cutting engineering
@@ -6555,7 +6758,7 @@ opponent reacts to you, not about how the opponent plays.
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 604 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+suite has 618 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
 runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
 Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
 in varying machine states (Step 41); 604 took 214 to 229 s (Step 43). `tests/conftest.py` starts the tests marked `long` first, so
@@ -6768,6 +6971,7 @@ Invert once, and look at every figure before committing it.
 | D5's bound left a margin of 0.007 on two development seeds | the run on seed 2026 (+0.024 against +0.02) | reported as failed; the substance rests on other numbers | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
 | A path-check script without a `__main__` guard broke the worker pool on Windows | the run failing | the guard | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
 | The `misspec_by_hands` figure had a wide gap between its panels: `tight_layout` counted the legend under the left panel as part of it | reading the figure while drafting the step | a legend under both panels, redrawn from the committed JSON; no number changed | [43](#step-43-exploitation-when-the-model-is-wrong-p212) |
+| A click answered the next decision: an answered turn still looked pending until the engine thread woke | stale-decision error in the first smoke test | `pending()` hides a turn once answered; turn tokens | [44](#step-44-playing-against-the-model-a-local-web-page) |
 
 ---
 
@@ -6796,10 +7000,13 @@ Invert once, and look at every figure before committing it.
 | Cluster bootstrap | resampling whole clusters (players, or a table's lineup), not rows |
 | Common random numbers | giving the alternatives being compared the same random inputs, so their difference reflects only how they differ (here: the same deals and draws for every hero) |
 | Concentration (of a Beta prior) | $\kappa = \alpha + \beta$, the prior's weight in pseudo-opportunities; large when the players are alike |
+| Condition variable | a lock plus a waiting room: a thread holding the lock can wait (releasing it) until another thread notifies; used to let the engine wait for a person's click (Step 44) |
 | Confirmatory analysis | testing a hypothesis fixed in advance on data it was not derived from; the counterpart of exploratory analysis |
 | Conformal p-value | the rank of a new score among held-out scores, $(1 + \#\{\text{held-out} \ge \text{new}\})/(m + 1)$; valid for exchangeable data whatever the model (Vovk et al. 2005) |
 | Conjugate prior | a prior whose posterior has the same family (beta-binomial) |
+| Content-Security-Policy | a response header telling the browser where a page may load scripts, styles and data from; `'self'` allows only the page's own server (Step 44) |
 | Control variate | a term with known zero mean subtracted from an estimator to cut its variance (all-in EV, Step 28; AIVAT, Step 38) |
+| CORS preflight | the request a browser sends before a cross-site request it cannot send freely (for example a JSON `POST`); a server that does not approve it never receives the real request (Step 44) |
 | Counterfactual value | an action's value at an information set, weighted by the probability that chance and the opponent reach it |
 | Coupling | running two random experiments on shared random numbers, so they disagree less often than independent runs would; two thresholds $p_1$, $p_2$ on one uniform disagree with probability $|p_1 - p_2|$ |
 | Coverage | the share of intervals that contain the true value; a 90% interval should cover it 90% of the time |
@@ -6815,6 +7022,7 @@ Invert once, and look at every figure before committing it.
 | Design effect | the variance of a cluster's mean over that of the same number of independent units, $1 + (m-1)\rho$ for clusters of $m$ with intraclass correlation $\rho$ (Kish 1965); duplicate dealing's ratio is its inverse (Step 41) |
 | Digest (hash) | a short fixed-size fingerprint of a byte string (here SHA-1, 160 bits); equal inputs give equal digests, and different inputs share one with negligible probability unless built to by an attacker (Step 39) |
 | Dirty flag | whether the git checkout had uncommitted changes to tracked files when a run started; recorded with every result, so a number can be traced to exact code |
+| DNS rebinding | pointing an attacker's domain at 127.0.0.1 so the browser treats the attacker's page as the same site as a local server; defeated by checking the `Host` header (Step 44) |
 | Duplicate dealing | playing each deal at n tables with the n players' seats rotated (heads-up: twice with seats swapped), so card luck cancels in part; simulation only (Steps 23 and 41) |
 | ECE | expected calibration error |
 | Effective sample size (ESS) | for weighted draws, $1 / \sum_k w_k^2$: how many equally weighted draws the sample is worth |
@@ -6877,12 +7085,12 @@ Invert once, and look at every figure before committing it.
 | Off-tree | a real spot the abstract game has no information set for (e.g. a min-raise in push/fold) |
 | Oracle | a model given the true answer's inputs, to measure the ceiling |
 | Oversubscription | more runnable threads than logical processors: the operating system time-slices them, and parallel numeric code whose threads wait for each other slows down sharply (Step 40) |
-| Perfect recall | players never forget their own actions or observations |
 | Paired comparison | two methods scored on the same units, so variation between units cancels in the difference |
 | Percentile bootstrap | an interval from the quantiles of a statistic's resampled values; too narrow with few clusters (about 90% coverage for a nominal 95% at 10 clusters), and it need not contain the sample's statistic (Step 41) |
+| Perfect recall | players never forget their own actions or observations |
 | Permutation control | retrain on shuffled labels; above-chance results mean leakage |
-| Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | PHH | Poker Hand History, an open TOML-based text format for recording hands (Kim 2024) |
+| Posterior predictive check | compares data with replicates drawn from the fitted model; a small p-value says the model does not fit |
 | Pre-registration | committing the plan, the metric and the predictions with their thresholds before the run that tests them; a threshold set from development seeds can show that a result replicates, not why (Steps 14 and 41) |
 | Presolve | an LP solver's first pass: simplify the LP (redundant rows, fixed columns, tighter bounds), solve the smaller LP, map the answer back (postsolve); HiGHS skips it when it starts from a basis (Step 40) |
 | Process pool | a fixed set of worker processes that run submitted tasks (`ProcessPoolExecutor`); each process has its own memory, so tasks share only what is sent to them (Steps 8 and 40) |
@@ -6902,10 +7110,10 @@ Invert once, and look at every figure before committing it.
 | Shapley value | a fair division of a game's total: each player's contribution averaged over the orders of joining; for variance terms, a source's own term plus equal parts of its interactions (Shapley 1953) |
 | Share of perfect cancellation | $-(n-1)\rho$ for a player's results at $n$ tables of one deal: 0 for none, 1 at the bound $\rho = -1/(n-1)$; a share $s$ gives duplicate dealing the ratio $1/(1-s)$ at any $n$ (Step 41) |
 | Shrinkage | pulling noisy estimates toward a population mean |
+| Side pot | pot that an all-in player for less is not eligible for |
 | Simplex method | the classic LP algorithm: move from vertex to adjacent vertex of the feasible set, one basis change (pivot) at a time, while the objective improves; stop when no reduced cost is negative (Dantzig 1963; Step 40) |
 | Simpson's paradox | a pooled comparison that differs from (or reverses) the comparisons within groups, because the groups differ in size or kind |
 | Simultaneous multithreading (SMT) | one physical core runs two hardware threads that share its execution units and caches, so the second thread adds much less than a second core; Intel calls it hyper-threading. This laptop's AMD Ryzen 9 8945HS has 8 cores, 16 logical processors (Step 40) |
-| Side pot | pot that an all-in player for less is not eligible for |
 | Sobol-Hoeffding decomposition | writing a function of independent inputs as orthogonal pieces, one per subset of inputs, so its variance splits into one non-negative term per subset (Hoeffding 1948, Sobol' 1993) |
 | Spawn (start method) | starting a worker process as a fresh interpreter that imports the main module and receives its task by pickling; the only start method on Windows, hence the `if __name__ == "__main__":` guard (Steps 8 and 40) |
 | Stable sort | a sort that keeps equal elements in their original order; Python's is stable (Step 40) |
@@ -7248,3 +7456,6 @@ Performance and numerics
   pre-registered plan in `experiments/phase2_misspec.py` (`8601332`) and its run on seed 2026
   (results `e2b8c12`, explorer `9d94750`). C.1 (604 tests), Parts D, E and F updated. Numbers
   checked by script against `misspec.json`.
+* 2026-11-09: Step 44 (playing against the model: a local web page, push/fold and hold'em, the
+  exploit slot), a tool rather than a result. C.1 (618 tests), Parts D and E updated. The P3.9
+  numbers it quotes were checked against Step 36.
