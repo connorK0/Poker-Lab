@@ -26,7 +26,7 @@ from poker_lab.engine import SeatedPlayer, TableSimulator
 from poker_lab.engine.agent import Decision, DecisionKind, IllegalActionError
 from poker_lab.play import holdem, pushfold
 from poker_lab.play.allin_ev import all_in_result
-from poker_lab.play.channel import DecisionChannel, HumanAgent, SessionClosed
+from poker_lab.play.channel import DecisionChannel, HumanAgent, SessionClosed, StaleDecision
 from poker_lab.play.data import DataDir
 from poker_lab.play.exploit_slot import DEFAULT, ENGINES
 from poker_lab.play.present import bb, describe_hand, describe_view
@@ -172,6 +172,8 @@ class Session:
         self._your_hand: HandHistory | None = None
         self.agents: list[Any] = []
         self.revealed: dict[str, dict[str, str]] = {}
+        self.skipped_lines = 0  # unreadable lines in earlier sessions' files
+        self._end_lock = threading.Lock()  # one report, however many callers end the session
         self.thread = threading.Thread(target=self._run, name=f"session-{self.id}", daemon=True)
         if start:
             self.thread.start()
@@ -211,6 +213,7 @@ class Session:
                     for h in self.data.earlier_hands("pf", exclude=self.id)
                     if h.metadata.get("stack_bb") == str(s.stack_bb)
                 ]
+                self.skipped_lines = self.data.skipped_lines
             self._progress("Fitting the model")
             self.model = pushfold.PushFoldModel(s.stack_bb, th, history=history)
             model_agent = pushfold.ModelAgent(self.model)
@@ -326,6 +329,8 @@ class Session:
         pending = self.channel.pending()
         if pending is None:
             raise Conflict("no decision is waiting")
+        if isinstance(obj, dict) and type(obj.get("token")) is int and obj["token"] != pending[0]:
+            raise StaleDecision("that decision is no longer pending")  # before judging the move
         token, decision = parse_decision(obj, pending[1])
         check = push_fold_only if self.mode == "pushfold" else None
         self.channel.submit(token, decision, check)
@@ -381,21 +386,39 @@ class Session:
                 "report": self.report,
             }
 
-    def end(self, timeout: float = 30.0) -> dict[str, Any]:
-        """Stop the session (an unfinished hand is abandoned), write and return the report."""
-        with self.lock:
-            if self.report is not None:
-                return self.report
-        self.channel.close()
-        if self.thread.is_alive():
-            self.thread.join(timeout)
-        report = self._build_report()
-        if self.hands:
-            report["report_file"] = str(self.data.write_report(self.id, report))
-        with self.lock:
-            self.report = report
-            self.status = "ended"
-        return report
+    def end(self, timeout: float = 5.0) -> dict[str, Any]:
+        """Stop the session (an unfinished hand is abandoned), write and return the report.
+
+        Idempotent: every caller gets the same report. It waits at most ``timeout`` seconds for
+        the engine thread. A thread still preparing then (the first hold'em session's bot league
+        cannot be interrupted) is left to finish in the background and stops at its next check,
+        so the page is never frozen behind it. A report that cannot be written is still shown,
+        with the error in it."""
+        with self._end_lock:
+            with self.lock:
+                if self.report is not None:
+                    return self.report
+            self.channel.close()
+            if self.thread.is_alive():
+                self.thread.join(timeout)
+            report: dict[str, Any] = {"session_id": self.id}
+            try:
+                report = self._build_report()
+                if self.thread.is_alive():
+                    report["notes"].append(
+                        "The session ended while the engine was still busy (for example "
+                        "preparing the model); it stops in the background."
+                    )
+                if self.hands:
+                    report["report_file"] = str(self.data.write_report(self.id, report))
+            except Exception as exc:  # never leave the page without an ended state
+                traceback.print_exc(file=sys.stderr)
+                report["report_error"] = f"{type(exc).__name__}: {exc}"
+            finally:
+                with self.lock:
+                    self.report = report
+                    self.status = "ended"
+            return report
 
     def _build_report(self) -> dict[str, Any]:
         with self.lock:
@@ -442,6 +465,11 @@ class Session:
                 notes.append(
                     "The hold'em read is Phase 1's profile and archetype classifier, trained on "
                     "bots. Any exploit in hold'em is a heuristic, not a computed exploit."
+                )
+            if self.skipped_lines:
+                notes.append(
+                    f"{self.skipped_lines} unreadable line(s) in earlier sessions' hand files "
+                    "were skipped (for example a hand cut short when the program was stopped)."
                 )
             report["notes"] = notes
             return report

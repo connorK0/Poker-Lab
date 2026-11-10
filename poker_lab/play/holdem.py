@@ -18,6 +18,7 @@ start (under a second).
 
 from __future__ import annotations
 
+import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -28,6 +29,7 @@ from poker_lab.advisor import Advisor, AdvisorAgent
 from poker_lab.bots import ARCHETYPES, ParametricBot, make_population, sample_params
 from poker_lab.bots.league import LeagueConfig, run_league
 from poker_lab.engine.agent import Agent
+from poker_lab.play.data import write_atomic
 from poker_lab.play.exploit_slot import ENGINES
 from poker_lab.profiling.classifier import ArchetypeClassifier
 from poker_lab.profiling.features import profile_features, window_totals
@@ -86,12 +88,13 @@ def training_rows(cfg: ClassifierConfig, cache_dir=None) -> dict[str, Any]:
             cache_dir / f"{cfg.cache_name()}.json",
         )
         if npz.exists() and prior_json.exists():
-            import json
-
-            with np.load(npz, allow_pickle=False) as f:
-                rows = {k: f[k] for k in ("X", "y", "g")}
-            rows["shrinker"] = json.loads(prior_json.read_text(encoding="utf-8"))
-            return rows
+            try:
+                with np.load(npz, allow_pickle=False) as f:
+                    rows = {k: f[k] for k in ("X", "y", "g")}
+                rows["shrinker"] = json.loads(prior_json.read_text(encoding="utf-8"))
+                return rows
+            except (OSError, ValueError, KeyError):  # unreadable cache: rebuild it
+                pass
     rng = np.random.default_rng(cfg.seed)
     pop = make_population(cfg.per_archetype, rng, id_prefix="t")
     league = run_league(
@@ -115,10 +118,13 @@ def training_rows(cfg: ClassifierConfig, cache_dir=None) -> dict[str, Any]:
     rows = {"X": np.concatenate(X), "y": np.concatenate(y), "g": np.concatenate(g)}
     rows["shrinker"] = shrinker.to_dict()
     if cache_dir is not None:
-        import json
-
-        np.savez(npz, X=rows["X"], y=rows["y"], g=rows["g"])
-        prior_json.write_text(json.dumps(rows["shrinker"]), encoding="utf-8")
+        tmp = npz.with_name(f"{npz.stem}.{os.getpid()}.tmp.npz")
+        try:  # write, then rename: a reader never sees half a file
+            np.savez(tmp, X=rows["X"], y=rows["y"], g=rows["g"])
+            os.replace(tmp, npz)
+        finally:
+            tmp.unlink(missing_ok=True)
+        write_atomic(prior_json, json.dumps(rows["shrinker"]))
     return rows
 
 

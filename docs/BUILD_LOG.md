@@ -6717,6 +6717,15 @@ while the engine works and every 2 s while it waits for you (a decision or the n
   heat-map shading through the DOM instead.
 * A first draft confirmed "end session" with the browser's blocking `confirm()` dialog; it became
   a second key press, which works the same from the keyboard and cannot freeze the page.
+* Two code reviews found what the first tests missed: turn tokens restarted at 0 in every session
+  (a stale tab could answer a new session's first decision), two kinds of odd JSON dropped the
+  connection, caches were written in place (a crash mid-write broke every later session), one cut
+  line in a hands file stopped the next push/fold session, a failed report write left the page
+  stuck, and ending during the first hold'em setup waited on the uninterruptible bot league while
+  holding the server's lock. Each was fixed with a test: tokens start at random, caches are
+  written to a temporary file and renamed, unreadable lines are skipped and counted, `end()` is
+  idempotent, waits at most 5 s outside the lock and always ends the session, and a stalled
+  client times out after 10 s.
 
 ---
 
@@ -6758,7 +6767,7 @@ while the engine works and every 2 s while it waits for you (a decision or the n
 
 Statistical tests use fixed seeds and tolerances wide enough to be stable and tight enough to catch
 real errors (for example coverage within +/- 1.5 points of 95% over 5,000 simulated players). The
-suite has 618 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
+suite has 624 tests (the Deep CFR and sequence-model tests skip without PyTorch). `python -m pytest`
 runs them in four processes with pytest-xdist (`-n 4 --dist worksteal`, set in `pyproject.toml`).
 Measured times are 53.5-53.9 s for 471 tests and 61.6 s for 479; 517 took 104-127 s, and once 300 s,
 in varying machine states (Step 41); 604 took 214 to 229 s (Step 43). `tests/conftest.py` starts the tests marked `long` first, so
@@ -7457,5 +7466,5 @@ Performance and numerics
   (results `e2b8c12`, explorer `9d94750`). C.1 (604 tests), Parts D, E and F updated. Numbers
   checked by script against `misspec.json`.
 * 2026-11-09: Step 44 (playing against the model: a local web page, push/fold and hold'em, the
-  exploit slot), a tool rather than a result. C.1 (618 tests), Parts D and E updated. The P3.9
+  exploit slot), a tool rather than a result. C.1 (624 tests), Parts D and E updated. The P3.9
   numbers it quotes were checked against Step 36.

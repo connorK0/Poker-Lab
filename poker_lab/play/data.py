@@ -18,12 +18,13 @@ import json
 import os
 import re
 import secrets
+import sys
 import time
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
-from poker_lab.schema import HandHistory, read_jsonl, write_jsonl
+from poker_lab.schema import HandHistory, loads_hand, write_jsonl
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 SESSION_ID = re.compile(r"^(pf|nl)-\d{8}-\d{6}-[0-9a-f]{4}$")
@@ -46,6 +47,7 @@ class DataDir:
         self.cache = self.root / "cache"
         self.sessions.mkdir(parents=True, exist_ok=True)
         self.cache.mkdir(parents=True, exist_ok=True)
+        self.skipped_lines = 0  # unreadable lines met by the last ``earlier_hands``
 
     @staticmethod
     def new_session_id(mode: str) -> str:
@@ -65,20 +67,51 @@ class DataDir:
 
     def write_report(self, session_id: str, report: dict[str, Any]) -> Path:
         path = self.report_path(session_id)
-        path.write_text(json.dumps(report, indent=1), encoding="utf-8")
+        write_atomic(path, json.dumps(report, indent=1))
         return path
 
     def earlier_hands(self, prefix: str, exclude: str | None = None) -> Iterator[HandHistory]:
-        """Hands of earlier sessions of one mode, oldest session first, in play order."""
+        """Hands of earlier sessions of one mode, oldest session first, in play order.
+
+        A line that does not parse (say, the last one, cut short when the program was killed
+        mid-write) is skipped and counted in ``skipped_lines``, so one bad line cannot stop
+        every later session."""
+        self.skipped_lines = 0
         for path in sorted(self.sessions.glob(f"{prefix}-*.jsonl")):
-            if path.stem != exclude and SESSION_ID.match(path.stem):
-                yield from read_jsonl(path)
+            if path.stem == exclude or not SESSION_ID.match(path.stem):
+                continue
+            with path.open(encoding="utf-8", errors="replace") as fh:
+                for lineno, line in enumerate(fh, start=1):
+                    if not line.strip():
+                        continue
+                    try:
+                        hand = loads_hand(line)
+                    except (ValueError, TypeError, KeyError) as exc:
+                        self.skipped_lines += 1
+                        print(f"skipped {path.name}:{lineno}: {exc}", file=sys.stderr)
+                        continue
+                    yield hand
 
     def read_cache(self, name: str) -> Any | None:
+        """A cached value, or None if missing or unreadable (then it is recomputed)."""
         path = self.cache / name
         if not path.exists():
             return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        try:
+            return json.loads(path.read_text(encoding="utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            return None
 
     def write_cache(self, name: str, value: Any) -> None:
-        (self.cache / name).write_text(json.dumps(value), encoding="utf-8")
+        write_atomic(self.cache / name, json.dumps(value))
+
+
+def write_atomic(path: Path, text: str) -> None:
+    """Write ``text`` to a temporary file next to ``path``, then rename it into place, so a
+    reader sees either the old file or the whole new one, never half of it."""
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.{secrets.token_hex(3)}.tmp")
+    try:
+        tmp.write_text(text, encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)

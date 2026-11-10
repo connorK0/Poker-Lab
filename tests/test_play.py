@@ -6,6 +6,8 @@ import dataclasses
 import http.client
 import json
 import random
+import socket
+import threading
 import time
 
 import numpy as np
@@ -18,7 +20,7 @@ from poker_lab.play import holdem, pushfold
 from poker_lab.play.allin_ev import all_in_result, equity
 from poker_lab.play.channel import StaleDecision
 from poker_lab.play.data import REPO_ROOT, DataDir
-from poker_lab.play.server import PlayServer
+from poker_lab.play.server import Handler, PlayServer
 from poker_lab.play.session import Session, Settings
 from poker_lab.schema import FULL_DECK, CardObservation, HandHistory, HoleCards
 from poker_lab.strategy import PushFoldStrategy, StrategyAgent, fixed_ranges
@@ -289,8 +291,6 @@ def test_data_folder_must_be_outside_the_repository(tmp_path):
 @pytest.fixture
 def server(cache_dir):
     srv = PlayServer(0, DataDir(cache_dir), **KW)
-    import threading
-
     t = threading.Thread(target=srv.serve_forever, daemon=True)
     t.start()
     yield srv
@@ -390,3 +390,119 @@ def test_post_validation(server):
     assert status == 200
     assert st["report"]["session_id"] == session.id
     assert _req(server, "POST", "/api/next", {})[0] == 409  # ended
+
+
+# ---------------------------------------------------------------------------- robustness
+
+
+def test_corrupt_cache_is_a_miss_and_writes_are_atomic(tmp_path):
+    data = DataDir(tmp_path)
+    (data.cache / "x.json").write_text('{"10": {"stab', encoding="utf-8")  # cut short
+    assert data.read_cache("x.json") is None
+    data.write_cache("x.json", {"a": 1})
+    assert data.read_cache("x.json") == {"a": 1}
+    assert [p.name for p in data.cache.iterdir()] == ["x.json"]  # no temporary file left
+
+
+def test_a_truncated_hands_file_skips_the_bad_line(thresholds, tmp_path):
+    _, hands = _pf_hands(thresholds, n=3, seed=11)
+    data = DataDir(tmp_path)
+    sid = "pf-20261110-120000-abcd"
+    for h in hands:
+        data.append_hand(sid, h)
+    path = data.hands_path(sid)
+    text = path.read_text(encoding="utf-8")
+    path.write_text(text + text.splitlines()[0][:40], encoding="utf-8")  # a crash mid-write
+    got = list(data.earlier_hands("pf"))
+    assert [h.hand_id for h in got] == [h.hand_id for h in hands]
+    assert data.skipped_lines == 1
+
+
+def test_a_failed_report_write_still_ends_the_session(cache_dir, monkeypatch):
+    data = DataDir(cache_dir)
+    s = Session(Settings.parse({"mode": "pushfold", "stack_bb": 10, "seed": 12}), data, **KW)
+    st = _wait(s, lambda x: x["turn"] or x["session"]["status"] == "hand_over")
+    if st["turn"]:
+        s.submit({"token": st["turn"]["token"], "action": "fold"})
+        _wait(s, lambda x: x["session"]["status"] == "hand_over")
+
+    def broken(*args, **kwargs):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(data, "write_report", broken)
+    report = s.end()
+    assert "disk full" in report["report_error"]
+    assert s.state()["session"]["status"] == "ended"
+    assert s.end() is report  # idempotent
+
+
+def test_ending_during_a_slow_setup_does_not_freeze(cache_dir, monkeypatch):
+    release = threading.Event()
+    real = holdem.training_rows
+
+    def slow(cfg, cache=None):  # stands in for the first-time bot league, which cannot stop
+        release.wait(30)
+        return real(cfg, cache)
+
+    monkeypatch.setattr(holdem, "training_rows", slow)
+    srv = PlayServer(0, DataDir(cache_dir), **KW)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    try:
+        good = {"mode": "holdem", "players": 2, "seed": 1}
+        assert _req(srv, "POST", "/api/new", good)[0] == 200
+        first = srv.session
+        t0 = time.time()
+        status, st, _ = _req(srv, "POST", "/api/new", good)  # replaces it mid-setup
+        assert status == 200
+        assert st["session"]["status"] == "preparing"
+        status, st, _ = _req(srv, "POST", "/api/end", {})
+        assert status == 200
+        assert st["session"]["status"] == "ended"
+        assert time.time() - t0 < 15  # two ends, each waiting at most 5 s
+        assert first.report is not None
+        assert any("still busy" in n for n in first.report["notes"])
+    finally:
+        release.set()
+        srv.shutdown()
+        srv.server_close()
+    first.thread.join(30)
+    assert not first.thread.is_alive()  # it stopped at its next check
+
+
+def test_a_stale_token_is_refused_before_the_move_is_judged(cache_dir):
+    s = Session(
+        Settings.parse({"mode": "pushfold", "stack_bb": 10, "seed": 13}), DataDir(cache_dir), **KW
+    )
+    st = _wait(s, lambda x: x["turn"] or x["session"]["status"] == "hand_over")
+    while not st["turn"]:
+        s.next_hand()
+        st = _wait(s, lambda x: x["turn"] or x["session"]["status"] == "hand_over")
+    with pytest.raises(StaleDecision):
+        s.submit({"token": st["turn"]["token"] - 1, "action": "shove"})
+    s.end()
+
+
+def test_get_errors_answer_500_and_stalled_bodies_time_out(server, monkeypatch):
+    class Broken:
+        def state(self):
+            raise RuntimeError("boom")
+
+        def end(self):
+            return None
+
+    server.session = Broken()
+    status, body, _ = _req(server, "GET", "/api/state")
+    assert status == 500
+    assert "boom" in body["error"]
+    server.session = None
+    monkeypatch.setattr(Handler, "timeout", 0.5)
+    port = server.server_address[1]
+    with socket.create_connection(("127.0.0.1", port), timeout=10) as sock:
+        sock.sendall(
+            f"POST /api/new HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\n"
+            "Content-Type: application/json\r\nContent-Length: 20\r\n\r\n".encode()
+        )  # ...and the body never comes
+        t0 = time.time()
+        reply = sock.recv(4096)
+    assert time.time() - t0 < 5
+    assert reply == b"" or b" 500 " in reply.split(b"\r\n", 1)[0]

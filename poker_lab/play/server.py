@@ -70,13 +70,15 @@ class PlayServer(ThreadingHTTPServer):
 
     def end_session(self) -> dict[str, Any] | None:
         with self.session_lock:
-            return self.session.end() if self.session is not None else None
+            session = self.session
+        return session.end() if session is not None else None  # outside the lock: may wait
 
 
 class Handler(BaseHTTPRequestHandler):
     server: PlayServer
     server_version = "PokerLabPlay"
     sys_version = ""
+    timeout = 10  # seconds of client silence before the socket is dropped (a stalled body)
 
     def log_message(self, format: str, *args: Any) -> None:
         pass  # keep the console for the URL and errors
@@ -106,9 +108,15 @@ class Handler(BaseHTTPRequestHandler):
     # ------------------------------------------------------------------ GET
     def do_GET(self) -> None:
         try:
-            self._check_host()
+            self._get()
         except BadRequest as e:
-            return self._error(e.status, str(e))
+            self._error(e.status, str(e))
+        except Exception as e:  # a bug: answer instead of dropping the connection
+            traceback.print_exc()
+            self._error(HTTPStatus.INTERNAL_SERVER_ERROR, f"{type(e).__name__}: {e}")
+
+    def _get(self) -> None:
+        self._check_host()
         path = self.path.split("?", 1)[0]
         if path in FILES:
             name, ctype = FILES[path]
@@ -180,10 +188,11 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/new":
             settings = Settings.parse(body)
             with srv.session_lock:
-                if srv.session is not None:
-                    srv.session.end()
-                srv.session = Session(settings, srv.data, **srv.session_kw)
-                return srv.session.state()
+                old, srv.session = srv.session, Session(settings, srv.data, **srv.session_kw)
+                new = srv.session
+            if old is not None:
+                old.end()  # outside the lock; idempotent, and waits only briefly
+            return new.state()
         if path not in ("/api/act", "/api/next", "/api/read", "/api/end"):
             raise BadRequest("not found", HTTPStatus.NOT_FOUND)
         session = srv.session
@@ -201,8 +210,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/next":
                 session.next_hand()
             else:
-                with srv.session_lock:
-                    session.end()
+                session.end()
         return session.state()
 
 
