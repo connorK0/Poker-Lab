@@ -58,3 +58,25 @@ randomness:         # P2.11c: clones_6 of ``duplicate``, the same seeds and size
   half_width: 5
   bootstrap: 2000
   workers: 12
+misspec:            # P2.12: the same bots as ``exploit``, then opponents outside the model
+  seeds: 5
+  train_per_archetype: 20
+  test_per_archetype: 6
+  sizes: [10, 30, 100, 300, 1000, 3000]
+  ps: [0.5, 0.9]
+  dbr_pseudocount: 10
+  session:
+    hands: 2000
+    period: 50          # hands between an adaptive bot's updates
+    pseudo: 10          # its prior on the hero, in hands
+    refit_every: 100    # a refitting hero
+    fit_once_at: 300    # a hero that fits once
+    recent_window: 300
+    rnr_p: 0.9
+    rnr_p_low: 0.5
+  adaptive:
+    family_slow: {speed: 0.1, window: 400, mode: family}
+    family_fast: {speed: 0.5, window: 100, mode: family}
+    tabular_slow: {speed: 0.1, window: 400, mode: tabular}
+    tabular_fast: {speed: 0.5, window: 100, mode: tabular}
+  workers: 12

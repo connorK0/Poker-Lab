@@ -18,6 +18,8 @@ summary and light/dark figures under ``experiments/results/<name>/``):
    hold'em with Phase 1's archetype bots: how many times fewer hands it needs (P2.11b).
 6. ``randomness``: six copies of one bot from ``duplicate``, each of the bots' sources of
    randomness shared between the tables in turn: how the shortfall divides (P2.11c).
+7. ``misspec``: the bots of ``exploit`` against opponents outside the model, static and adaptive,
+   evaluated exactly (P2.12).
 """
 
 from __future__ import annotations
@@ -30,7 +32,7 @@ from pathlib import Path
 from experiments.common import REPO_ROOT, RESULTS_ROOT, load_config
 
 CONFIG_DIR = REPO_ROOT / "experiments" / "configs"
-STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness")
+STEPS = ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness", "misspec")
 
 
 def run(
@@ -49,6 +51,7 @@ def run(
         phase2_deep_cfr,
         phase2_duplicate,
         phase2_exploit,
+        phase2_misspec,
         phase2_randomness,
     )
 
@@ -60,6 +63,7 @@ def run(
         "aivat": phase2_aivat,
         "duplicate": phase2_duplicate,
         "randomness": phase2_randomness,
+        "misspec": phase2_misspec,
     }
     elapsed = {}
     for k, step in enumerate(steps, start=1):

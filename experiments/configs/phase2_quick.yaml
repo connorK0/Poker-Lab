@@ -58,3 +58,23 @@ randomness:
   half_width: 5
   bootstrap: 200
   workers: 4
+misspec:
+  seeds: 2
+  train_per_archetype: 4
+  test_per_archetype: 1
+  sizes: [10, 100]
+  ps: [0.5, 0.9]
+  dbr_pseudocount: 10
+  session:
+    hands: 200
+    period: 50
+    pseudo: 10
+    refit_every: 100
+    fit_once_at: 100
+    recent_window: 100
+    rnr_p: 0.9
+    rnr_p_low: 0.5
+  adaptive:
+    family_fast: {speed: 0.5, window: 100, mode: family}
+    tabular_fast: {speed: 0.5, window: 100, mode: tabular}
+  workers: 4

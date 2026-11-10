@@ -314,10 +314,18 @@ def test_calling_agents_cancel_exactly():
 # ---------------------------------------------------------------------------- the wiring
 
 
-def test_run_phase2_runs_duplicate_then_randomness_last(monkeypatch, tmp_path):
+def test_run_phase2_runs_duplicate_randomness_and_misspec_last(monkeypatch, tmp_path):
     from experiments import run_phase2
 
-    assert run_phase2.STEPS == ("cfr", "deep_cfr", "exploit", "aivat", "duplicate", "randomness")
+    assert run_phase2.STEPS == (
+        "cfr",
+        "deep_cfr",
+        "exploit",
+        "aivat",
+        "duplicate",
+        "randomness",
+        "misspec",
+    )
     seen = {}
 
     def fake(seed, *, cfg, workers, out_dir):
